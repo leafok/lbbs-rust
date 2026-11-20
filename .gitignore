@@ -1,0 +1,26 @@
+/target
+
+# The server root is derived from the executable's location, so a run needs the binary in bin/.
+/bin
+
+# The file that holds the MySQL password. conf/bbsd.conf.default is the template: copy it to
+# conf/bbsd.conf, fill in the credentials and leave the result untracked.
+/conf/bbsd.conf
+/conf/bbsnet.conf
+/conf/badwords.conf
+
+# Host keys belong to the machine. Generate your own with ssh-keygen.
+/conf/ssh_host_*
+
+/conf/*.user
+/conf/ca_cert.pem
+/conf/lbbs.logrotate
+/conf/lbbs.logrotate~
+/conf/lbbs.service
+/conf/lbbs.service~
+
+# Written while the server runs.
+/log/*
+!/log/.gitkeep
+/var/*
+/tests/*
