@@ -22,6 +22,7 @@ use std::time::Duration;
 
 use crate::bbsnet;
 use crate::browse;
+use crate::favorlist;
 use crate::login::{self, Login};
 use crate::menu::{Action, MenuFlow, MenuNav, MenuReturn};
 use crate::paths::{
@@ -427,6 +428,13 @@ pub fn bbs_do_choice<'a>(
             bbsnet::exec_mbem(term, session, param).await;
             MenuReturn::Redraw
         }
+        // `menu_proc.c:372-380`: the menu parameter is ignored, and C's `log_error` of a negative
+        // return is where [`favorlist::article_favor_display`] already reports each failed query
+        // before it gives the list up. Either way the menu comes back.
+        Action::FavorTopic => {
+            favorlist::article_favor_display(term, session).await;
+            MenuReturn::Redraw
+        }
         // The write and profile handlers arrive with their own tasks; until then an item that
         // resolves to one reports itself instead of looking like a hung key.
         _ => {
@@ -493,7 +501,7 @@ pub(crate) async fn show_top10_menu(term: &mut Terminal, session: &mut Session) 
     }
 }
 
-/// `bbs_main` (`bbs_main.c:297-482`) from `set_input_echo(0)` on: everything a transport owes
+/// `bbs_main` (`bbs_main.c:297-482`) from its `set_input_echo(0)` on: everything a transport owes
 /// a connection once its terminal and [`Session`] exist.
 ///
 /// What C does around this belongs elsewhere: the signal handlers and the `mprotect` calls to
@@ -501,6 +509,10 @@ pub(crate) async fn show_top10_menu(term: &mut Terminal, session: &mut Session) 
 /// (`section_aid_locations`) to the browse path. The per-user read and star tables are here,
 /// loaded after the agreement check and flushed after the goodbye file, as in C.
 pub async fn bbs_main(term: &mut Terminal, session: &mut Session) {
+    // C sends this on both transports; an SSH client has no use for the option, and reads it as
+    // the six bytes C's client would have read.
+    screen::set_input_echo(term, false).await;
+
     if !bbs_charset_select(term).await {
         return;
     }
@@ -659,6 +671,30 @@ mod tests {
             );
         }
     }
+
+    /// `@FAVOR_TOPIC` (`menu_proc.c:372-380`) passes its parameter to the screen, which ignores
+    /// it, and redraws the menu whatever the list does on the way out. With nothing starred the
+    /// page has only its header and key line to show.
+    #[tokio::test]
+    async fn the_topic_item_opens_the_star_list() {
+        let (mut client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        let mut session = crate::session::offline_session();
+
+        let (ret, ()) = tokio::join!(
+            bbs_do_choice(&mut term, &mut session, Action::FavorTopic, "Topic", false),
+            async {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                client.push(b"\x1b");
+            }
+        );
+
+        assert_eq!(ret, MenuReturn::Redraw);
+        let screen = String::from_utf8_lossy(&client.take_available()).into_owned();
+        assert!(screen.contains("[主题收藏]"), "{screen}");
+        assert!(screen.contains("移除[\x1b[1;32m-\x1b[0;37m"), "{screen}");
+    }
+
     /// `@RunMBEM` answers with the entry named after the `#` in its own parameter, so the shuttle
     /// item needs no menu id and no privilege beyond the item's. With no stations configured the
     /// frame still draws, the pager still complains about the empty selection, and the key that
@@ -693,5 +729,33 @@ mod tests {
         assert!(screen.contains(" [\x1b[1;32mCtrl+C\x1b[m]退出"), "{screen}");
         assert!(screen.contains("没有可选项"), "{screen}");
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A session takes the echo away from the client before it asks anything. The `*` mask at the
+    /// login prompt only hides what this side prints; without the negotiation a telnet client
+    /// still echoes what it typed itself, and the password walks across the screen in clear.
+    #[tokio::test]
+    async fn a_session_negotiates_the_echo_before_it_asks_anything() {
+        let (mut client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        let mut session = crate::session::offline_session();
+
+        // The client stays mute, so the session is still waiting on the charset question when the
+        // deadline cuts it off; nothing past that prompt is reached, database included.
+        let _ = tokio::time::timeout(
+            Duration::from_millis(500),
+            bbs_main(&mut term, &mut session),
+        )
+        .await;
+
+        let wire = client.take_available();
+        let body = wire
+            .strip_prefix(&[0xff, 0xfb, 0x01, 0xff, 0xfb, 0x03][..])
+            .unwrap_or_else(|| panic!("the session must open with the negotiation: {wire:?}"));
+        // UTF-8 is the default at this point, so the prompt that follows is still plain text.
+        assert!(
+            String::from_utf8_lossy(body).contains("Choose character set"),
+            "the negotiation must come first: {body:?}"
+        );
     }
 }

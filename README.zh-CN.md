@@ -153,7 +153,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/text.rs](file:///home/leaflet/Development/lbbs-rust/src/text.rs) | 357 | `src/str_process.c` | 显示宽度（全角=2 列）与折行计算 | 完成 |
 | [src/term/mod.rs](file:///home/leaflet/Development/lbbs-rust/src/term/mod.rs) | 584 | `src/io.c` | 字节管道、GBK 转码、`prints`/`iflush`、`igetch` | 完成 |
 | [src/term/key.rs](file:///home/leaflet/Development/lbbs-rust/src/term/key.rs) | 504 | `src/io.c` | 把 ESC 序列翻译成按键码 | 完成 |
-| [src/screen.rs](file:///home/leaflet/Development/lbbs-rust/src/screen.rs) | 1079 | `src/screen.c` | 清屏、行输入 `str_input`、分页器 `display_data` | 完成 |
+| [src/screen.rs](file:///home/leaflet/Development/lbbs-rust/src/screen.rs) | 1116 | `src/screen.c` | 清屏、回显接管 `set_input_echo`、行输入 `str_input`、分页器 `display_data` | 完成 |
 | [src/db.rs](file:///home/leaflet/Development/lbbs-rust/src/db.rs) | 1368 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
 | [src/board.rs](file:///home/leaflet/Development/lbbs-rust/src/board.rs) | 1470 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
 | [src/browse.rs](file:///home/leaflet/Development/lbbs-rust/src/browse.rs) | 2890 | `src/section_list_display.c`、`src/section_list_loader.c` | 帖子列表、列表按键、阅读帖子、阅读位置文件 | 完成 |
@@ -161,6 +161,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/post.rs](file:///home/leaflet/Development/lbbs-rust/src/post.rs) | 1488 | `src/article_post.c`、`src/article_del.c`、`src/article_op.c` | 发帖、回复、修改、删除、精华标记，以及各自的事务 | 完成 |
 | [src/viewlog.rs](file:///home/leaflet/Development/lbbs-rust/src/viewlog.rs) | 366 | `src/article_view_log.c` | 记录该用户读过哪些帖子 | 完成 |
 | [src/favorlog.rs](file:///home/leaflet/Development/lbbs-rust/src/favorlog.rs) | 446 | `src/article_favor.c` | 记录该用户收藏了哪些帖子 | 完成 |
+| [src/favorlist.rs](file:///home/leaflet/Development/lbbs-rust/src/favorlist.rs) | 768 | `src/article_favor_display.c`、`src/article_favor.c`（取页）、`src/menu_proc.c`（`FAVOR_TOPIC` 菜单项） | 我收藏的主题列表：两个名称栏目、就地取消收藏，以及每行通向的看板 | 完成 |
 | [src/roster.rs](file:///home/leaflet/Development/lbbs-rust/src/roster.rs) | 661 | `src/user_list_loader.c` | 在线用户列表与发帖数统计 | 完成 |
 | [src/userinfo.rs](file:///home/leaflet/Development/lbbs-rust/src/userinfo.rs) | 923 | `src/user_info_display.c`、`src/user_list_display.c`（查找）、`src/bbs.c`（等级与星座表） | 一个用户的资料页，以及通向它的用户名查找 | 完成 |
 | [src/userlist.rs](file:///home/leaflet/Development/lbbs-rust/src/userlist.rs) | 1024 | `src/user_list_display.c`、`src/menu_proc.c`（两个花名册入口） | 线上使用者与已注册用户两页：标题、栏目、翻页，以及在两页之间走动的按键 | 完成 |
@@ -171,17 +172,17 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/bwf.rs](file:///home/leaflet/Development/lbbs-rust/src/bwf.rs) | 241 | `src/trie_dict.c` 等 | 违禁词匹配与遮蔽 | 完成 |
 | [src/ipmask.rs](file:///home/leaflet/Development/lbbs-rust/src/ipmask.rs) | 109 | `src/ip_mask.c` | IP 地址掩码（`202.38.64.x`） | 完成 |
 | [src/privilege.rs](file:///home/leaflet/Development/lbbs-rust/src/privilege.rs) | 385 | `src/user_priv.c` | 权限位与权限等级计算 | 完成 |
-| [src/session.rs](file:///home/leaflet/Development/lbbs-rust/src/session.rs) | 609 | 各 `BBS_*` 全局变量 | 一次会话的状态 + 在线记录 | 完成 |
+| [src/session.rs](file:///home/leaflet/Development/lbbs-rust/src/session.rs) | 613 | 各 `BBS_*` 全局变量 | 一次会话的状态 + 在线记录 | 完成 |
 | [src/login.rs](file:///home/leaflet/Development/lbbs-rust/src/login.rs) | 580 | `src/login.c` | 登录、认证、用户协议（EULA） | 完成 |
 | [src/bbsnet.rs](file:///home/leaflet/Development/lbbs-rust/src/bbsnet.rs) | 1767 | `src/bbs_net.c`、`src/menu_proc.c`（`@mod:` 分发） | 站点表、穿梭网格、对外连接与双向转发 | 完成 |
-| [src/bbs.rs](file:///home/leaflet/Development/lbbs-rust/src/bbs.rs) | 697 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序、`bbs_center` | 提示、菜单循环与浏览类命令完成，少数菜单动作仍只记日志 |
-| [src/net.rs](file:///home/leaflet/Development/lbbs-rust/src/net.rs) | 359 | `src/net_server.c` | accept、连接数限制、telnet 协商、优雅退出 | 完成 |
+| [src/bbs.rs](file:///home/leaflet/Development/lbbs-rust/src/bbs.rs) | 761 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序（含回显接管）、`bbs_center` | 提示、菜单循环与浏览类命令完成，少数菜单动作仍只记日志 |
+| [src/net.rs](file:///home/leaflet/Development/lbbs-rust/src/net.rs) | 359 | `src/net_server.c` | accept、连接数限制、优雅退出 | 完成 |
 | [src/ssh.rs](file:///home/leaflet/Development/lbbs-rust/src/ssh.rs) | 493 | `src/net_server.c`（libssh 那一半） | 宿主密钥、密码认证、会话通道 | 完成 |
 | [src/main.rs](file:///home/leaflet/Development/lbbs-rust/src/main.rs) | 542 | `src/main.c`、`src/net_server.c` | 启动顺序、信号处理、`SIGHUP` 重载、退出 | 完成 |
 
 另有 [src/daemon.rs](file:///home/leaflet/Development/lbbs-rust/src/daemon.rs)（415 行，命令行与后台化）、[src/log.rs](file:///home/leaflet/Development/lbbs-rust/src/log.rs)（497 行，两个日志文件）、[src/state.rs](file:///home/leaflet/Development/lbbs-rust/src/state.rs)（413 行，加载器发布、会话读取的共享状态）。
 
-合计 27,196 行（含测试，测试就写在被测模块里）。共 379 个测试：库 373 个、可执行文件 6 个都不需要数据库，另有 12 个因为需要真实数据库和真实文件而默认跳过。
+合计 28,070 行（含测试，测试就写在被测模块里）。共 394 个测试：库 388 个、可执行文件 6 个都不需要数据库，另有 12 个因为需要真实数据库和真实文件而默认跳过。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
 
@@ -197,7 +198,8 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 2. **显示宽度计算**——中日韩全角字符算 2 列，控制序列算 0 列，规则与 C 的 `str_process.c` 一致。
 3. **按键解析**——`ESC [ A` 被识别为“上箭头”；跨包被切断的序列会整段丢弃并报成裸 `ESC`，与 `igetch` 相同。
 4. **字符编码**——UTF-8 与 GBK 都支持；GBK 字符在包边界被切断也能正确拼回。
-5. **行输入（`str_input`）**与**分页器（`display_data`）**——密码不回显、按 `q` 退出等按键行为与 C 一致。
+5. **行输入（`str_input`）**与**分页器（`display_data`）**——密码不回显（`NOECHO` 提示打印 C 的
+   `*`/`**` 掩码）、按 `q` 退出等按键行为与 C 一致。
 6. **MySQL 查询**——凭据校验、版块与帖子索引、在线列表、经验值累计等。
 7. **版块/帖子/用户的内存池**（替代共享内存）**以及增量更新逻辑**。
 8. **`menu.conf` 的语法解析**、条目光标移动、按权限过滤。
@@ -214,8 +216,10 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
     日志行也一致。
 14. **SSH**：用 russh 复用同一批宿主密钥，只提供密码认证、同样三次尝试、一条会话通道，
     会话里跑的就是 telnet 那条 `bbs_main`。
-15. **会话开场**，顺序与 C 一致：两个 5 秒提示、`bbs_info`、`data/welcome.txt`、统计行、
-    `var/bbs_top.txt` 与带十秒版块面板的上位菜单。
+15. **会话开场**，顺序与 C 一致：先用
+    [`screen::set_input_echo`](file:///home/leaflet/Development/lbbs-rust/src/screen.rs) 送出
+    `IAC WILL ECHO, IAC WILL SGA`，让客户端不再自己回显；随后是两个 5 秒提示、`bbs_info`、
+    `data/welcome.txt`、统计行、`var/bbs_top.txt` 与带十秒版块面板的上位菜单。
 16. **版块的帖子列表**——分页、最后一页重复的置顶行、光标与每一个移动光标的键、主题的配色、
     `[提示]`/`@`/`N`/`x` 标记、两种日期格式，以及按作者、按标题、按未读帖子的扫描。读帖子走
     `var/articles/<CID>` 和同一个分页器；离开版块时像 C 那样写 `var/section_aid_loc/<UID>`。
@@ -256,6 +260,15 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
     要等预算走完才报出来（这个怪癖照留），然后 `IPTOS_LOWDELAY`，再按站点自己的字符集双向转码中继；
     标了 `SSH` 的站点只对从 SSH 进来的会话开放，libssh 那一段换用 russh 重写，四种宿主密钥答案和五条提示都在。
     进度条跑动时按下的键会被连接吃掉，与 C 一致；`Ctrl+C`、`Esc` 取消，任何结果都重画整个界面。
+24. **我收藏的主题列表**——`article_favor_display`（`article_favor_display.c:296-401`），入口是上位菜单的
+    `@FAVOR_TOPIC`（`menu_proc.c:372-380`），那个参数 C 根本不看。每行的格式是 `"  %7d %c %s%*s %s %s"`：
+    文章编号、已读标记、`n` 所选的那一栏（发表者 12 格，版块名 20 格）、日期，再加上标题在 59 格里剩下的宽度；
+    主题头带 `● `，转帖带 `[转载]`，但列表不像版面那样把重复的 `Re: ` 折叠起来。收藏表先经
+    `query_favor_articles`（`article_favor.c:450-518`）读出，开头就是落盘与合并，所以 `-` 取消收藏在重画之前
+    已经写定。C 的三个松口都留着：`KEY_NULL` 记一条日志之后和 `Esc` 走同一条路；`UNSET_FAVOR` 没有 `break`，
+    直接落进 `CHANGE_PAGE` 的那次刷新；`LOCATE_ARTICLE` 回来只重画第 4-23 行和最底一行，不重画表头，于是刚离开
+    的版面把自己的标题留在屏上。取消收藏让记下的 `page_id` 越界时——最后一页的最后一行——列表按 C 的范围检查
+    直接退出，而不是退回新的末尾。
 
 ### 6.2 在真实论坛数据库上验证过
 
@@ -285,9 +298,9 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 1. **写入路径背后的界面**：精华区树、用户资料编辑器、统计、`display_article_meta`。
    这些按键目前会记一条 `... is not implemented`，而不是假装能用。
 2. **指向上面这些处理函数的一级菜单条目**：`bbs_do_choice` 只记日志并返回，所以上位菜单仍有只会记日志的键。
-   `LIST_ONLINE_USER`、`LIST_USER` 与 `RunMBEM` 已经接上，前两个通向的资料页与用户名查找也一并接好了；
-   还在只记日志的是 `EDIT_INTRO`、`EDIT_SIGN`、`DATAMGR`、`VIEW_EX_ARTICLE`、`LIST_EX_SECTION`、
-   `M_FAVOR_SECTION` 与 `FAVOR_TOPIC`。
+   `LIST_ONLINE_USER`、`LIST_USER`、`RunMBEM` 与 `FAVOR_TOPIC` 已经接上，前两个通向的资料页与用户名查找也一并
+   接好了；还在只记日志的是 `EDIT_INTRO`、`EDIT_SIGN`、`DATAMGR`、`VIEW_EX_ARTICLE`、`LIST_EX_SECTION` 与
+   `M_FAVOR_SECTION`。
 3. **Phase 2 的收尾**：GBK 的边角情况、SSH 的窗口大小（有意忽略，理由见 `src/ssh.rs` 文件头），
    以及与 C 就 Phase 1 全部界面做逐屏对照。
 
@@ -312,13 +325,13 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 ```bash
 cd lbbs-rust
 cargo build            # 编译库和可执行文件
-cargo test             # 379 个不需要数据库的测试（另有 12 个见 7.2）
+cargo test             # 394 个不需要数据库的测试（另有 12 个见 7.2）
 ```
 
 正常情况长这样：
 
 ```
-test result: ok. 373 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out
+test result: ok. 388 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
@@ -630,8 +643,11 @@ hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用�
 答：C 有“定宽 (F) / 变宽 (V)”两种选择，宽度算式不同。请统一走 `Session`/`Terminal` 的 `fixed_width`，
 不要直接调用 `text::display_width`。
 
-**问：输入密码时屏幕完全不显示。**
-答：这是正确的——NOECHO，C 版也是如此。
+**问：输入密码时屏幕上出现了明文。**
+答：不应该出现。会话一开始就送出 `IAC WILL ECHO, IAC WILL SGA`
+([`screen::set_input_echo`](file:///home/leaflet/Development/lbbs-rust/src/screen.rs))，客户端据此不再自己回显；
+`NOECHO` 提示接着每字符打印一个 `*`，回车时再擦掉。若明文照旧可见，那就是传输层在第一个提示之前
+没把六个协商字节写出去——只有掩码挡不住客户端自己的回显。
 
 **问：我想和本地已有的网页版一起试用。**
 答：把 `conf/bbsd.conf` 指向**备份库或测试库**，`db_password` 只留在这个文件里（不提交、不打印）。
@@ -659,7 +675,7 @@ hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用�
 | 已完成 | 打通浏览功能：`list_section`、帖子列表、阅读、`LOCATE_ARTICLE` | 按菜单键能进版块，联机游客会话能读到一篇真实帖子 |
 | 已完成 | 写入路径：新帖/回复/修改/删除、编辑器、索引更新、缓存生成、提交时过滤违禁词 | 有单元测试覆盖，且联机游客按 `^P` 在任何 SQL 之前被拒绝 |
 | 下一步 | 在**测试库**上完整走一遍真实发帖，再依次验证回复/修改/删除 | 网页端能看到移植版写出的帖子，头信息与缓存文件和 C 一致 |
-| 再下一步 | 其余菜单条目：`LIST_USER`、`DATAMGR`、收藏筛选、精华区树 | 上位菜单里不再有“只写日志”的按键 |
+| 再下一步 | 剩下的菜单条目：资料编辑两项、`DATAMGR`、精华区的两个筛选 | 上位菜单里不再有“只写日志”的按键 |
 | 最后 | 与 C 版就 Phase 1 的全部界面对比 | 同样操作得到同样的画面 |
 
 ---

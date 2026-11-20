@@ -14,6 +14,7 @@ pub mod config;
 pub mod daemon;
 pub mod db;
 pub mod editor;
+pub mod favorlist;
 pub mod favorlog;
 pub mod ipmask;
 pub mod loader;

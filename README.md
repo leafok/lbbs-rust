@@ -164,7 +164,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/text.rs](file:///home/leaflet/Development/lbbs-rust/src/text.rs) | 357 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
 | [src/term/mod.rs](file:///home/leaflet/Development/lbbs-rust/src/term/mod.rs) | 584 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
 | [src/term/key.rs](file:///home/leaflet/Development/lbbs-rust/src/term/key.rs) | 504 | `src/io.c` | turns ESC sequences into key codes | done |
-| [src/screen.rs](file:///home/leaflet/Development/lbbs-rust/src/screen.rs) | 1079 | `src/screen.c` | clearing, line input `str_input`, pager `display_data` | done |
+| [src/screen.rs](file:///home/leaflet/Development/lbbs-rust/src/screen.rs) | 1116 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
 | [src/db.rs](file:///home/leaflet/Development/lbbs-rust/src/db.rs) | 1368 | `src/database.c` etc. | MySQL queries through sqlx | done |
 | [src/board.rs](file:///home/leaflet/Development/lbbs-rust/src/board.rs) | 1470 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
 | [src/browse.rs](file:///home/leaflet/Development/lbbs-rust/src/browse.rs) | 2890 | `src/section_list_display.c`, `src/section_list_loader.c` | the article list, its keys, reading a post, the saved reading position | done |
@@ -172,6 +172,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/post.rs](file:///home/leaflet/Development/lbbs-rust/src/post.rs) | 1488 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, and the transaction each writes in | done |
 | [src/viewlog.rs](file:///home/leaflet/Development/lbbs-rust/src/viewlog.rs) | 366 | `src/article_view_log.c` | which posts this user has read | done |
 | [src/favorlog.rs](file:///home/leaflet/Development/lbbs-rust/src/favorlog.rs) | 446 | `src/article_favor.c` | which posts this user starred | done |
+| [src/favorlist.rs](file:///home/leaflet/Development/lbbs-rust/src/favorlist.rs) | 768 | `src/article_favor_display.c`, `src/article_favor.c` (the page query), `src/menu_proc.c` (the `FAVOR_TOPIC` item) | the 我收藏的主题 list: two name columns, the star removed in place, and the board each row opens | done |
 | [src/roster.rs](file:///home/leaflet/Development/lbbs-rust/src/roster.rs) | 661 | `src/user_list_loader.c` | the online-user roster and the article counters | done |
 | [src/userinfo.rs](file:///home/leaflet/Development/lbbs-rust/src/userinfo.rs) | 923 | `src/user_info_display.c`, `src/user_list_display.c` (the search), `src/bbs.c` (the level and sign tables) | one user's profile page, and the name search that reaches it | done |
 | [src/userlist.rs](file:///home/leaflet/Development/lbbs-rust/src/userlist.rs) | 1024 | `src/user_list_display.c`, `src/menu_proc.c` (the two roster items) | the 线上使用者 and 已注册用户 pages: titles, columns, paging, and the keys between them | done |
@@ -183,15 +184,15 @@ differently from C, read the deviations section first — the reason is written 
 | [src/bwf.rs](file:///home/leaflet/Development/lbbs-rust/src/bwf.rs) | 241 | `src/trie_dict.c` etc. | badword matching and masking | done |
 | [src/ipmask.rs](file:///home/leaflet/Development/lbbs-rust/src/ipmask.rs) | 109 | `src/ip_mask.c` | address masking (`202.38.64.x`) | done |
 | [src/privilege.rs](file:///home/leaflet/Development/lbbs-rust/src/privilege.rs) | 385 | `src/user_priv.c` | privilege words and levels | done |
-| [src/session.rs](file:///home/leaflet/Development/lbbs-rust/src/session.rs) | 609 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
+| [src/session.rs](file:///home/leaflet/Development/lbbs-rust/src/session.rs) | 613 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
 | [src/login.rs](file:///home/leaflet/Development/lbbs-rust/src/login.rs) | 580 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
 | [src/bbsnet.rs](file:///home/leaflet/Development/lbbs-rust/src/bbsnet.rs) | 1767 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
-| [src/bbs.rs](file:///home/leaflet/Development/lbbs-rust/src/bbs.rs) | 697 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, `bbs_center` | prompts, menu loop and the browse commands done; a few menu actions still log and return |
-| [src/net.rs](file:///home/leaflet/Development/lbbs-rust/src/net.rs) | 359 | `src/net_server.c` | accept, connection limits, telnet negotiation, graceful drain | done |
+| [src/bbs.rs](file:///home/leaflet/Development/lbbs-rust/src/bbs.rs) | 761 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | prompts, menu loop and the browse commands done; a few menu actions still log and return |
+| [src/net.rs](file:///home/leaflet/Development/lbbs-rust/src/net.rs) | 359 | `src/net_server.c` | accept, connection limits, graceful drain | done |
 | [src/ssh.rs](file:///home/leaflet/Development/lbbs-rust/src/ssh.rs) | 493 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
 | [src/main.rs](file:///home/leaflet/Development/lbbs-rust/src/main.rs) | 542 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
 
-27,196 lines in total, the tests included (they live in the modules they test). There are 379 tests: 373 in the
+28,070 lines in total, the tests included (they live in the modules they test). There are 394 tests: 388 in the
 library and 6 in the binary run without the database; 12 more are ignored because they need the real database and
 files.
 
@@ -213,8 +214,8 @@ that does not run is described as if it did.
 3. **Key decoding** — `ESC [ A` arrives as "up arrow"; a sequence split across packets is discarded and reported
    as a bare `ESC`, the way `igetch` does it.
 4. **Character sets** — UTF-8 and GBK both work; a GBK character split across packets is rejoined correctly.
-5. **Line input (`str_input`)** and **pager (`display_data`)** — hidden password entry, `q` to quit, and the
-   rest of C's key behaviour.
+5. **Line input (`str_input`)** and **pager (`display_data`)** — hidden password entry (a `NOECHO` prompt
+   prints C's `*`/`**` mask), `q` to quit, and the rest of C's key behaviour.
 6. **MySQL queries** — credential checks, board and article indexes, online list, experience accrual.
 7. **In-memory pools** of sections/articles/users (the replacement for shared memory) **plus the incremental
    update logic**.
@@ -233,8 +234,10 @@ that does not run is described as if it did.
     parent counted its children, with the log lines it logged.
 14. **SSH** through russh on the same host keys: password-only auth, the same three tries, one session channel,
     and the session running the same `bbs_main` as telnet.
-15. **The session's opening**, in C's order: the two 5-second prompts, `bbs_info`, `data/welcome.txt`, the
-    counts line, `var/bbs_top.txt` and the top menu with its ten-second board panel.
+15. **The session's opening**, in C's order: [`screen::set_input_echo`](file:///home/leaflet/Development/lbbs-rust/src/screen.rs)
+    sending `IAC WILL ECHO, IAC WILL SGA` so the client stops echoing what it types, then the two 5-second
+    prompts, `bbs_info`, `data/welcome.txt`, the counts line, `var/bbs_top.txt` and the top menu with its
+    ten-second board panel.
 16. **The article list of a board** — pages, the pinned rows the last page repeats, the cursor and every key
     that moves it, the thread colours, the `[提示]`/`@`/`N`/`x` markers, the two date shapes, and the
     scans by author, title and unread posts. Reading a post goes through `var/articles/<CID>` and the same
@@ -285,6 +288,17 @@ that does not run is described as if it did.
    marked `SSH`, only for a session that arrived over SSH, the libssh leg rebuilt on russh with its four
    known-host answers and its five messages. A key typed while the bar is running is spent on the connect, as in C;
    `Ctrl+C` and `Esc` cancel it, and every answer redraws the frame.
+24. **The 我收藏的主题 list** — `article_favor_display` (`article_favor_display.c:296-401`) behind the top menu's
+   `@FAVOR_TOPIC` item (`menu_proc.c:372-380`), whose parameter C ignores. Each row is `"  %7d %c %s%*s %s %s"` of
+   the article number, the read flag, whichever of the two columns `n` has chosen (the poster in 12 cells, the board
+   name in 20), the date and the title cut to the 59 cells that are left — with `● ` for a thread head and `[转载]`
+   for a transship, but without the board list's collapsing of repeated `Re: ` prefixes. The star list is read
+   through `query_favor_articles` (`article_favor.c:450-518`), whose flush-and-merge runs first, so `-` removes a row
+   for good before the page is drawn again. C's three loose ends are kept: `KEY_NULL` is logged and then behaves like
+   `Esc`; `UNSET_FAVOR` has no `break` and falls into the refresh `CHANGE_PAGE` does; and after `LOCATE_ARTICLE` only
+   rows 4-23 and the bottom row are redrawn, never the header, so the board the reader came back from leaves its own
+   title on the screen. A removal that makes the retained `page_id` unreachable — the last row of the last page —
+   ends the list instead of clamping to the new tail, as C's out-of-range check does.
 
 ### 6.2 Verified against the live board database
 
@@ -320,9 +334,9 @@ loader from the startup pass instead of building one.
 1. **The screens behind the write path**: the digest/excerpt tree, the user-profile editor, statistics and
    `display_article_meta`. Those keys log `... is not implemented` rather than pretending to work.
 2. **Top-level menu actions** that resolve to one of those handlers: `bbs_do_choice` logs and returns, so the
-   top menu still has keys that only log. `LIST_ONLINE_USER`, `LIST_USER` and `RunMBEM` are wired, and with the
-   first two the profile page and the name search they lead to; `EDIT_INTRO`, `EDIT_SIGN`, `DATAMGR`,
-   `VIEW_EX_ARTICLE`, `LIST_EX_SECTION`, `M_FAVOR_SECTION` and `FAVOR_TOPIC` still fall through to the log line.
+   top menu still has keys that only log. `LIST_ONLINE_USER`, `LIST_USER`, `RunMBEM` and `FAVOR_TOPIC` are wired,
+   and with the first two the profile page and the name search they lead to; `EDIT_INTRO`, `EDIT_SIGN`, `DATAMGR`,
+   `VIEW_EX_ARTICLE`, `LIST_EX_SECTION` and `M_FAVOR_SECTION` still fall through to the log line.
 3. **Phase 2 polish**: GBK corner cases, the SSH window size (deliberately ignored, see the header of
    `src/ssh.rs`), and a side-by-side comparison with C over the whole phase-1 surface.
 
@@ -347,13 +361,13 @@ wired and unit-tested". The first account that really posts should do it against
 ```bash
 cd lbbs-rust
 cargo build            # compile the library and the binary
-cargo test             # 379 tests that need no database (12 more are opt-in, see 7.2)
+cargo test             # 394 tests that need no database (12 more are opt-in, see 7.2)
 ```
 
 A healthy run looks like this:
 
 ```
-test result: ok. 373 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out
+test result: ok. 388 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
@@ -648,8 +662,12 @@ A: `Db::detached(...)` can only be created inside a runtime. Make that test `#[t
 A: C has a fixed-width (F) / variable-width (V) choice that changes the width arithmetic. Go through
 `Session`/`Terminal`'s `fixed_width` instead of calling `text::display_width` directly.
 
-**Q: Nothing appears while I type my password.**
-A: Correct — that is NOECHO, same as C.
+**Q: The characters I type as my password appear on screen.**
+A: They should not. A session opens by sending `IAC WILL ECHO, IAC WILL SGA`
+([`screen::set_input_echo`](file:///home/leaflet/Development/lbbs-rust/src/screen.rs)), which is what tells a
+telnet client this side does the echoing; the `NOECHO` prompt then prints one `*` per character and erases them.
+If the clear text comes back, the six negotiation bytes are missing from what the transport wrote — the mask
+alone cannot hide what the client echoes itself.
 
 **Q: I want to try this next to a web installation.**
 A: Point `conf/bbsd.conf` at a **backup or test database**, and keep `db_password` in that file only (never
@@ -680,7 +698,7 @@ next key, and page with space.
 | done | browse features end to end: `list_section`, the article list, reading a post, `LOCATE_ARTICLE` | a menu key opens a board, and a live guest session reads a real post |
 | done | write path: new/reply/edit/delete, the editor, index updates, cache generation, badwords on submit | unit-tested, and a live guest is refused before any SQL runs |
 | next | one real post end to end against a **test** database, then the same reply/modify/delete | the web site shows what the Rust server wrote, with the header and cache files C would have produced |
-| then | the remaining menu actions: `LIST_USER`, `DATAMGR`, the favourites filters, the digest tree | the top menu has no key that only logs |
+| then | the menu actions left: the profile editor items, `DATAMGR`, the digest tree's two filters | the top menu has no key that only logs |
 | last | a side-by-side comparison with C over the whole phase-1 surface | the same actions produce the same screen |
 
 ---

@@ -486,6 +486,24 @@ fn char_start(bytes: &[u8], index: usize) -> usize {
     i
 }
 
+/// `set_input_echo` (`screen.c:126-139`): tell the telnet client who is going to echo what the
+/// user typed. `false` sends `IAC WILL ECHO, IAC WILL SGA`, after which a `NOECHO` prompt shows
+/// only this side's `*` mask; without it the client keeps its own echo and the password walks
+/// across the screen in clear text.
+///
+/// The bytes ride the same buffer as C's `prints`, so they are transcoded like any other output —
+/// harmless only because the one caller (`bbs_main.c:355`) speaks before `bbs_charset_select` has
+/// picked anything other than the default UTF-8.
+pub async fn set_input_echo(term: &mut Terminal, echo: bool) {
+    if echo {
+        // C's `outc('\x83')`: byte 131, which names no telnet option. Nothing calls this arm.
+        term.print_bytes(&[0x83]);
+    } else {
+        term.print_bytes(&[0xff, 0xfb, 0x01, 0xff, 0xfb, 0x03]);
+    }
+    let _ = term.flush().await;
+}
+
 /// `_str_input`: append-only line input at the current cursor position.
 ///
 /// `None` means the client timed out or went away (C's `-1`); `Some(vec![])` is the
@@ -1033,6 +1051,25 @@ mod tests {
             String::from_utf8(client.take_available()).unwrap(),
             "***\x1b[D \x1b[D\r\n"
         );
+    }
+
+    #[tokio::test]
+    async fn the_client_is_told_to_stop_echoing() {
+        let (mut term, mut client) = pair();
+        set_input_echo(&mut term, false).await;
+        // `IAC WILL ECHO`, `IAC WILL SGA` — option bytes, and the only thing a `NOECHO` prompt
+        // needs to be more than a mask the client can still talk over.
+        assert!(
+            client
+                .take_available()
+                .starts_with(&[0xff, 0xfb, 0x01, 0xff, 0xfb, 0x03]),
+            "the negotiation must go out raw"
+        );
+
+        let (mut term, mut client) = pair();
+        set_input_echo(&mut term, true).await;
+        // C's other arm is the bare byte 131 that no telnet option defines.
+        assert_eq!(client.take_available(), vec![0x83]);
     }
 
     #[tokio::test]

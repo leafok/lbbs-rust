@@ -109,6 +109,9 @@ pub struct Session {
     /// The `static int display_nickname` of `section_list_display`, which is why the `n` key
     /// outlives the board it was pressed in.
     pub display_nickname: bool,
+    /// The `static int display_sname` of `article_favor_display`, the other `n` key of the same
+    /// shape: the starred-thread list keeps its column choice across openings.
+    pub display_sname: bool,
 
     /// The pager's `show_help` static, which nested pagers shared.
     help_enabled: bool,
@@ -149,6 +152,7 @@ impl Session {
             favor: FavorLog::anonymous(),
             aid_locations: HashMap::new(),
             display_nickname: false,
+            display_sname: false,
             help_enabled: true,
         }
     }
