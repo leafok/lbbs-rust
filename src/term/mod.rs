@@ -10,6 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
+use crate::paths::LINE_BUFFER_LEN;
 use crate::text;
 
 pub use key::{Decoded, KEY_NULL, KEY_RETRY, KEY_TIMEOUT};
@@ -326,6 +327,35 @@ impl Terminal {
         }
     }
 
+    /// One round of the site shuttle's raw read (`bbsnet_connect:1106`): whole bytes, not
+    /// decoded keys.
+    ///
+    /// What an earlier `igetch` left in [`Terminal::input`] stays there, as it does in C's
+    /// `io.c` conversion buffer: the shuttle reads the transport, and those bytes reach the
+    /// next key reader after it.
+    pub async fn read_raw(&mut self, timeout: Duration) -> RawRead {
+        let mut buf = [0u8; LINE_BUFFER_LEN];
+        let kept = self.input.len();
+        loop {
+            match tokio::time::timeout(timeout, read_bytes(&mut self.io, &mut buf)).await {
+                Ok(Ok(0)) => {
+                    self.closed = true;
+                    return RawRead::Closed;
+                }
+                Ok(Ok(n)) => {
+                    self.push_input(&buf[..n]);
+                    return RawRead::Bytes(self.input.split_off(kept));
+                }
+                Ok(Err(err)) if err.kind() == io::ErrorKind::Interrupted => continue,
+                Ok(Err(_)) => {
+                    self.closed = true;
+                    return RawRead::Closed;
+                }
+                Err(_) => return RawRead::Idle,
+            };
+        }
+    }
+
     /// `igetch_reset`: drop whatever the client already sent.
     pub async fn reset_input(&mut self) {
         loop {
@@ -415,6 +445,13 @@ fn incomplete_utf8_len(buf: &[u8]) -> usize {
 enum Refill {
     Data,
     Timeout,
+    Closed,
+}
+
+/// The three answers a raw read gets: `read(2)` returning bytes, `EAGAIN`, or end of stream.
+pub enum RawRead {
+    Bytes(Vec<u8>),
+    Idle,
     Closed,
 }
 

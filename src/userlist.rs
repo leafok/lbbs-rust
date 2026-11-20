@@ -968,7 +968,7 @@ mod tests {
             let mut session = Session::new(
                 state.clone(),
                 &root,
-                "lbbs-rs-smoke".to_string(),
+                "lbbs-rust-smoke".to_string(),
                 "127.0.0.1".to_string(),
                 0,
                 false,

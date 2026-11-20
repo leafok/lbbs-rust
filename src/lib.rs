@@ -5,6 +5,7 @@
 //! with an explicit [`session::Session`] plus [`state::AppState`] shared by tasks.
 
 pub mod bbs;
+pub mod bbsnet;
 pub mod board;
 pub mod browse;
 pub mod bwf;

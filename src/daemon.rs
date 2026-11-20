@@ -132,7 +132,7 @@ pub fn usage(prog: &str) -> String {
 /// `APP_INFO` (`common.c:17`): `PACKAGE_STRING " build (x86_64) on " __DATE__ " " __TIME__`.
 pub fn app_info() -> String {
     format!(
-        "lbbs-rs {} build ({})",
+        "lbbs-rust {} build ({})",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::ARCH
     )
@@ -386,7 +386,7 @@ mod tests {
     #[test]
     fn app_info_names_the_package_and_arch() {
         let info = app_info();
-        assert!(info.starts_with("lbbs-rs 0.1.0 build ("), "{info}");
+        assert!(info.starts_with("lbbs-rust 0.1.0 build ("), "{info}");
         assert!(info.ends_with(')'), "{info}");
     }
 

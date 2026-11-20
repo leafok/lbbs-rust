@@ -108,7 +108,7 @@ pub fn config(keys: Vec<russh::keys::PrivateKey>) -> Arc<server::Config> {
     Arc::new(server::Config {
         // libssh answered `SSH-2.0-libssh_<version>`; name the port instead of that.
         server_id: SshId::Standard(Cow::Owned(format!(
-            "SSH-2.0-lbbs-rs_{}",
+            "SSH-2.0-lbbs-rust_{}",
             env!("CARGO_PKG_VERSION")
         ))),
         methods: (&[russh::MethodKind::Password][..]).into(),

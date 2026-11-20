@@ -53,6 +53,9 @@ pub const DATA_FILES_STARTUP: [&str; 12] = [
 /// `FILE_PATH_LEN` (`include/common.h:19`).
 pub const FILE_PATH_LEN: usize = 4096;
 
+/// `CHARSET_MAX_LEN` (`include/io.h:99`), the width of a charset name such as `UTF-8` or `GBK`.
+pub const CHARSET_MAX_LEN: usize = 20;
+
 /// Screen geometry. The C server hard-codes this and never calls `TIOCGWINSZ`
 /// for the telnet path, so the port keeps it fixed as well.
 pub const SCREEN_ROWS: usize = 24;

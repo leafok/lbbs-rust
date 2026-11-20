@@ -2420,7 +2420,7 @@ mod tests {
     #[test]
     fn saved_positions_are_pairs_of_native_integers() {
         let path = std::env::temp_dir().join(format!(
-            "lbbs-rs-aid-loc-{}-{}",
+            "lbbs-rust-aid-loc-{}-{}",
             std::process::id(),
             NOW
         ));
@@ -2445,14 +2445,14 @@ mod tests {
 
     #[test]
     fn a_missing_position_file_is_nothing_saved() {
-        let path = std::env::temp_dir().join(format!("lbbs-rs-aid-loc-missing-{}", NOW));
+        let path = std::env::temp_dir().join(format!("lbbs-rust-aid-loc-missing-{}", NOW));
         assert!(aid_locations_read(&path).unwrap().is_empty());
     }
 
     #[test]
     fn a_cut_short_pair_is_dropped_like_the_c_loop_drops_it() {
         let path = std::env::temp_dir().join(format!(
-            "lbbs-rs-aid-loc-cut-{}-{}",
+            "lbbs-rust-aid-loc-cut-{}-{}",
             std::process::id(),
             NOW
         ));
@@ -2596,7 +2596,7 @@ mod tests {
         let mut session = Session::new(
             state.clone(),
             root,
-            "lbbs-rs-smoke".to_string(),
+            "lbbs-rust-smoke".to_string(),
             "127.0.0.1".to_string(),
             0,
             false,

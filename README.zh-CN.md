@@ -1,6 +1,6 @@
-# lbbs-rs —— 用 Rust 重写 LBBS
+# lbbs-rust —— 用 Rust 重写 LBBS
 
-> 本文档的默认版本是英文：[README.md](file:///home/leaflet/Development/lbbs-rs/README.md)。
+> 本文档的默认版本是英文：[README.md](file:///home/leaflet/Development/lbbs-rust/README.md)。
 > 这里是它的简体中文翻译，内容与英文版一致。
 
 这份文档的目标是：**让一个没用过 BBS、也不熟悉 Rust 的人，能明白这个项目在做什么。**
@@ -33,7 +33,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 `git -C ~/Development/lbbs show b7a8b16:src/<文件>` 打印出来的，正是那条注释所描述的内容。
 [第 10.3 节](#103-1712-这一轮参考端的修改在-rust-版里对应什么)记录 1.7.12 的每个修复在这里落在何处。
 
-### 1.2 本项目（lbbs-rs）
+### 1.2 本项目（lbbs-rust）
 
 我们在把那个 C 服务器用 Rust 重写。
 
@@ -107,8 +107,8 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 `fork()`、POSIX 共享内存和 System V 信号量与 Rust 的安全模型很冲突，除了多出裸 `libc` 调用没有别的好处。
 整个服务器改为一个进程内运行 **Tokio** 任务。
 
-- C 的“每进程全局变量”→ [`Session`](file:///home/leaflet/Development/lbbs-rs/src/session.rs) 结构体的字段。
-- C 的“共享内存”→ 进程内的 [`Arc<RwLock<...>>`](file:///home/leaflet/Development/lbbs-rs/src/state.rs)。
+- C 的“每进程全局变量”→ [`Session`](file:///home/leaflet/Development/lbbs-rust/src/session.rs) 结构体的字段。
+- C 的“共享内存”→ 进程内的 [`Arc<RwLock<...>>`](file:///home/leaflet/Development/lbbs-rust/src/state.rs)。
 
 > 第一次接触异步？`async fn` 就是“需要等待”的函数。每写一个 `.await` 就把线程让给别的任务，所以一个线程
 > 也能同时伺候大量连接。最容易踩的点是：**没有 await 的代码并不代表已经执行完**，这是它和同步代码最大的差别。
@@ -125,7 +125,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | --- | --- | --- |
 | Phase 1a | 守护进程启动、两个监听端口、连接数限制、日志、信号、编码选择、登录、菜单 | **完成**，并已对真实数据库做过冒烟测试 |
 | Phase 1b | 版块列表、帖子列表、阅读（分页器）、发帖/回复、违禁词接入菜单 | **完成**，含写入路径与全屏编辑器 |
-| Phase 2 | 精华区树、统计、文章转送（shuttle）、GBK 完善、SSH 窗口尺寸 | 未开始 |
+| Phase 2 | 精华区树、统计、用户资料编辑器、GBK 完善、SSH 窗口尺寸 | 未开始 |
 
 每个阶段结束时都必须**编译通过、测试通过**。我们不靠“先堆一堆跑不起来的代码”前进。
 
@@ -148,39 +148,40 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 
 | Rust 文件 | 行数 | 对应 C | 职责 | 状态 |
 | --- | ---:| --- | --- | --- |
-| [src/paths.rs](file:///home/leaflet/Development/lbbs-rs/src/paths.rs) | 110 | `include/bbs.h` 等 | 屏幕尺寸、各字段长度、路径名等常量 | 完成 |
-| [src/config.rs](file:///home/leaflet/Development/lbbs-rs/src/config.rs) | 383 | `src/init.c` | 读取 `conf/bbsd.conf` | 完成 |
-| [src/text.rs](file:///home/leaflet/Development/lbbs-rs/src/text.rs) | 350 | `src/str_process.c` | 显示宽度（全角=2 列）与折行计算 | 完成 |
-| [src/term/mod.rs](file:///home/leaflet/Development/lbbs-rs/src/term/mod.rs) | 546 | `src/io.c` | 字节管道、GBK 转码、`prints`/`iflush`、`igetch` | 完成 |
-| [src/term/key.rs](file:///home/leaflet/Development/lbbs-rs/src/term/key.rs) | 504 | `src/io.c` | 把 ESC 序列翻译成按键码 | 完成 |
-| [src/screen.rs](file:///home/leaflet/Development/lbbs-rs/src/screen.rs) | 1030 | `src/screen.c` | 清屏、行输入 `str_input`、分页器 `display_data` | 完成 |
-| [src/db.rs](file:///home/leaflet/Development/lbbs-rs/src/db.rs) | 1368 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
-| [src/board.rs](file:///home/leaflet/Development/lbbs-rs/src/board.rs) | 1470 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
-| [src/browse.rs](file:///home/leaflet/Development/lbbs-rs/src/browse.rs) | 2890 | `src/section_list_display.c`、`src/section_list_loader.c` | 帖子列表、列表按键、阅读帖子、阅读位置文件 | 完成 |
-| [src/editor.rs](file:///home/leaflet/Development/lbbs-rs/src/editor.rs) | 1395 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
-| [src/post.rs](file:///home/leaflet/Development/lbbs-rs/src/post.rs) | 1489 | `src/article_post.c`、`src/article_del.c`、`src/article_op.c` | 发帖、回复、修改、删除、精华标记，以及各自的事务 | 完成 |
-| [src/viewlog.rs](file:///home/leaflet/Development/lbbs-rs/src/viewlog.rs) | 366 | `src/article_view_log.c` | 记录该用户读过哪些帖子 | 完成 |
-| [src/favorlog.rs](file:///home/leaflet/Development/lbbs-rs/src/favorlog.rs) | 446 | `src/article_favor.c` | 记录该用户收藏了哪些帖子 | 完成 |
-| [src/roster.rs](file:///home/leaflet/Development/lbbs-rs/src/roster.rs) | 661 | `src/user_list_loader.c` | 在线用户列表与发帖数统计 | 完成 |
-| [src/userinfo.rs](file:///home/leaflet/Development/lbbs-rs/src/userinfo.rs) | 923 | `src/user_info_display.c`、`src/user_list_display.c`（查找）、`src/bbs.c`（等级与星座表） | 一个用户的资料页，以及通向它的用户名查找 | 完成 |
-| [src/userlist.rs](file:///home/leaflet/Development/lbbs-rs/src/userlist.rs) | 1024 | `src/user_list_display.c`、`src/menu_proc.c`（两个花名册入口） | 线上使用者与已注册用户两页：标题、栏目、翻页，以及在两页之间走动的按键 | 完成 |
-| [src/loader.rs](file:///home/leaflet/Development/lbbs-rs/src/loader.rs) | 1405 | `src/section_list_loader.c` | 增量刷新任务，以及它顺带写出的文章缓存文件 | 完成 |
-| [src/cache.rs](file:///home/leaflet/Development/lbbs-rs/src/cache.rs) | 554 | `src/article_cache.c` | 渲染与读取 `var/articles/<CID>` 及其行偏移表 | 完成 |
-| [src/menu.rs](file:///home/leaflet/Development/lbbs-rs/src/menu.rs) | 2272 | `src/menu.c` | `menu.conf` 解析与页面跳转 | 解析/跳转完成，功能本体未完成 |
-| [src/lml.rs](file:///home/leaflet/Development/lbbs-rs/src/lml.rs) | 686 | `src/lml.c` | LML 标记渲染 | 完成 |
-| [src/bwf.rs](file:///home/leaflet/Development/lbbs-rs/src/bwf.rs) | 238 | `src/trie_dict.c` 等 | 违禁词匹配与遮蔽 | 完成 |
-| [src/ipmask.rs](file:///home/leaflet/Development/lbbs-rs/src/ipmask.rs) | 109 | `src/ip_mask.c` | IP 地址掩码（`202.38.64.x`） | 完成 |
-| [src/privilege.rs](file:///home/leaflet/Development/lbbs-rs/src/privilege.rs) | 385 | `src/user_priv.c` | 权限位与权限等级计算 | 完成 |
-| [src/session.rs](file:///home/leaflet/Development/lbbs-rs/src/session.rs) | 609 | 各 `BBS_*` 全局变量 | 一次会话的状态 + 在线记录 | 完成 |
-| [src/login.rs](file:///home/leaflet/Development/lbbs-rs/src/login.rs) | 580 | `src/login.c` | 登录、认证、用户协议（EULA） | 完成 |
-| [src/bbs.rs](file:///home/leaflet/Development/lbbs-rs/src/bbs.rs) | 467 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序、`bbs_center` | 提示、菜单循环与浏览类命令完成，少数菜单动作仍只记日志 |
-| [src/net.rs](file:///home/leaflet/Development/lbbs-rs/src/net.rs) | 359 | `src/net_server.c`、`src/bbs_net.c` | accept、连接数限制、telnet 协商、优雅退出 | 完成 |
-| [src/ssh.rs](file:///home/leaflet/Development/lbbs-rs/src/ssh.rs) | 493 | `src/net_server.c`（libssh 那一半） | 宿主密钥、密码认证、会话通道 | 完成 |
-| [src/main.rs](file:///home/leaflet/Development/lbbs-rs/src/main.rs) | 542 | `src/main.c`、`src/net_server.c` | 启动顺序、信号处理、`SIGHUP` 重载、退出 | 完成 |
+| [src/paths.rs](file:///home/leaflet/Development/lbbs-rust/src/paths.rs) | 113 | `include/bbs.h` 等 | 屏幕尺寸、各字段长度、路径名等常量 | 完成 |
+| [src/config.rs](file:///home/leaflet/Development/lbbs-rust/src/config.rs) | 384 | `src/init.c` | 读取 `conf/bbsd.conf` | 完成 |
+| [src/text.rs](file:///home/leaflet/Development/lbbs-rust/src/text.rs) | 357 | `src/str_process.c` | 显示宽度（全角=2 列）与折行计算 | 完成 |
+| [src/term/mod.rs](file:///home/leaflet/Development/lbbs-rust/src/term/mod.rs) | 584 | `src/io.c` | 字节管道、GBK 转码、`prints`/`iflush`、`igetch` | 完成 |
+| [src/term/key.rs](file:///home/leaflet/Development/lbbs-rust/src/term/key.rs) | 504 | `src/io.c` | 把 ESC 序列翻译成按键码 | 完成 |
+| [src/screen.rs](file:///home/leaflet/Development/lbbs-rust/src/screen.rs) | 1079 | `src/screen.c` | 清屏、行输入 `str_input`、分页器 `display_data` | 完成 |
+| [src/db.rs](file:///home/leaflet/Development/lbbs-rust/src/db.rs) | 1368 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
+| [src/board.rs](file:///home/leaflet/Development/lbbs-rust/src/board.rs) | 1470 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
+| [src/browse.rs](file:///home/leaflet/Development/lbbs-rust/src/browse.rs) | 2890 | `src/section_list_display.c`、`src/section_list_loader.c` | 帖子列表、列表按键、阅读帖子、阅读位置文件 | 完成 |
+| [src/editor.rs](file:///home/leaflet/Development/lbbs-rust/src/editor.rs) | 1395 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
+| [src/post.rs](file:///home/leaflet/Development/lbbs-rust/src/post.rs) | 1488 | `src/article_post.c`、`src/article_del.c`、`src/article_op.c` | 发帖、回复、修改、删除、精华标记，以及各自的事务 | 完成 |
+| [src/viewlog.rs](file:///home/leaflet/Development/lbbs-rust/src/viewlog.rs) | 366 | `src/article_view_log.c` | 记录该用户读过哪些帖子 | 完成 |
+| [src/favorlog.rs](file:///home/leaflet/Development/lbbs-rust/src/favorlog.rs) | 446 | `src/article_favor.c` | 记录该用户收藏了哪些帖子 | 完成 |
+| [src/roster.rs](file:///home/leaflet/Development/lbbs-rust/src/roster.rs) | 661 | `src/user_list_loader.c` | 在线用户列表与发帖数统计 | 完成 |
+| [src/userinfo.rs](file:///home/leaflet/Development/lbbs-rust/src/userinfo.rs) | 923 | `src/user_info_display.c`、`src/user_list_display.c`（查找）、`src/bbs.c`（等级与星座表） | 一个用户的资料页，以及通向它的用户名查找 | 完成 |
+| [src/userlist.rs](file:///home/leaflet/Development/lbbs-rust/src/userlist.rs) | 1024 | `src/user_list_display.c`、`src/menu_proc.c`（两个花名册入口） | 线上使用者与已注册用户两页：标题、栏目、翻页，以及在两页之间走动的按键 | 完成 |
+| [src/loader.rs](file:///home/leaflet/Development/lbbs-rust/src/loader.rs) | 1406 | `src/section_list_loader.c` | 增量刷新任务，以及它顺带写出的文章缓存文件 | 完成 |
+| [src/cache.rs](file:///home/leaflet/Development/lbbs-rust/src/cache.rs) | 554 | `src/article_cache.c` | 渲染与读取 `var/articles/<CID>` 及其行偏移表 | 完成 |
+| [src/menu.rs](file:///home/leaflet/Development/lbbs-rust/src/menu.rs) | 2351 | `src/menu.c` | `menu.conf` 解析与页面跳转 | 解析/跳转完成，功能本体未完成 |
+| [src/lml.rs](file:///home/leaflet/Development/lbbs-rust/src/lml.rs) | 689 | `src/lml.c` | LML 标记渲染 | 完成 |
+| [src/bwf.rs](file:///home/leaflet/Development/lbbs-rust/src/bwf.rs) | 241 | `src/trie_dict.c` 等 | 违禁词匹配与遮蔽 | 完成 |
+| [src/ipmask.rs](file:///home/leaflet/Development/lbbs-rust/src/ipmask.rs) | 109 | `src/ip_mask.c` | IP 地址掩码（`202.38.64.x`） | 完成 |
+| [src/privilege.rs](file:///home/leaflet/Development/lbbs-rust/src/privilege.rs) | 385 | `src/user_priv.c` | 权限位与权限等级计算 | 完成 |
+| [src/session.rs](file:///home/leaflet/Development/lbbs-rust/src/session.rs) | 609 | 各 `BBS_*` 全局变量 | 一次会话的状态 + 在线记录 | 完成 |
+| [src/login.rs](file:///home/leaflet/Development/lbbs-rust/src/login.rs) | 580 | `src/login.c` | 登录、认证、用户协议（EULA） | 完成 |
+| [src/bbsnet.rs](file:///home/leaflet/Development/lbbs-rust/src/bbsnet.rs) | 1767 | `src/bbs_net.c`、`src/menu_proc.c`（`@mod:` 分发） | 站点表、穿梭网格、对外连接与双向转发 | 完成 |
+| [src/bbs.rs](file:///home/leaflet/Development/lbbs-rust/src/bbs.rs) | 697 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序、`bbs_center` | 提示、菜单循环与浏览类命令完成，少数菜单动作仍只记日志 |
+| [src/net.rs](file:///home/leaflet/Development/lbbs-rust/src/net.rs) | 359 | `src/net_server.c` | accept、连接数限制、telnet 协商、优雅退出 | 完成 |
+| [src/ssh.rs](file:///home/leaflet/Development/lbbs-rust/src/ssh.rs) | 493 | `src/net_server.c`（libssh 那一半） | 宿主密钥、密码认证、会话通道 | 完成 |
+| [src/main.rs](file:///home/leaflet/Development/lbbs-rust/src/main.rs) | 542 | `src/main.c`、`src/net_server.c` | 启动顺序、信号处理、`SIGHUP` 重载、退出 | 完成 |
 
-另有 [src/daemon.rs](file:///home/leaflet/Development/lbbs-rs/src/daemon.rs)（415 行，命令行与后台化）、[src/log.rs](file:///home/leaflet/Development/lbbs-rs/src/log.rs)（497 行，两个日志文件）、[src/state.rs](file:///home/leaflet/Development/lbbs-rs/src/state.rs)（413 行，加载器发布、会话读取的共享状态）。
+另有 [src/daemon.rs](file:///home/leaflet/Development/lbbs-rust/src/daemon.rs)（415 行，命令行与后台化）、[src/log.rs](file:///home/leaflet/Development/lbbs-rust/src/log.rs)（497 行，两个日志文件）、[src/state.rs](file:///home/leaflet/Development/lbbs-rust/src/state.rs)（413 行，加载器发布、会话读取的共享状态）。
 
-合计 25,327 行（含测试，测试就写在被测模块里）。共 376 个测试：库 358 个、可执行文件 6 个都不需要数据库，另有 12 个因为需要真实数据库和真实文件而默认跳过。
+合计 27,196 行（含测试，测试就写在被测模块里）。共 379 个测试：库 373 个、可执行文件 6 个都不需要数据库，另有 12 个因为需要真实数据库和真实文件而默认跳过。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
 
@@ -231,20 +232,30 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
     全部的回应；过不了 `S_POST | S_MAN_S` 的用户按下去，列表原样重画，没有提示也没有响铃。
 19. **全屏编辑器**（`editor.c`）：插入与改写、行与窗口的行列运算、`Ctrl-K`/`Ctrl-Y` 删除、退格合并行、
     宽字符整体删除、`Ctrl-W`/`Ctrl-X` 不重绘直接退出、状态行，以及 `MAX_EDITOR_DATA_LINES` 上限。
-20. **生成文章缓存。** [`cache::generate`](file:///home/leaflet/Development/lbbs-rs/src/cache.rs) 与 C 的
+20. **生成文章缓存。** [`cache::generate`](file:///home/leaflet/Development/lbbs-rust/src/cache.rs) 与 C 的
     `article_cache_generate` 逐字节一致，加载器在每收录一帖、每重放一个 `'M'` 之后都会调用它
     （`section_list_loader.c:327`、`:542`），所以 `var/articles/<CID>` 会自己出现——帖子落库后一秒之内，与 C 相同。
 21. **两张花名册页面和它们身后的资料页**——`user_list_display(1)` 与 `user_list_display(0)`
-    （[`userlist::user_list_display`](file:///home/leaflet/Development/lbbs-rs/src/userlist.rs)），只从主菜单的
+    （[`userlist::user_list_display`](file:///home/leaflet/Development/lbbs-rust/src/userlist.rs)），只从主菜单的
     线上使用者、已注册用户两项进来。两页是同一个页面换一面旗子：标题行、栏头、一页 20 行，加上 `k`/`j`/`p`/`n`/
     `↑`/`↓`/`Home`/`End`/`PgUp`/`PgDn`——含 C 那个一键两用的习惯：翻到页尾再按 `Home` 会先定在第一页、接着照样挪
     光标，而 `Enter` 打开光标那一行用户的资料页
-    （[`userinfo::user_info_display`](file:///home/leaflet/Development/lbbs-rs/src/userinfo.rs)）再重画本页。
+    （[`userinfo::user_info_display`](file:///home/leaflet/Development/lbbs-rust/src/userinfo.rs)）再重画本页。
     `s` 在名单里跑用户名查找，`h` 显示阅读帮助，`N` 转到最后一条、`P` 转到第一条。三个时长栏都是把裸秒数交给
     `gmtime` 当成日期来读，所以空闲一小时打的是 `0"`，一年前登录打的是 `1年0天`。
 22. **站长的 关闭系统 菜单项**——`shutdown_bbs`（`menu_proc.c:176-193`），连问句一起。答案只有一格宽，
     而那一格一开始就坐着默认的 `N`，所以直接输入会被 `get_data` 响铃拒绝，`Y` 要先把 `N` 删掉才填得进去；
     回车、`Esc`、超时都让系统继续运行，两种结果都由 `REDRAW` 把菜单重新画回问句之上。
+23. **站点穿梭**——`bbs_net`（[`bbsnet::bbs_net`](file:///home/leaflet/Development/lbbs-rust/src/bbsnet.rs)），入口是
+    特别服务区菜单里的 `【 网络连线 】`，走的还是 C 那条路：`@RunMBEM` 的参数 `N@mod:lib/libbbs.so#bbs_net`
+    把入口名写在 `#` 后面，而穿梭无论答回什么，`REDRAW` 都会把菜单重画一次。站点表读自 `conf/bbsnet.conf`，
+    字段上限照 C（40、40、253、5、20 字节），`#` 开头是注释，端口先按 `strtol` 读、再验 `1..65535`，
+    所以坏掉的一行是整行跳过而不是读半截。网格一行四个站点——`'A'…'Z'` 用完接 `'a'…'z'`，行号 `2+id/4`、
+    列号 `5+id%4*20`——下面跟着所选站点的详情块；`↑`/`↓` 一次走一整行，`←`/`→` 走一格。回车进入
+    `bbsnet_connect`：十秒预算配着那条反白的进度条，解析—绑定—非阻塞 connect 的顺序与 C 相同，被拒绝的连接
+    要等预算走完才报出来（这个怪癖照留），然后 `IPTOS_LOWDELAY`，再按站点自己的字符集双向转码中继；
+    标了 `SSH` 的站点只对从 SSH 进来的会话开放，libssh 那一段换用 russh 重写，四种宿主密钥答案和五条提示都在。
+    进度条跑动时按下的键会被连接吃掉，与 C 一致；`Ctrl+C`、`Esc` 取消，任何结果都重画整个界面。
 
 ### 6.2 在真实论坛数据库上验证过
 
@@ -256,7 +267,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 `user_online` 行——这几轮测试没有在那张表里留下任何东西。验证过程没有向生产数据库写入任何文章、短信或标记。
 
 精华这条 SQL 阶梯只有真实库能源出证据，于是
-[`the_digest_ladder_rolls_everything_back`](file:///home/leaflet/Development/lbbs-rs/src/post.rs) 在上面跑一遍，
+[`the_digest_ladder_rolls_everything_back`](file:///home/leaflet/Development/lbbs-rust/src/post.rs) 在上面跑一遍，
 事务只 drop 不提交：标记与作者的经验值在事务还开着的时候读回来一次，回滚之后再读一次。回滚掉的 `INSERT`
 仍然会让 `bbs_article_op` 的自增计数往前走一格，这是全过程留下的唯一痕迹。
 
@@ -271,12 +282,12 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 
 ### 6.3 ⬜ 尚未完成
 
-1. **写入路径背后的界面**：精华区树、用户资料编辑器、统计、文章转送、`display_article_meta`。
+1. **写入路径背后的界面**：精华区树、用户资料编辑器、统计、`display_article_meta`。
    这些按键目前会记一条 `... is not implemented`，而不是假装能用。
 2. **指向上面这些处理函数的一级菜单条目**：`bbs_do_choice` 只记日志并返回，所以上位菜单仍有只会记日志的键。
-   `LIST_ONLINE_USER` 与 `LIST_USER` 已经接上，它们通向的资料页与用户名查找也一并接好了；还在只记日志的是
-   `EDIT_INTRO`、`EDIT_SIGN`、`RunMBEM`、`DATAMGR`、`VIEW_EX_ARTICLE`、`LIST_EX_SECTION`、`M_FAVOR_SECTION`
-   与 `FAVOR_TOPIC`。
+   `LIST_ONLINE_USER`、`LIST_USER` 与 `RunMBEM` 已经接上，前两个通向的资料页与用户名查找也一并接好了；
+   还在只记日志的是 `EDIT_INTRO`、`EDIT_SIGN`、`DATAMGR`、`VIEW_EX_ARTICLE`、`LIST_EX_SECTION`、
+   `M_FAVOR_SECTION` 与 `FAVOR_TOPIC`。
 3. **Phase 2 的收尾**：GBK 的边角情况、SSH 的窗口大小（有意忽略，理由见 `src/ssh.rs` 文件头），
    以及与 C 就 Phase 1 全部界面做逐屏对照。
 
@@ -296,18 +307,18 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | Linux | — | 开发与验证都在 Linux 上进行 |
 | locale | `en_US.UTF-8` | `locale -a` 里必须有它：服务器在写出任何文章缓存之前会安装这个 locale，与 C 一样，缺了就拒绝启动 |
 
-`cargo` 是 Rust 自带的构建与测试工具。以下命令都在 `lbbs-rs/` 目录里执行。
+`cargo` 是 Rust 自带的构建与测试工具。以下命令都在 `lbbs-rust/` 目录里执行。
 
 ```bash
-cd lbbs-rs
+cd lbbs-rust
 cargo build            # 编译库和可执行文件
-cargo test             # 364 个不需要数据库的测试（另有 12 个见 7.2）
+cargo test             # 379 个不需要数据库的测试（另有 12 个见 7.2）
 ```
 
 正常情况长这样：
 
 ```
-test result: ok. 358 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out
+test result: ok. 373 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
@@ -353,8 +364,8 @@ cargo test --lib -- --ignored --skip live_flush
 
 ```bash
 cargo build --release
-mkdir -p bin && cp target/release/lbbs_rs bin/
-./bin/lbbs_rs --foreground          # 读取 conf/bbsd.conf，监听 telnet 与 SSH
+mkdir -p bin && cp target/release/lbbs_rust bin/
+./bin/lbbs_rust --foreground          # 读取 conf/bbsd.conf，监听 telnet 与 SSH
 telnet -c localhost 2323            # 用 telnet 连接
 ssh -p 2322 guest@localhost         # 用 SSH 连接
 ```
@@ -370,11 +381,11 @@ ssh -p 2322 guest@localhost         # 用 SSH 连接
 模板文件里写的还是 C 的 `23` 和 `22`。
 用 telnet 连接时请加 `-c`：服务器会要求客户端停止本地回显，加 `-c` 可以避免协商完成前字符被显示两次。
 
-> **同一个数据库同时只跑一个前端。** `lbbs_rs` 和 `bbsd` 写的是同样的 `user_online`、`visit_log` 行；
+> **同一个数据库同时只跑一个前端。** `lbbs_rust` 和 `bbsd` 写的是同样的 `user_online`、`visit_log` 行；
 > 一起跑不会损坏数据，但在线列表和计数会重复。
 
 游客会话能一路走完：两个提示、欢迎页、登录、上位菜单、讨论区组、版块、帖子列表，以及一篇真实帖子。
-[tools/guest_smoke.py](file:///home/leaflet/Development/lbbs-rs/tools/guest_smoke.py)
+[tools/guest_smoke.py](file:///home/leaflet/Development/lbbs-rust/tools/guest_smoke.py)
 驱动的就是这条路径，它停在权限门口，因此不会写任何东西；运行方式是
 `python3 tools/guest_smoke.py 2323`。
 
@@ -386,7 +397,7 @@ ssh -p 2322 guest@localhost         # 用 SSH 连接
 都在树里；不进 git 的只有属于某台机器、属于某个人的东西——密码和主机密钥。
 
 ```
-lbbs-rs/                       ← 服务器根目录（见 7.3）
+lbbs-rust/                      ← 服务器根目录（见 7.3）
 ├── bin/                       ← 放编译好的二进制；不进 git
 ├── conf/
 │   ├── bbsd.conf.default      ← 主配置模板
@@ -423,12 +434,12 @@ lbbs-rs/                       ← 服务器根目录（见 7.3）
   ```
 - **`var/articles/` 是内容，由服务器自己生成。** `article` 表存的是索引，读者看到的正文来自
   `var/articles/<CID>`，文件不存在就是硬错误，日志写作 `article_cache_load(aid=…, cid=…) error`，与 C 一致。
-  加载器在收录新帖时就把这些文件写出来（[`cache::generate`](file:///home/leaflet/Development/lbbs-rs/src/cache.rs)
+  加载器在收录新帖时就把这些文件写出来（[`cache::generate`](file:///home/leaflet/Development/lbbs-rust/src/cache.rs)
   就是那套渲染逻辑的移植，且与 C 逐字节一致），所以一个空目录会自己从数据库里填满——测试论坛的 28000 个文件、
   130 MB 大约两秒——不必再从别的目录复制。它照样不进 git，`.gitignore` 已经替你做了这件事。
 
-Rust 里这些路径集中放在 [src/paths.rs](file:///home/leaflet/Development/lbbs-rs/src/paths.rs)，
-再相对于 [`Session`](file:///home/leaflet/Development/lbbs-rs/src/session.rs) 持有的服务器根目录解析。
+Rust 里这些路径集中放在 [src/paths.rs](file:///home/leaflet/Development/lbbs-rust/src/paths.rs)，
+再相对于 [`Session`](file:///home/leaflet/Development/lbbs-rust/src/session.rs) 持有的服务器根目录解析。
 
 `conf/bbsd.conf` 的键名（与 C 完全一致，含义一致、怪癖也一致）：
 
@@ -479,23 +490,23 @@ Rust 里这些路径集中放在 [src/paths.rs](file:///home/leaflet/Development
 
 | # | 用户看到什么 | C 中的处理 | Rust 中的位置 / 状态 |
 | --- | --- | --- | --- |
-| 1 | 建立连接 | `bbs_net.c` accept 后 fork | [`net::listen`](file:///home/leaflet/Development/lbbs-rs/src/net.rs) 一条连接一个任务，连接数检查与 `Accept ... connection from` 日志都与 C 一致 ✅ |
-| 1a | 走 SSH 进来 | `net_server.c` 的 libssh 子进程 | [`ssh.rs`](file:///home/leaflet/Development/lbbs-rs/src/ssh.rs)：密码认证之后跑同一段会话；`欢迎使用ssh方式访问` 顶替登录提示 ✅ |
-| 2 | 被问 `(U)UTF-8/(G)GBK? [U]` | `bbs_charset_select`，两次 5 秒超时提示 | [`bbs_charset_select`](file:///home/leaflet/Development/lbbs-rs/src/bbs.rs) ✅ |
-| 3 | `(V)变宽/(F)定宽`（宽度模式） | 同一组提示 | 同一次调用，两个答案都接到 [`Terminal::set_fixed_width`](file:///home/leaflet/Development/lbbs-rs/src/term/mod.rs) ✅ |
-| 4 | 欢迎画面 | 以 `display_file(..., 2)` 显示 `data/welcome.txt` | [`Session::display_file`](file:///home/leaflet/Development/lbbs-rs/src/session.rs#L217) ✅ |
-| 5 | “请输入帐号” | `bbs_login`，最多 3 次 | [`login()`](file:///home/leaflet/Development/lbbs-rs/src/login.rs#L160) ✅ |
+| 1 | 建立连接 | `net_server.c` accept 后 fork | [`net::listen`](file:///home/leaflet/Development/lbbs-rust/src/net.rs) 一条连接一个任务，连接数检查与 `Accept ... connection from` 日志都与 C 一致 ✅ |
+| 1a | 走 SSH 进来 | `net_server.c` 的 libssh 子进程 | [`ssh.rs`](file:///home/leaflet/Development/lbbs-rust/src/ssh.rs)：密码认证之后跑同一段会话；`欢迎使用ssh方式访问` 顶替登录提示 ✅ |
+| 2 | 被问 `(U)UTF-8/(G)GBK? [U]` | `bbs_charset_select`，两次 5 秒超时提示 | [`bbs_charset_select`](file:///home/leaflet/Development/lbbs-rust/src/bbs.rs) ✅ |
+| 3 | `(V)变宽/(F)定宽`（宽度模式） | 同一组提示 | 同一次调用，两个答案都接到 [`Terminal::set_fixed_width`](file:///home/leaflet/Development/lbbs-rust/src/term/mod.rs) ✅ |
+| 4 | 欢迎画面 | 以 `display_file(..., 2)` 显示 `data/welcome.txt` | [`Session::display_file`](file:///home/leaflet/Development/lbbs-rust/src/session.rs#L217) ✅ |
+| 5 | “请输入帐号” | `bbs_login`，最多 3 次 | [`login()`](file:///home/leaflet/Development/lbbs-rust/src/login.rs#L160) ✅ |
 | 6 | 输入 `guest` 或 `new` | 试用账号 / 注册说明 | ✅（`new` 显示说明后结束会话） |
-| 7 | “请输入密码” | `check_user` | [`check_user()`](file:///home/leaflet/Development/lbbs-rs/src/login.rs#L235) ✅ |
+| 7 | “请输入密码” | `check_user` | [`check_user()`](file:///home/leaflet/Development/lbbs-rust/src/login.rs#L235) ✅ |
 | 8 | 失败次数过多被挡住 | /24 网段 10 分钟内 10 次；单账号 3 次 | ✅（`ipmask::subnet_pattern` + `db::count_errors_by_*`） |
 | 9 | `您目前无权登陆...` | 原样复现，包括“先写日志再判断”的顺序 | ✅ |
-| 10 | “用户协议已更新” | `user_update_agreement` | [`update_agreement()`](file:///home/leaflet/Development/lbbs-rs/src/login.rs#L418) ✅，两种传输都会调用 |
-| 11 | 上线登记、访问计数 | `user_online_add`、`visit_log` | [`Session::online_add`](file:///home/leaflet/Development/lbbs-rs/src/session.rs#L162) ✅ |
-| 12 | `var/bbs_top.txt` + 上位菜单 | `display_file(VAR_BBS_TOP)` → `bbs_center` | [`bbs_main`](file:///home/leaflet/Development/lbbs-rs/src/bbs.rs) ✅，含十秒一次的 `data/active_board.txt` 面板 |
-| 13 | 选版块 → 选帖子 → 阅读 | 菜单条目 + `display_file` + `section_list_*` | 菜单解析与跳转 ✅，[`browse`](file:///home/leaflet/Development/lbbs-rs/src/browse.rs) ✅ —— 这正是 `tools/guest_smoke.py` 走的那条游客路径 |
-| 14 | 发帖、回复、修改、删除 | 编辑器 + 写 `var/articles/` + 更新数据库 + 违禁词 | [`editor`](file:///home/leaflet/Development/lbbs-rs/src/editor.rs) ✅，[`post`](file:///home/leaflet/Development/lbbs-rs/src/post.rs) ✅（每个动作一个事务，提交时过滤违禁词）；游客在任何 SQL 之前就被拒绝 |
-| 15 | 经验值结算与告别 | `user_online_exp` + `data/goodbye.txt` | [`Session::logout`](file:///home/leaflet/Development/lbbs-rs/src/session.rs#L244) ✅ |
-| 16 | 从在线列表消失 | `user_online_del` | [`Session::cleanup`](file:///home/leaflet/Development/lbbs-rs/src/session.rs#L260) ✅ |
+| 10 | “用户协议已更新” | `user_update_agreement` | [`update_agreement()`](file:///home/leaflet/Development/lbbs-rust/src/login.rs#L418) ✅，两种传输都会调用 |
+| 11 | 上线登记、访问计数 | `user_online_add`、`visit_log` | [`Session::online_add`](file:///home/leaflet/Development/lbbs-rust/src/session.rs#L162) ✅ |
+| 12 | `var/bbs_top.txt` + 上位菜单 | `display_file(VAR_BBS_TOP)` → `bbs_center` | [`bbs_main`](file:///home/leaflet/Development/lbbs-rust/src/bbs.rs) ✅，含十秒一次的 `data/active_board.txt` 面板 |
+| 13 | 选版块 → 选帖子 → 阅读 | 菜单条目 + `display_file` + `section_list_*` | 菜单解析与跳转 ✅，[`browse`](file:///home/leaflet/Development/lbbs-rust/src/browse.rs) ✅ —— 这正是 `tools/guest_smoke.py` 走的那条游客路径 |
+| 14 | 发帖、回复、修改、删除 | 编辑器 + 写 `var/articles/` + 更新数据库 + 违禁词 | [`editor`](file:///home/leaflet/Development/lbbs-rust/src/editor.rs) ✅，[`post`](file:///home/leaflet/Development/lbbs-rust/src/post.rs) ✅（每个动作一个事务，提交时过滤违禁词）；游客在任何 SQL 之前就被拒绝 |
+| 15 | 经验值结算与告别 | `user_online_exp` + `data/goodbye.txt` | [`Session::logout`](file:///home/leaflet/Development/lbbs-rust/src/session.rs#L244) ✅ |
+| 16 | 从在线列表消失 | `user_online_del` | [`Session::cleanup`](file:///home/leaflet/Development/lbbs-rust/src/session.rs#L260) ✅ |
 
 还是 ⬜ 的那些格子是这些按键背后的界面，见 6.3 节。
 
@@ -522,15 +533,16 @@ Rust 里这些路径集中放在 [src/paths.rs](file:///home/leaflet/Development
 
 | 原始行为 | 位置 | 为什么不能“顺手修好” |
 | --- | --- | --- |
-| 权限列表的折半查找是坏的：取决于版块加入的先后顺序，已存下的版块权限可能**再也查不到** | [`privilege.rs`](file:///home/leaflet/Development/lbbs-rs/src/privilege.rs) | 一旦“修好”，某些人的权限会凭空改变 |
+| 权限列表的折半查找是坏的：取决于版块加入的先后顺序，已存下的版块权限可能**再也查不到** | [`privilege.rs`](file:///home/leaflet/Development/lbbs-rust/src/privilege.rs) | 一旦“修好”，某些人的权限会凭空改变 |
 | 列表为空时会去检查第 0 个槽位（SID 0，即全局权限位） | 同上 | 同上 |
-| `ip_mask` 会在**第一个被掩码的字节处截断字符串**，所以带第五段的地址尾部会消失 | [`ipmask.rs`](file:///home/leaflet/Development/lbbs-rs/src/ipmask.rs) | 限流用的 `LIKE '202.38.64.%'` 正是依赖这个表达式 |
-| 用户名/密码**格式校验阶段一条 SQL 都不发**，所以格式错误的尝试不会被记录 | [`login.rs`](file:///home/leaflet/Development/lbbs-rs/src/login.rs) | 网页端的解锁功能依赖这些计数 |
+| `ip_mask` 会在**第一个被掩码的字节处截断字符串**，所以带第五段的地址尾部会消失 | [`ipmask.rs`](file:///home/leaflet/Development/lbbs-rust/src/ipmask.rs) | 限流用的 `LIKE '202.38.64.%'` 正是依赖这个表达式 |
+| 用户名/密码**格式校验阶段一条 SQL 都不发**，所以格式错误的尝试不会被记录 | [`login.rs`](file:///home/leaflet/Development/lbbs-rust/src/login.rs) | 网页端的解锁功能依赖这些计数 |
 | 账号被停用（`p_login = 0`）时，登录日志**先提交**再拒绝 | 同上 | 否则访问计数会变 |
 | 走 EULA 流程时既不更新访问计数，也不登记在线 | 同上 | 同上 |
-| `moveto` 遇到负数会带符号输出；行号为负时只输出一个 `\r` | [`Terminal::moveto_signed`](file:///home/leaflet/Development/lbbs-rs/src/term/mod.rs#L231) | 菜单光标位置依赖这个行为 |
-| 跨包被切断的按键序列会被丢弃并报成 `ESC` | [`Terminal::read_key`](file:///home/leaflet/Development/lbbs-rs/src/term/mod.rs#L275) | 分页器的按键手感必须完全一致 |
-| `S_DEFAULT = 0x3`（可看列表 + 可得经验值），**不含发帖位** | [`privilege.rs`](file:///home/leaflet/Development/lbbs-rs/src/privilege.rs) | 让新账号“更方便”就会与网页端不一致 |
+| `moveto` 遇到负数会带符号输出；行号为负时只输出一个 `\r` | [`Terminal::moveto_signed`](file:///home/leaflet/Development/lbbs-rust/src/term/mod.rs#L231) | 菜单光标位置依赖这个行为 |
+| 跨包被切断的按键序列会被丢弃并报成 `ESC` | [`Terminal::read_key`](file:///home/leaflet/Development/lbbs-rust/src/term/mod.rs#L275) | 分页器的按键手感必须完全一致 |
+| `S_DEFAULT = 0x3`（可看列表 + 可得经验值），**不含发帖位** | [`privilege.rs`](file:///home/leaflet/Development/lbbs-rust/src/privilege.rs) | 让新账号“更方便”就会与网页端不一致 |
+| 被对方**拒绝**的连接不会立刻报出来，要等十秒预算走完，然后报 `连接超时！` | [`bbsnet::connect`](file:///home/leaflet/Development/lbbs-rust/src/bbsnet.rs) | C 的等待循环在“可写但没连上”的套接字上继续空转，进度条期间按下的键也被连接吃掉；提前失败会同时改掉屏幕上的字和真正送到站点的按键 |
 
 真要对上述任何一条做修复，应当与数据、网页端一起作为一次协同变更，绝不能在移植里悄悄改掉。
 
@@ -542,26 +554,26 @@ owned buffer、RAII guard 和绑定参数。每个修复*说明*了什么，已�
 
 | 参考端提交 | C 里的问题 | Rust 版在哪儿交代了 |
 | --- | --- | --- |
-| `6012565` | `io.c` 往 `char tmp[]` 里累积 ESC 序列却没有上界，修复后停在 `sizeof(tmp) - 1` | [`term/mod.rs`](file:///home/leaflet/Development/lbbs-rs/src/term/mod.rs) —— 解码器消费 `Vec<u8>`，不完整就报 partial，没有会被写爆的定长累加器 |
-| `de5fa0f` | `article_cache.c` 的错误路径漏掉 `render_len`、一个 `fd` 和两次映射 | [`cache.rs`](file:///home/leaflet/Development/lbbs-rs/src/cache.rs) —— `File` 与 `Vec` 在任何 return 上都会自行释放 |
-| `a2f6c10` | `article_post.c:276`、`:1149`：`len_content` 累加的是 `snprintf` *想*写的长度；`article_reply` 忽略 `lml_render` 的负返回 | [`post.rs`](file:///home/leaflet/Development/lbbs-rs/src/post.rs) 头部的“页脚”那一条 |
-| `37dfc47` | `screen.c` 用 `sizeof(MENU_ITEM)` 走 screen 池，上限也误用 `menu_item_count` | [`menu.rs`](file:///home/leaflet/Development/lbbs-rs/src/menu.rs) —— `set.screens.len() >= MAX_MENUS` 上方的注释 |
-| `c996502` | `lml.c:482-486` 把长度等于 `LML_TAG_PARAM_BUF_LEN` 的参数拷进同样长度的缓冲区，覆盖掉调用方的 NUL | [`lml.rs`](file:///home/leaflet/Development/lbbs-rs/src/lml.rs) —— 参数拷贝处的钳制 |
-| `a02a212`、`c6444e2` | `db_open` 有三条失败路径没 `mysql_close`；`data_file_mgr.c` 对 `MAP_FAILED` 调了 `munmap` | [`db.rs`](file:///home/leaflet/Development/lbbs-rs/src/db.rs)（连接池没有句柄可漏）、[`state.rs`](file:///home/leaflet/Development/lbbs-rs/src/state.rs)（根本没有映射） |
-| `b2e764c` | `bwf.c` 把零长度的行当成空行；`user_list.c` 读 `row[3][0]` 少了邻居都有的 NULL 判断 | [`bwf.rs`](file:///home/leaflet/Development/lbbs-rs/src/bwf.rs) —— 空行跳过处的注释；[`db.rs`](file:///home/leaflet/Development/lbbs-rs/src/db.rs#L334) —— `gender` 解码成不可能为 NULL 的 `String`，因为该列是 `char(1) NOT NULL DEFAULT 'M'` |
-| `51b1c7f` | 两处 `prints(buffer)` 让用户文本里的 `%` 被当成格式 | [`Terminal::print`](file:///home/leaflet/Development/lbbs-rs/src/term/mod.rs) —— Rust 的 `print` 根本不接收格式 |
-| `d7f2f5d` | `section_list_loader.c:145-152` 跳出版块循环时仍持着写锁 | [`loader.rs`](file:///home/leaflet/Development/lbbs-rs/src/loader.rs) —— `load_section_config` 的文档；这里的 guard 不可能活过一趟刷新 |
-| `0e5224a` | `editor.c` 清 `p_display_lines[]` 时每个指针只清 1 字节，回收来的池节点因此留着 7/8 的脏行 | [`editor.rs`](file:///home/leaflet/Development/lbbs-rs/src/editor.rs) —— `recount()` 由数据行重算显示行，脏尾巴撑不过一次编辑 |
-| `336b670` | `str_process.c` 先写第 `line_offsets_count` 行的宽度、后判边界，行号多的文件会写越偏移数组 | [`text.rs`](file:///home/leaflet/Development/lbbs-rs/src/text.rs) —— `split_data_lines` 先判后截，由 `wrapped_respects_line_cap` 钉住 |
+| `6012565` | `io.c` 往 `char tmp[]` 里累积 ESC 序列却没有上界，修复后停在 `sizeof(tmp) - 1` | [`term/mod.rs`](file:///home/leaflet/Development/lbbs-rust/src/term/mod.rs) —— 解码器消费 `Vec<u8>`，不完整就报 partial，没有会被写爆的定长累加器 |
+| `de5fa0f` | `article_cache.c` 的错误路径漏掉 `render_len`、一个 `fd` 和两次映射 | [`cache.rs`](file:///home/leaflet/Development/lbbs-rust/src/cache.rs) —— `File` 与 `Vec` 在任何 return 上都会自行释放 |
+| `a2f6c10` | `article_post.c:276`、`:1149`：`len_content` 累加的是 `snprintf` *想*写的长度；`article_reply` 忽略 `lml_render` 的负返回 | [`post.rs`](file:///home/leaflet/Development/lbbs-rust/src/post.rs) 头部的“页脚”那一条 |
+| `37dfc47` | `screen.c` 用 `sizeof(MENU_ITEM)` 走 screen 池，上限也误用 `menu_item_count` | [`menu.rs`](file:///home/leaflet/Development/lbbs-rust/src/menu.rs) —— `set.screens.len() >= MAX_MENUS` 上方的注释 |
+| `c996502` | `lml.c:482-486` 把长度等于 `LML_TAG_PARAM_BUF_LEN` 的参数拷进同样长度的缓冲区，覆盖掉调用方的 NUL | [`lml.rs`](file:///home/leaflet/Development/lbbs-rust/src/lml.rs) —— 参数拷贝处的钳制 |
+| `a02a212`、`c6444e2` | `db_open` 有三条失败路径没 `mysql_close`；`data_file_mgr.c` 对 `MAP_FAILED` 调了 `munmap` | [`db.rs`](file:///home/leaflet/Development/lbbs-rust/src/db.rs)（连接池没有句柄可漏）、[`state.rs`](file:///home/leaflet/Development/lbbs-rust/src/state.rs)（根本没有映射） |
+| `b2e764c` | `bwf.c` 把零长度的行当成空行；`user_list.c` 读 `row[3][0]` 少了邻居都有的 NULL 判断 | [`bwf.rs`](file:///home/leaflet/Development/lbbs-rust/src/bwf.rs) —— 空行跳过处的注释；[`db.rs`](file:///home/leaflet/Development/lbbs-rust/src/db.rs#L334) —— `gender` 解码成不可能为 NULL 的 `String`，因为该列是 `char(1) NOT NULL DEFAULT 'M'` |
+| `51b1c7f` | 两处 `prints(buffer)` 让用户文本里的 `%` 被当成格式 | [`Terminal::print`](file:///home/leaflet/Development/lbbs-rust/src/term/mod.rs) —— Rust 的 `print` 根本不接收格式 |
+| `d7f2f5d` | `section_list_loader.c:145-152` 跳出版块循环时仍持着写锁 | [`loader.rs`](file:///home/leaflet/Development/lbbs-rust/src/loader.rs) —— `load_section_config` 的文档；这里的 guard 不可能活过一趟刷新 |
+| `0e5224a` | `editor.c` 清 `p_display_lines[]` 时每个指针只清 1 字节，回收来的池节点因此留着 7/8 的脏行 | [`editor.rs`](file:///home/leaflet/Development/lbbs-rust/src/editor.rs) —— `recount()` 由数据行重算显示行，脏尾巴撑不过一次编辑 |
+| `336b670` | `str_process.c` 先写第 `line_offsets_count` 行的宽度、后判边界，行号多的文件会写越偏移数组 | [`text.rs`](file:///home/leaflet/Development/lbbs-rust/src/text.rs) —— `split_data_lines` 先判后截，由 `wrapped_respects_line_cap` 钉住 |
 | `038dd6b` | 版本号 | 本节 |
-| `4553b19` | `article_favor.c:145`、`:211` 往 `sql_del` 里写前缀却按 `sizeof(sql_add)` 计长——确实是笔误，只因两个缓冲区同为 `SQL_BUFFER_LEN` 才没出事 | [`db.rs`](file:///home/leaflet/Development/lbbs-rs/src/db.rs#L772) —— `QueryBuilder` 直接把前缀拼出来，没有“拿错变量的缓冲区大小”这回事 |
-| `ebaa144` | 共享内存里跟在文本之后的 `long[]` 偏移表落在 `data_len + 1`，一般并不对齐；新增的 `shm_offsets_offset()` 把长度计算、写入端、读取端统一向上取整 | 本项目从不构造那种布局：[`state.rs`](file:///home/leaflet/Development/lbbs-rs/src/state.rs) 存文件字节，[`screen.rs`](file:///home/leaflet/Development/lbbs-rs/src/screen.rs) 按会话折行（`file_loader.c:88` 那两处引用正是被挪走的这一行） |
-| `37b0660` | `log.c:114-117`：`log_printf` 照级别挑一个 `FILE *` 就写，`log_begin()` 之前写日志就是空指针解引用；现在退回 `stderr` | [`log::begin`](file:///home/leaflet/Development/lbbs-rs/src/log.rs#L276) 打开两个流，打不开就终止启动，`main.rs:134` 在任何会话或加载任务之前就把 subscriber 装好——这里没有“还没打开”的状态可退 |
-| `65ce0f7` | trie 字典自测对负的 `int64_t` 做左移（`TEST_VAL << i`），这在 C 里是 UB | Rust 里有定义，而 C 用 trie 存的那几张表在这里是 `HashMap`（[`board.rs`](file:///home/leaflet/Development/lbbs-rs/src/board.rs)、[`roster.rs`](file:///home/leaflet/Development/lbbs-rs/src/roster.rs)）；参考端那个自测没有对应物 |
-| `b7a8b16` | `editor.c:395-414`：三次 `memmove` 直接按 `display_line_total - last_display_line - 1` 平移显示行，计数一脏就变成巨大的 `size_t`，前后两头越界；修复要求 `display_line_total >= last_display_line + 1`，否则把这条意外记进日志 | [`editor.rs`](file:///home/leaflet/Development/lbbs-rs/src/editor.rs) —— `EditorData::insert` 改数据行、`recount()` 重算显示行，没有需要平移的平行数组，那个负长度在这里没有形状 |
+| `4553b19` | `article_favor.c:145`、`:211` 往 `sql_del` 里写前缀却按 `sizeof(sql_add)` 计长——确实是笔误，只因两个缓冲区同为 `SQL_BUFFER_LEN` 才没出事 | [`db.rs`](file:///home/leaflet/Development/lbbs-rust/src/db.rs#L772) —— `QueryBuilder` 直接把前缀拼出来，没有“拿错变量的缓冲区大小”这回事 |
+| `ebaa144` | 共享内存里跟在文本之后的 `long[]` 偏移表落在 `data_len + 1`，一般并不对齐；新增的 `shm_offsets_offset()` 把长度计算、写入端、读取端统一向上取整 | 本项目从不构造那种布局：[`state.rs`](file:///home/leaflet/Development/lbbs-rust/src/state.rs) 存文件字节，[`screen.rs`](file:///home/leaflet/Development/lbbs-rust/src/screen.rs) 按会话折行（`file_loader.c:88` 那两处引用正是被挪走的这一行） |
+| `37b0660` | `log.c:114-117`：`log_printf` 照级别挑一个 `FILE *` 就写，`log_begin()` 之前写日志就是空指针解引用；现在退回 `stderr` | [`log::begin`](file:///home/leaflet/Development/lbbs-rust/src/log.rs#L276) 打开两个流，打不开就终止启动，`main.rs:134` 在任何会话或加载任务之前就把 subscriber 装好——这里没有“还没打开”的状态可退 |
+| `65ce0f7` | trie 字典自测对负的 `int64_t` 做左移（`TEST_VAL << i`），这在 C 里是 UB | Rust 里有定义，而 C 用 trie 存的那几张表在这里是 `HashMap`（[`board.rs`](file:///home/leaflet/Development/lbbs-rust/src/board.rs)、[`roster.rs`](file:///home/leaflet/Development/lbbs-rust/src/roster.rs)）；参考端那个自测没有对应物 |
+| `b7a8b16` | `editor.c:395-414`：三次 `memmove` 直接按 `display_line_total - last_display_line - 1` 平移显示行，计数一脏就变成巨大的 `size_t`，前后两头越界；修复要求 `display_line_total >= last_display_line + 1`，否则把这条意外记进日志 | [`editor.rs`](file:///home/leaflet/Development/lbbs-rust/src/editor.rs) —— `EditorData::insert` 改数据行、`recount()` 重算显示行，没有需要平移的平行数组，那个负长度在这里没有形状 |
 
 **最后这五个就是上一轮同步时还没提交的那批改动。** 其中两个会挪动引用里的行号：`b7a8b16` 在
-`editor_data_insert` 里加了八行，[`editor.rs`](file:///home/leaflet/Development/lbbs-rs/src/editor.rs) 里那个
+`editor_data_insert` 里加了八行，[`editor.rs`](file:///home/leaflet/Development/lbbs-rust/src/editor.rs) 里那个
 hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用的 `split_data_lines` 之上加了七行，把它从
 `file_loader.c:81` 挪到 `:88`。这些都不是照算术改的：每个新行号都先确认它指着的 C 文本与旧行号一致——正因
 如此 `editor.c:344`、`:348-349` 原地不动，插入的判断之后那些才挪。脚本判不下来的只有 `file_loader.c` 那一行
@@ -576,10 +588,10 @@ hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用�
   **两者缺一的移植会被退回。**
 - C 的常量（`BBS_max_section = 200`、`USERNAME_MAX_LEN = 12` 等）统一放进 `paths.rs`，不要写裸数字。
 - 不需要数据库的测试用 `#[test]` / `#[tokio::test]`；要连真实库的必须 `#[ignore]`，并靠 `LBBS_REF_*` 环境变量取路径。
-- 离线测试需要一个 `Session`？用 [`session::offline_session()`](file:///home/leaflet/Development/lbbs-rs/src/session.rs)：
+- 离线测试需要一个 `Session`？用 [`session::offline_session()`](file:///home/leaflet/Development/lbbs-rust/src/session.rs)：
   它构造的是延迟连接池，不会真的建立连接，也不发任何查询。
 - 在 `async fn` 里到处传 `&mut Session` 时注意借用冲突。例如
-  [`Session::display_file`](file:///home/leaflet/Development/lbbs-rs/src/session.rs#L217) 是递归的——
+  [`Session::display_file`](file:///home/leaflet/Development/lbbs-rust/src/session.rs#L217) 是递归的——
   分页器可以请求显示帮助，而帮助本身又是显示文件——所以它的 future 用 `Pin<Box<dyn Future<...>>>` 装箱；
   普通的 `async fn` 无法拥有递归的返回类型。
 - 新增 SQL 之前，先读 C 里同一件事的上下文，**尤其是何时 commit**。
@@ -626,10 +638,10 @@ hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用�
 
 **问：帖子正文在哪？**
 答：`var/articles/<CID>`，由 `article.CID` 索引。C 用 `fopen` 打开；移植版同样是直接打开文件
-（[`cache::load`](file:///home/leaflet/Development/lbbs-rs/src/cache.rs)，由
-[`browse`](file:///home/leaflet/Development/lbbs-rs/src/browse.rs) 调用），写则由加载器完成
-（[`cache::generate`](file:///home/leaflet/Development/lbbs-rs/src/cache.rs)，由
-[`loader`](file:///home/leaflet/Development/lbbs-rs/src/loader.rs) 调用）。联机读到一篇真实帖子的过程见 6.2 节。
+（[`cache::load`](file:///home/leaflet/Development/lbbs-rust/src/cache.rs)，由
+[`browse`](file:///home/leaflet/Development/lbbs-rust/src/browse.rs) 调用），写则由加载器完成
+（[`cache::generate`](file:///home/leaflet/Development/lbbs-rust/src/cache.rs)，由
+[`loader`](file:///home/leaflet/Development/lbbs-rust/src/loader.rs) 调用）。联机读到一篇真实帖子的过程见 6.2 节。
 
 **问：我的脚本在驱动会话，按键却没有反应。**
 答：`display_data` 里 `Enter`/`↓` 只滚**一行**，整页要靠空格或 `PgDn`（`screen.c:772-814`），
@@ -655,9 +667,9 @@ hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用�
 ## 14. 延伸阅读
 
 - **原始 C 源码**：`~/Development/lbbs/src/` 与 `~/Development/lbbs/include/` —— 只读。
-- [reference/schema.sql](file:///home/leaflet/Development/lbbs-rs/reference/schema.sql) —— 完整数据库结构。**看不懂某张表时先看这里。**
-- [reference/sql_inventory.md](file:///home/leaflet/Development/lbbs-rs/reference/sql_inventory.md) —— C 版发出的所有 SQL 清单。**排查漏移植时先看这里。**
-- [tests/fixtures/](file:///home/leaflet/Development/lbbs-rs/tests/fixtures) —— 测试用帖子文件，以及从 C 版采集的基准（golden）输出。
+- [reference/schema.sql](file:///home/leaflet/Development/lbbs-rust/reference/schema.sql) —— 完整数据库结构。**看不懂某张表时先看这里。**
+- [reference/sql_inventory.md](file:///home/leaflet/Development/lbbs-rust/reference/sql_inventory.md) —— C 版发出的所有 SQL 清单。**排查漏移植时先看这里。**
+- [tests/fixtures/](file:///home/leaflet/Development/lbbs-rust/tests/fixtures) —— 测试用帖子文件，以及从 C 版采集的基准（golden）输出。
 - 每个模块开头的注释 —— 说明它移植了什么、与 C 差在哪。**这才是最详细的文档。**
 
 ## 15. 许可证

@@ -315,6 +315,24 @@ impl MenuSet {
     pub fn screen_of(&self, menu: &Menu) -> Option<&MenuScreen> {
         self.screens.get(menu.screen_id?)
     }
+
+    /// The pool `bbs_net.c:93-121` builds with `calloc` instead of reading a config file: one
+    /// menu with no title and no `%SCREEN` body, and every item at its own row and column.
+    /// C sizes the item pool to the maximum the screen can hold and counts up what it reads;
+    /// here the items are exactly the ones the reader kept, which is the same list.
+    pub fn hand_built(menu_name: &str, items: Vec<MenuItem>) -> MenuSet {
+        let mut menu = Menu::new(menu_name.to_string());
+        menu.items = (0..items.len()).collect();
+        let mut set = MenuSet {
+            menus: vec![menu],
+            items,
+            screens: Vec::new(),
+            name_dict: HashMap::new(),
+            screen_dict: HashMap::new(),
+        };
+        set.name_dict.insert(menu_name.to_string(), 0);
+        set
+    }
 }
 
 /// `checkpriv(&BBS_priv, 0, priv) && checklevel2(&BBS_priv, level)` (`user_priv.h:72-85`):

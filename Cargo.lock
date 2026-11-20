@@ -1163,7 +1163,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lbbs_rs"
+name = "lbbs_rust"
 version = "0.1.0"
 dependencies = [
  "chrono",

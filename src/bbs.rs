@@ -20,6 +20,7 @@
 use std::pin::Pin;
 use std::time::Duration;
 
+use crate::bbsnet;
 use crate::browse;
 use crate::login::{self, Login};
 use crate::menu::{Action, MenuFlow, MenuNav, MenuReturn};
@@ -419,6 +420,13 @@ pub fn bbs_do_choice<'a>(
             userlist::user_list_display(term, session, true).await;
             MenuReturn::Redraw
         }
+        // `menu_proc.c:53-121`: the parameter carries the entry name after `@mod:`, so the item
+        // picks its own screen and every answer — including a shuttle that never connected —
+        // redraws the menu it came from.
+        Action::RunMbem => {
+            bbsnet::exec_mbem(term, session, param).await;
+            MenuReturn::Redraw
+        }
         // The write and profile handlers arrive with their own tasks; until then an item that
         // resolves to one reports itself instead of looking like a hung key.
         _ => {
@@ -650,5 +658,40 @@ mod tests {
                 action.name()
             );
         }
+    }
+    /// `@RunMBEM` answers with the entry named after the `#` in its own parameter, so the shuttle
+    /// item needs no menu id and no privilege beyond the item's. With no stations configured the
+    /// frame still draws, the pager still complains about the empty selection, and the key that
+    /// leaves it hands the menu back.
+    #[tokio::test]
+    async fn the_mbem_item_opens_the_shuttle() {
+        let root = std::env::temp_dir().join(format!("lbbs-rust-runmbem-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("conf")).unwrap();
+        std::fs::write(root.join("conf/bbsnet.conf"), "# 暂无站点\n").unwrap();
+
+        let (mut client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        let mut session = crate::session::offline_session();
+        session.root = root.clone();
+
+        let (ret, ()) = tokio::join!(
+            bbs_do_choice(
+                &mut term,
+                &mut session,
+                Action::RunMbem,
+                "N@mod:lib/libbbs.so#bbs_net",
+                false
+            ),
+            async {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                client.push(b"\r\x03");
+            }
+        );
+
+        assert_eq!(ret, MenuReturn::Redraw);
+        let screen = String::from_utf8_lossy(&client.take_available()).into_owned();
+        assert!(screen.contains(" [\x1b[1;32mCtrl+C\x1b[m]退出"), "{screen}");
+        assert!(screen.contains("没有可选项"), "{screen}");
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }
