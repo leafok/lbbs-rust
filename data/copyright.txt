@@ -1,0 +1,23 @@
+LeafOK Bulletin Board System  (Web version)
+Copyright (C) 2001-2026       Leaflet <leaflet@leafok.com>
+Source code repository        https://github.com/leafok/leafok_bbs
+
+
+LeafOK Bulletin Board System  (Telnet version)
+Copyright (C) 2004-2026       Leaflet <leaflet@leafok.com>
+Source code repository        https://github.com/leafok/lbbs
+
+
+LeafOK Bulletin Board System  (Telnet version in Rust)
+Copyright (C) 2026            Leaflet <leaflet@leafok.com>
+Source code repository        https://github.com/leafok/lbbs-rust
+
+
+
+This software comes with ABSOLUTELY NO WARRANTY.
+
+This program is free software; you can redistribute it and/or modify 
+it under the terms of the GNU General Public License as published by 
+the Free Software Foundation; either version 3 of the License, or    
+(at your option) any later version. 
+
