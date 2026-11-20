@@ -19,8 +19,10 @@
 /conf/lbbs.service
 /conf/lbbs.service~
 
+/reference
+/tools
+
 # Written while the server runs.
-/log/*
-!/log/.gitkeep
-/var/*
-/tests/*
+/log
+/var
+/tests
