@@ -157,7 +157,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/db.rs](file:///home/leaflet/Development/lbbs-rust/src/db.rs) | 1368 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
 | [src/board.rs](file:///home/leaflet/Development/lbbs-rust/src/board.rs) | 1470 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
 | [src/browse.rs](file:///home/leaflet/Development/lbbs-rust/src/browse.rs) | 2890 | `src/section_list_display.c`、`src/section_list_loader.c` | 帖子列表、列表按键、阅读帖子、阅读位置文件 | 完成 |
-| [src/editor.rs](file:///home/leaflet/Development/lbbs-rust/src/editor.rs) | 1552 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
+| [src/editor.rs](file:///home/leaflet/Development/lbbs-rust/src/editor.rs) | 1812 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
 | [src/post.rs](file:///home/leaflet/Development/lbbs-rust/src/post.rs) | 1488 | `src/article_post.c`、`src/article_del.c`、`src/article_op.c` | 发帖、回复、修改、删除、精华标记，以及各自的事务 | 完成 |
 | [src/viewlog.rs](file:///home/leaflet/Development/lbbs-rust/src/viewlog.rs) | 366 | `src/article_view_log.c` | 记录该用户读过哪些帖子 | 完成 |
 | [src/favorlog.rs](file:///home/leaflet/Development/lbbs-rust/src/favorlog.rs) | 446 | `src/article_favor.c` | 记录该用户收藏了哪些帖子 | 完成 |
@@ -182,7 +182,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 
 另有 [src/daemon.rs](file:///home/leaflet/Development/lbbs-rust/src/daemon.rs)（415 行，命令行与后台化）、[src/log.rs](file:///home/leaflet/Development/lbbs-rust/src/log.rs)（497 行，两个日志文件）、[src/state.rs](file:///home/leaflet/Development/lbbs-rust/src/state.rs)（413 行，加载器发布、会话读取的共享状态）。
 
-合计 28,227 行（含测试，测试就写在被测模块里）。共 397 个测试：库 391 个、可执行文件 6 个都不需要数据库，另有 12 个因为需要真实数据库和真实文件而默认跳过。
+合计 28,487 行（含测试，测试就写在被测模块里）。共 401 个测试：库 395 个、可执行文件 6 个都不需要数据库，另有 12 个因为需要真实数据库和真实文件而默认跳过。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
 
@@ -325,13 +325,13 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 ```bash
 cd lbbs-rust
 cargo build            # 编译库和可执行文件
-cargo test             # 394 个不需要数据库的测试（另有 12 个见 7.2）
+cargo test             # 401 个不需要数据库的测试（另有 12 个见 7.2）
 ```
 
 正常情况长这样：
 
 ```
-test result: ok. 391 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out
+test result: ok. 395 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
@@ -539,6 +539,7 @@ Rust 里这些路径集中放在 [src/paths.rs](file:///home/leaflet/Development
 | `setenv("TZ", ...)` + `tzset()` | 记录在 `Session::user_tz` | 改进程环境会泄漏到其他会话 |
 | 用 `SIGUSR1` 刷新内存池 | `Loader::run` 周期性刷新 | 用任务替代信号 |
 | `editor.c` 每次编辑只重新拆分改动的那条数据行，再挪动显示指针数组 | 同样只重排那一行（[`EditorData::recount_line`](file:///home/leaflet/Development/lbbs-rust/src/editor.rs)） | 最早的移植每敲一个字符就把整个文档重排一遍，黏贴长帖时开销随长度平方增长、把一个 CPU 核跑满，而 C 几乎不耗 CPU |
+| 显示行数已经占满 [`MAX_EDITOR_DATA_LINES`](file:///home/leaflet/Development/lbbs-rust/src/paths.rs) 之后再编辑，需要新行的那部分内容就地丢掉：被改的那一行截短，并在保留的末行末尾粘一个 `'\n'`（`:366-387`）；若改动在更前面，则把数组最后一行削到少一格（`:447-458`） | 同处在到达上限时 | 最早的移植改成拒绝这次编辑，于是一篇写满的文章再也输不进东西；C 在这里是静默截掉尾部。只有一种情形不复现：在一份占满数组的文档里删除最后一行，C 数出来的行数比文档实际多一行——那是它数组里一条不再维护的残留记录，画出来是空的，而移植画的是真实存在的那一行；两种算法存盘的字节一致。 |
 
 ### 10.2 原样复现的 C 语言“怪癖”
 
