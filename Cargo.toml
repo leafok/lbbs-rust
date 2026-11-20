@@ -1,0 +1,16 @@
+[package]
+name = "lbbs_rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = "0.4.45"
+encoding_rs = "0.8.44"
+futures-util = "0.3.34"
+libc = "0.2.191"
+regex = "1.13.2"
+russh = "0.65.2"
+sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "mysql", "chrono", "macros"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "signal", "sync"] }
+tracing = "0.1.44"
+unicode-width = "0.2.3"
