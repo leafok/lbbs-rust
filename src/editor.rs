@@ -6,9 +6,13 @@
 //! so every edit re-splits the line it touched and slides the display array behind it. Rust
 //! owns its buffers, so [`EditorData`] holds the data lines as byte vectors and the wrap of
 //! each one beside it; the display-line numbering [`editor_display`] works in is derived from
-//! the two. Everything the screen half of C reads — `display_line_lengths`,
-//! `display_line_widths`, the `split_line` that turns a column into an offset — has a method
-//! here that returns the same number.
+//! the two, and an edit re-wraps only the line it changed ([`EditorData::recount_line`])
+//! instead of the whole document: re-splitting every line after every character made a pasted
+//! article quadratic in its size, while C only re-splits the line it touched (`:361-362`).
+//! [`EditorData::recount`] is what loading does, and what an edit falls back to where the
+//! display-line cap makes the lines depend on each other. Everything the screen half of C reads
+//! — `display_line_lengths`, `display_line_widths`, the `split_line` that turns a column into an
+//! offset — has a method here that returns the same number.
 //!
 //! A data line is the text up to and including its `'\n'`; only the last one may lack it, and
 //! [`EditorData::load`] adds an empty line after a buffer that ends with one, which is what
@@ -84,7 +88,7 @@ const KEY_CTRL_Q: u32 = ctrl(b'Q');
 const ESC_DISPLAY_STR: &[u8] = b"\x1b[32m*\x1b[m";
 
 /// One display line of one data line: `split_line`'s byte count and cell count.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct Segment {
     /// Byte offset inside the data line.
     start: usize,
@@ -270,7 +274,11 @@ impl EditorData {
 
             self.lines[line] = head;
             self.lines.insert(line + 1, tail);
-            self.recount();
+            if self.segments.len() >= line + 1 {
+                self.segments.insert(line + 1, Vec::new());
+            }
+            self.recount_line(line);
+            self.recount_line(line + 1);
 
             if break_before_insert {
                 // `:312`: C's cursor goes to the display line after the head's last one, which
@@ -284,7 +292,7 @@ impl EditorData {
         } else {
             // `:348-349`: the insert goes into the line at the cursor.
             self.lines[line].splice(pos..pos, inserted.iter().copied());
-            self.recount();
+            self.recount_line(line);
             *offset += str_len as i64;
             *last_updated_line = (*last_updated_line).max(self.last_display(line));
         }
@@ -356,6 +364,9 @@ impl EditorData {
                 return 0;
             }
             let next = self.lines.remove(line + 1);
+            if self.segments.len() > line + 1 {
+                self.total -= self.segments.remove(line + 1).len();
+            }
             let mut head = self.lines[line][..pos].to_vec();
             head.extend_from_slice(&next);
             self.lines[line] = head;
@@ -363,7 +374,7 @@ impl EditorData {
             self.lines[line].splice(pos..pos + str_len as usize, []);
         }
 
-        self.recount();
+        self.recount_line(line);
         // `:609-636`: the redraw reaches the last display line of the line that changed, or
         // the end of what used to be there when the document got shorter.
         let last = self.last_display(line);
@@ -423,7 +434,7 @@ impl EditorData {
     fn recount(&mut self) {
         self.segments.clear();
         self.total = 0;
-        for line in &self.lines {
+        for line in 0..self.lines.len() {
             if self.total >= MAX_EDITOR_DATA_LINES {
                 tracing::debug!(
                     "Line count {} reaches limit {}",
@@ -432,24 +443,56 @@ impl EditorData {
                 );
                 break;
             }
-            let budget = MAX_EDITOR_DATA_LINES - self.total;
-            let wrapped = text::split_data_lines(line, self.cols, false, self.fixed, budget);
-            let mut segments: Vec<Segment> = (0..wrapped.count())
-                .map(|index| Segment {
-                    start: wrapped.offsets[index] as usize,
-                    len: (wrapped.offsets[index + 1] - wrapped.offsets[index]) as usize,
-                    width: wrapped.widths[index] as usize,
-                })
-                .collect();
-            if line.last() == Some(&b'\n') && segments.last().is_some_and(|s| s.len == 0) {
-                segments.pop();
-            }
-            if segments.is_empty() {
-                segments.push(Segment::default());
-            }
+            let mut segments = Vec::new();
+            self.wrap_line(line, MAX_EDITOR_DATA_LINES - self.total, &mut segments);
             self.total += segments.len();
             self.segments.push(segments);
         }
+    }
+
+    /// The wrap of data line `line`, at most `budget` display rows, written into `out`.
+    fn wrap_line(&self, line: usize, budget: usize, out: &mut Vec<Segment>) {
+        let bytes = &self.lines[line];
+        let wrapped = text::split_data_lines(bytes, self.cols, false, self.fixed, budget);
+        out.clear();
+        out.extend((0..wrapped.count()).map(|index| Segment {
+            start: wrapped.offsets[index] as usize,
+            len: (wrapped.offsets[index + 1] - wrapped.offsets[index]) as usize,
+            width: wrapped.widths[index] as usize,
+        }));
+        if bytes.last() == Some(&b'\n') && out.last().is_some_and(|s| s.len == 0) {
+            out.pop();
+        }
+        if out.is_empty() {
+            out.push(Segment::default());
+        }
+    }
+
+    /// Re-wrap one data line in place, leaving the rest of the array as it is.
+    ///
+    /// C only ever re-splits the line it edited (`:361-362`, over at most
+    /// [`MAX_EDITOR_DATA_LINE_LENGTH`] bytes), while a whole-document [`recount`] after every
+    /// character made a pasted article quadratic in its size. The shortcut is exact as long as
+    /// the [`MAX_EDITOR_DATA_LINES`] budget still has room: at the cap, a line's wrap depends on
+    /// what came before it in a way a single line cannot see, so those cases re-wrap everything.
+    fn recount_line(&mut self, line: usize) {
+        if self.total >= MAX_EDITOR_DATA_LINES || self.segments.len() != self.lines.len() {
+            self.recount();
+            return;
+        }
+
+        let budget = MAX_EDITOR_DATA_LINES - self.first_display(line) as usize;
+        let mut segments = Vec::new();
+        self.wrap_line(line, budget, &mut segments);
+        if segments.len() >= budget {
+            // The wrap used up the whole budget, so what follows it would be cut off or
+            // re-budgeted by a full re-split.
+            self.recount();
+            return;
+        }
+
+        self.total = self.total + segments.len() - self.segments[line].len();
+        self.segments[line] = segments;
     }
 }
 
@@ -1319,7 +1362,7 @@ mod tests {
 
     #[tokio::test]
     async fn enter_after_a_row_that_is_exactly_full_starts_the_next_line() {
-        let (mut term, mut session, mut client) = editor_pipe();
+        let (mut term, mut session, client) = editor_pipe();
         // Rows that fill the screen to the last cell: their `'\n'` has no cell left to share the
         // row with, which is the one case where C's incremental wrap disagrees with the wrap it
         // loads with. Text typed after such an Enter used to land inside the row above it, and a
@@ -1335,6 +1378,55 @@ mod tests {
         // Each filled row keeps a display line of its own for the newline, and the last Enter
         // opens the blank line the cursor is on.
         assert_eq!(data.total(), 7);
+    }
+
+    /// An edit re-wraps only the data line it touched, which has to give the same display
+    /// rows as splitting the whole document again — including the edits that add or remove a
+    /// data line, where the wrap array and the data lines are moved separately.
+    #[test]
+    fn editing_rewraps_the_same_way_as_a_full_recount() {
+        let mut state = 0x2545F49144A1C6E3u64;
+        let mut rand = move |limit: u64| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) % limit
+        };
+
+        let mut data = doc("one\ntwo\nthree\n");
+        let mut display_line = 0i64;
+        let mut offset = 0i64;
+        let mut last_updated = 0i64;
+
+        for op in 0..2000u32 {
+            if rand(4) == 0 {
+                data.delete(&mut display_line, &mut offset, &mut last_updated, rand(3) == 0);
+            } else {
+                let bytes: &[u8] = match rand(5) {
+                    0 => b"x",
+                    1 => b" ",
+                    2 => "中".as_bytes(),
+                    3 => b"\n",
+                    _ => b"\x1b",
+                };
+                let _ = data.insert(&mut display_line, &mut offset, bytes, &mut last_updated);
+            }
+
+            if rand(3) == 0 {
+                display_line = rand(data.total() as u64) as i64;
+                offset = rand(30) as i64;
+            } else {
+                // Most of the time the cursor stays at the end of the last row, where the lines
+                // fill up and break and the joins happen.
+                display_line = data.total() as i64 - 1;
+                offset = data.display_line_length(display_line) as i64;
+            }
+
+            let mut whole = data.clone();
+            whole.recount();
+            assert_eq!(whole.total, data.total, "display lines after edit {op}");
+            assert_eq!(whole.segments, data.segments, "wrap after edit {op}");
+        }
     }
 
     #[tokio::test]
