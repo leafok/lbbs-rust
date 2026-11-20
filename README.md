@@ -168,7 +168,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/db.rs](file:///home/leaflet/Development/lbbs-rust/src/db.rs) | 1368 | `src/database.c` etc. | MySQL queries through sqlx | done |
 | [src/board.rs](file:///home/leaflet/Development/lbbs-rust/src/board.rs) | 1470 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
 | [src/browse.rs](file:///home/leaflet/Development/lbbs-rust/src/browse.rs) | 2890 | `src/section_list_display.c`, `src/section_list_loader.c` | the article list, its keys, reading a post, the saved reading position | done |
-| [src/editor.rs](file:///home/leaflet/Development/lbbs-rust/src/editor.rs) | 1395 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
+| [src/editor.rs](file:///home/leaflet/Development/lbbs-rust/src/editor.rs) | 1460 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
 | [src/post.rs](file:///home/leaflet/Development/lbbs-rust/src/post.rs) | 1488 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, and the transaction each writes in | done |
 | [src/viewlog.rs](file:///home/leaflet/Development/lbbs-rust/src/viewlog.rs) | 366 | `src/article_view_log.c` | which posts this user has read | done |
 | [src/favorlog.rs](file:///home/leaflet/Development/lbbs-rust/src/favorlog.rs) | 446 | `src/article_favor.c` | which posts this user starred | done |
@@ -192,7 +192,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/ssh.rs](file:///home/leaflet/Development/lbbs-rust/src/ssh.rs) | 493 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
 | [src/main.rs](file:///home/leaflet/Development/lbbs-rust/src/main.rs) | 542 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
 
-28,070 lines in total, the tests included (they live in the modules they test). There are 394 tests: 388 in the
+28,135 lines in total, the tests included (they live in the modules they test). There are 396 tests: 390 in the
 library and 6 in the binary run without the database; 12 more are ignored because they need the real database and
 files.
 
@@ -361,13 +361,13 @@ wired and unit-tested". The first account that really posts should do it against
 ```bash
 cd lbbs-rust
 cargo build            # compile the library and the binary
-cargo test             # 394 tests that need no database (12 more are opt-in, see 7.2)
+cargo test             # 396 tests that need no database (12 more are opt-in, see 7.2)
 ```
 
 A healthy run looks like this:
 
 ```
-test result: ok. 388 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out
+test result: ok. 390 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```

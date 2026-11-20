@@ -25,11 +25,21 @@
 //!   and the saved bytes are unchanged; only the overflow is gone.
 //! * Where C truncates the text once the display-line array is full — `:366-387` stops the
 //!   re-split and terminates the last line, `:447-458` cuts the final display line short —
-//!   the port refuses the edit instead. Reaching either one needs a document of
-//!   [`MAX_EDITOR_DATA_LINES`] display lines, which the 4 MB body limit rules out first.
+//!   the port refuses the edit instead. [`EditorData::load`] does keep C's cap and drops the
+//!   display lines past [`MAX_EDITOR_DATA_LINES`], because a body of short lines reaches it
+//!   long before the 4 MB content limit does.
 //! * `:437-444`, which moves the cursor to the next display line when an insert ran past the
 //!   end of the current one, is kept; it is what makes typing at the end of a line feel like
 //!   the text is pushing the cursor along.
+//! * C maintains its display array as it edits, and the maintenance disagrees with the loader
+//!   in one case: an Enter that ends a row already [`SCREEN_COLS`] wide leaves that row's
+//!   `'\n'` glued to it — `:308-310` sets the entry to `offset + 1` bytes and re-wraps only the
+//!   text after it — while [`crate::text::split_data_lines`], what [`EditorData::recount`] runs
+//!   over, gives the newline a row of its own. So the same text has one display line more in
+//!   the port than in C right after the edit, and C's `display_line + 1` would point at that
+//!   row; [`EditorData::insert`] returns the first display line of the new data line instead,
+//!   which is the text position C's cursor is at. The screen still differs: the port shows the
+//!   blank row where C only shows it once the article is loaded again.
 
 use std::time::Duration;
 
@@ -204,10 +214,10 @@ impl EditorData {
     /// `editor_data_insert` (`:220-461`) for the bytes at the cursor.
     ///
     /// `display_line` and `offset` are the cursor in C's coordinates — a display line and a
-    /// byte offset inside it — and are written back the way C writes them, which is what
-    /// lets [`editor_display`] keep its `row_pos`/`col_pos` arithmetic. `last_updated_line`
-    /// is the redraw bound the caller carries from edit to edit; C's `MAX()` over it
-    /// (`:434`) is reproduced, so a line that grows repaints everything below it.
+    /// byte offset inside it — and come back on the slot C's edit leaves the text cursor at,
+    /// which is what lets [`editor_display`] keep its `row_pos`/`col_pos` arithmetic.
+    /// `last_updated_line` is the redraw bound the caller carries from edit to edit; C's
+    /// `MAX()` over it (`:434`) is reproduced, so a line that grows repaints everything below.
     pub fn insert(
         &mut self,
         display_line: &mut i64,
@@ -263,7 +273,11 @@ impl EditorData {
             self.recount();
 
             if break_before_insert {
-                *display_line += 1;
+                // `:312`: C's cursor goes to the display line after the head's last one, which
+                // is where it glues the terminating `'\n'` to a row that is already full. The
+                // port's wrap gives that newline a row of its own, so the same slot number
+                // would point at it and the next keystroke would edit the head line again.
+                *display_line = self.first_display(line + 1);
             }
             // `:344`: the redraw reaches as far as the document used to.
             *last_updated_line = old_total.max(self.last_display(line + 1));
@@ -399,12 +413,27 @@ impl EditorData {
 
     /// Re-wrap every data line and update `display_line_total`. `split_data_lines` adds a
     /// display line after the one that ends on a `'\n'`; C's re-split stops at that newline
-    /// instead (`:427-431`), so the empty tail of a terminated line is dropped here.
+    /// instead (`:427-431`), so the empty tail of a terminated line is dropped here — but only
+    /// when the split got far enough to produce it, which the display-line budget below can cut
+    /// off.
+    ///
+    /// C splits the whole buffer into one display array of [`MAX_EDITOR_DATA_LINES`] entries
+    /// (`:81, :99`), so a document longer than that keeps only its first 65536 display lines;
+    /// the budget is what carries that into the per-line re-split.
     fn recount(&mut self) {
         self.segments.clear();
         self.total = 0;
         for line in &self.lines {
-            let wrapped = text::split_data_lines(line, self.cols, false, self.fixed, usize::MAX);
+            if self.total >= MAX_EDITOR_DATA_LINES {
+                tracing::debug!(
+                    "Line count {} reaches limit {}",
+                    self.total,
+                    MAX_EDITOR_DATA_LINES
+                );
+                break;
+            }
+            let budget = MAX_EDITOR_DATA_LINES - self.total;
+            let wrapped = text::split_data_lines(line, self.cols, false, self.fixed, budget);
             let mut segments: Vec<Segment> = (0..wrapped.count())
                 .map(|index| Segment {
                     start: wrapped.offsets[index] as usize,
@@ -412,7 +441,7 @@ impl EditorData {
                     width: wrapped.widths[index] as usize,
                 })
                 .collect();
-            if line.last() == Some(&b'\n') {
+            if line.last() == Some(&b'\n') && segments.last().is_some_and(|s| s.len == 0) {
                 segments.pop();
             }
             if segments.is_empty() {
@@ -1260,6 +1289,22 @@ mod tests {
         assert_eq!(data.total(), MAX_EDITOR_DATA_LINES);
     }
 
+    /// The same cap as `editor.c:99`, where the display array is the size of the limit: a
+    /// body of short lines fills it and the rest of the document is not editable.
+    #[test]
+    fn loading_stops_counting_display_lines_at_the_limit() {
+        let over = MAX_EDITOR_DATA_LINES + 4_000;
+        let text = "a\n".repeat(over);
+        let data = doc(&text);
+        assert_eq!(data.total(), MAX_EDITOR_DATA_LINES);
+        assert_eq!(data.display_line(data.total() as i64 - 1), b"a\n");
+        assert_eq!(
+            data.locate(data.total() as i64 - 1).0 + 1,
+            MAX_EDITOR_DATA_LINES,
+            "the last display line is the last data line C had room for"
+        );
+    }
+
     // ---- the screen half ----
 
     #[tokio::test]
@@ -1270,6 +1315,26 @@ mod tests {
         let mut data = doc("");
         assert_eq!(edit(&mut term, &mut session, &mut data).await, ctrl(b'W'));
         assert_eq!(saved(&data), b"hi");
+    }
+
+    #[tokio::test]
+    async fn enter_after_a_row_that_is_exactly_full_starts_the_next_line() {
+        let (mut term, mut session, mut client) = editor_pipe();
+        // Rows that fill the screen to the last cell: their `'\n'` has no cell left to share the
+        // row with, which is the one case where C's incremental wrap disagrees with the wrap it
+        // loads with. Text typed after such an Enter used to land inside the row above it, and a
+        // pasted article came out of the editor with its lines merged.
+        let paste: String = (0..3)
+            .map(|i| format!("{}{}\n", "z".repeat(SCREEN_COLS - 1), i))
+            .collect();
+        keys(&client, paste.as_bytes());
+
+        let mut data = doc("");
+        edit(&mut term, &mut session, &mut data).await;
+        assert_eq!(saved(&data), paste.as_bytes());
+        // Each filled row keeps a display line of its own for the newline, and the last Enter
+        // opens the blank line the cursor is on.
+        assert_eq!(data.total(), 7);
     }
 
     #[tokio::test]
