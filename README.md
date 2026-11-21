@@ -179,6 +179,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/loader.rs](src/loader.rs) | 1529 | `src/section_list_loader.c` | the incremental refresh task, the article cache files it writes, and each board's digest menu | done |
 | [src/state.rs](src/state.rs) | 407 | the shared-memory segments | what the loader publishes and a session reads | done |
 | [src/cache.rs](src/cache.rs) | 554 | `src/article_cache.c` | render and load `var/articles/<CID>` with its line index | done |
+| [src/data_file_mgr.rs](src/data_file_mgr.rs) | 417 | `src/data_file_mgr.c`, `src/bbs_cmd.c` (the `DATAMGR` entry) | the `@DATAMGR` list: pick one of the eight site texts by number, edit it, preview it, and write the result to both the packaged file and its `.user` copy | done |
 | [src/menu.rs](src/menu.rs) | 2351 | `src/menu.c` | `menu.conf` parsing and navigation | parsing/navigation done, feature bodies not |
 | [src/lml.rs](src/lml.rs) | 689 | `src/lml.c` | LML markup rendering | done |
 | [src/bwf.rs](src/bwf.rs) | 241 | `src/trie_dict.c` etc. | badword matching and masking | done |
@@ -187,7 +188,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/session.rs](src/session.rs) | 613 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
 | [src/login.rs](src/login.rs) | 580 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
 | [src/bbsnet.rs](src/bbsnet.rs) | 1767 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
-| [src/bbs.rs](src/bbs.rs) | 872 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | prompts, menu loop and the browse commands done; a few menu actions still log and return |
+| [src/bbs.rs](src/bbs.rs) | 906 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | prompts, menu loop and the browse commands done; a few menu actions still log and return |
 | [src/net.rs](src/net.rs) | 360 | `src/net_server.c` | accept, connection limits, graceful drain | done |
 | [src/ssh.rs](src/ssh.rs) | 504 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
 | [src/main.rs](src/main.rs) | 542 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
@@ -198,8 +199,8 @@ differently from C, read the deviations section first — the reason is written 
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 394 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-31 425 lines in total, the tests included (they live in the modules they test). There are 467 tests: 461 in the
-library and 6 in the binary. 453 of them need nothing but the checked-out tree; the other 14 are ignored because
+31 877 lines in total, the tests included (they live in the modules they test). There are 473 tests: 467 in the
+library and 6 in the binary. 459 of them need nothing but the checked-out tree; the other 14 are ignored because
 they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
@@ -337,6 +338,17 @@ that does not run is described as if it did.
    `VIEW_EX_ARTICLE` whose post is gone leaves the tree on screen exactly as the reader left it. The digest pager
    writes only the status bar of `display_ex_article_key_handler` (`menu_proc.c:203-216`) — no thread switch, no
    reply — and `Esc`/`←` is the only way out of it.
+27. **The 数据文件 page** — `data_file_mgr` ([`data_file_mgr::data_file_mgr`](src/data_file_mgr.rs)), the
+   `@DATAMGR` item of the top menu (`bbs_cmd.c:28`) and the one menu action that rewrites files under the site
+   root. The eight rows are numbered on the screen and the answer is read two cells wide into a three-byte buffer,
+   so what `atoi` makes of it is the whole selection: nothing typed, `0`, and a number past the list leave the same
+   way they came. The file opens as `<path>.user` where the site has one and as the packaged path where it does
+   not, and the editor and the preview below it are the same [`editor::editor_display`](src/editor.rs) and
+   [`screen::display_file`](src/screen.rs) the write path uses. Two of C's loose ends are kept: `(S)` before
+   anything has been previewed is not an answer, and an edit that ends because the daemon is going down writes
+   nothing. A save goes to both paths — the `.user` copy first, since it is the copy a reinstall leaves alone — and
+   the page then says a reload is what makes the change count, which is the truth:
+   [`load_data_files`](src/state.rs) is what reads these files again.
 
 ### 6.2 Verified against the live board database
 
@@ -382,10 +394,11 @@ PHP and in `gen_top`'s `#[ignore]`-marked parity test to the same ten years (2 5
    (item 18).
 2. **Top-level menu actions** that resolve to one of those handlers: `bbs_do_choice` logs and returns, so the
    top menu still has keys that only log. `LIST_ONLINE_USER`, `LIST_USER`, `RunMBEM`, `FAVOR_TOPIC`,
-   `LIST_EX_SECTION` and `VIEW_EX_ARTICLE` are wired — the first two carry the profile page and the name search
-   they lead to, the last two the board's digest tree and the post read out of it (`src/browse.rs`, with the
-   tree itself loaded per board in `src/loader.rs`); `EDIT_INTRO`, `EDIT_SIGN`, `DATAMGR` and `M_FAVOR_SECTION`
-   still fall through to the log line.
+   `LIST_EX_SECTION`, `VIEW_EX_ARTICLE` and `DATAMGR` are wired — the roster pair carries the profile page and
+   the name search it leads to, the digest pair the board's digest tree and the post read out of it
+   (`src/browse.rs`, with the tree loaded per board in `src/loader.rs`), and `DATAMGR` the editor that rewrites
+   the site's own data files (`src/data_file_mgr.rs`). `EDIT_INTRO`, `EDIT_SIGN` and `M_FAVOR_SECTION` still
+   fall through to the log line.
 3. **Phase 2 polish**: GBK corner cases, the SSH window size (deliberately ignored, see the header of
    `src/ssh.rs`), and a side-by-side comparison with C over the whole phase-1 surface.
 
@@ -726,7 +739,7 @@ written into the C file's replacement module; this table is only the index.
 | `a2f6c10` | `article_post.c:276`, `:1149`: the length added was `snprintf`'s *wanted* length; `article_reply` ignored `lml_render`'s negative return | [`post.rs`](src/post.rs) — footer note |
 | `37dfc47` | `screen.c` walked the screen pool with `sizeof(MENU_ITEM)` and misused `menu_item_count` as the cap | [`menu.rs`](src/menu.rs) — the comment above `set.screens.len() >= MAX_MENUS` |
 | `c996502` | `lml.c:482-486` copied a `LML_TAG_PARAM_BUF_LEN`-long parameter into a buffer of the same length, overwriting the caller's NUL | [`lml.rs`](src/lml.rs) — the clamp at the parameter copy |
-| `a02a212`, `c6444e2` | three failure paths in `db_open` skipped `mysql_close`; `data_file_mgr.c` called `munmap` on `MAP_FAILED` | [`db.rs`](src/db.rs) (a pool has no handle to leak), [`state.rs`](src/state.rs) (there is no mapping at all) |
+| `a02a212`, `c6444e2` | three failure paths in `db_open` skipped `mysql_close`; `data_file_mgr.c` called `munmap` on `MAP_FAILED` | [`db.rs`](src/db.rs) (a pool has no handle to leak), [`state.rs`](src/state.rs) and [`data_file_mgr.rs`](src/data_file_mgr.rs) (there is no mapping at all) |
 | `b2e764c` | `bwf.c` treated a zero-length row as an empty one; `user_list.c` read `row[3][0]` without the NULL check its neighbours have | [`bwf.rs`](src/bwf.rs) — the empty-row skip; [`db.rs`](src/db.rs#L334) — `gender` decodes into a `String` that cannot be NULL, because the column is `char(1) NOT NULL DEFAULT 'M'` |
 | `51b1c7f` | two `prints(buffer)` calls let user text's `%` be read as a format | [`Terminal::print`](src/term/mod.rs) — the Rust `print` takes no format string |
 | `d7f2f5d` | `section_list_loader.c:145-152` left the board loop while still holding the write lock | [`loader.rs`](src/loader.rs) — the `load_section_config` docs; no guard here can outlive a refresh |
@@ -842,7 +855,7 @@ next key, and page with space.
 | done | write path: new/reply/edit/delete, the editor, index updates, cache generation, badwords on submit | unit-tested, and a live guest is refused before any SQL runs |
 | done | the three `utils/bin` PHP generators as binaries: `gen_top`, `gen_section_menu`, `gen_ex_list` (§7.4) | their files match the PHP's byte for byte against the live database (§6.2) |
 | next | one real post end to end against a **test** database, then the same reply/modify/delete | the web site shows what the Rust server wrote, with the header and cache files C would have produced |
-| then | the menu actions left: the profile editor items, `DATAMGR`, `M_FAVOR_SECTION` | the top menu has no key that only logs |
+| then | the menu actions left: the profile editor items and `M_FAVOR_SECTION` | the top menu has no key that only logs |
 | last | a side-by-side comparison with C over the whole phase-1 surface | the same actions produce the same screen |
 
 ---
