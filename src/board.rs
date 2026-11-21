@@ -158,7 +158,11 @@ pub struct Section {
     pub last_page_visible_article_count: i32,
     /// `p_ontop_articles`, ascending by `aid`.
     pub ontop: Vec<Artp>,
-    pub ex_menu_set: bool,
+    /// `MENU_SET ex_menu_set` (`section_list.h:78`): the board's digest menu, the parsed
+    /// `var/gen_ex/<sid>` that `section_list_loader.c:162-179` swaps in. C re-attached its shared
+    /// memory per reader (`section_list_display.c:1401-1410`); the port shares the parsed tree
+    /// behind an `Arc`. `None` with a non-zero [`Section::ex_menu_tm`] is a failed `load_menu`.
+    pub ex_menu_set: Option<std::sync::Arc<crate::menu::MenuSet>>,
     pub ex_menu_tm: i64,
 }
 
@@ -184,7 +188,7 @@ impl Section {
             page_first: Vec::new(),
             last_page_visible_article_count: 0,
             ontop: Vec::new(),
-            ex_menu_set: false,
+            ex_menu_set: None,
             ex_menu_tm: 0,
         }
     }

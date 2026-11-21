@@ -19,7 +19,7 @@ The sections build on each other, so reading top to bottom works.
 | Language | C (about 29,850 lines across `src/*.c` and `include/*.h`) |
 | License | GPL-3.0-or-later |
 | Author | Leaflet &lt;leaflet@leafok.com&gt; |
-| Reference copy on this machine | `~/Development/lbbs` — read-only for us; **we never modify it** |
+| Reference copy, alongside this repo | `../lbbs` — read-only for us; **we never modify it** |
 
 LBBS is a **bulletin board server you connect to from a text terminal**. Users connect over telnet or SSH,
 press menu keys, read boards, and write posts. There is no mouse and no images: everything is drawn with text
@@ -32,7 +32,7 @@ hard constraint: **we must not change the schema.**
 
 The reference 1.7.12 is `v1.7.11..b7a8b16`: eighteen commits, 19 files, +106/−40 lines, and the working tree
 matches `b7a8b16`. Every `file.c:NNN` citation in the Rust sources is anchored to that one revision, so
-`git -C ~/Development/lbbs show b7a8b16:src/<file>` prints exactly the text the comment describes. [Section
+`git -C ../lbbs show b7a8b16:src/<file>` prints exactly the text the comment describes. [Section
 10.3](#103-the-1712-round-what-each-reference-fix-means-here) records how the 1.7.12 fixes are represented here.
 
 ### 1.2 This project (lbbs-rust)
@@ -133,7 +133,7 @@ We read and write `conf/bbsd.conf`, `conf/menu.conf`, `var/menu_merged.conf`, `v
 | --- | --- | --- |
 | Phase 1a | daemon startup, both listeners, connection limits, logging, signals, charset prompts, login, menus | **done**, and smoke-tested against the real database |
 | Phase 1b | board list, article list, reading (pager), post/reply, badwords wired to menu actions | **done**, including the write path and the editor |
-| Phase 2 | the digest tree, statistics, the user-profile editor, GBK polish, SSH window size | not started |
+| Phase 2 | the digest tree, statistics, the user-profile editor, GBK polish, SSH window size | partly: browsing the digest tree is done, the rest not |
 
 Every phase ends with **a clean compile and a green test run**. We do not pile up broken code and hope.
 
@@ -157,17 +157,17 @@ differently from C, read the deviations section first — the reason is written 
 
 | Rust file | Lines | Original C | Responsibility | Status |
 | --- | ---:| --- | --- | --- |
-| [src/paths.rs](src/paths.rs) | 113 | `include/bbs.h` etc. | screen size, field lengths, path names | done |
+| [src/paths.rs](src/paths.rs) | 116 | `include/bbs.h` etc. | screen size, field lengths, path names | done |
 | [src/daemon.rs](src/daemon.rs) | 415 | `src/main.c`, `src/daemon.c` | command line, `--help`/`--version`, `fork` into background | done |
 | [src/config.rs](src/config.rs) | 384 | `src/init.c` | reads `conf/bbsd.conf` | done |
 | [src/log.rs](src/log.rs) | 497 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
 | [src/text.rs](src/text.rs) | 357 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
-| [src/term/mod.rs](src/term/mod.rs) | 584 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
+| [src/term/mod.rs](src/term/mod.rs) | 697 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
 | [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | turns ESC sequences into key codes | done |
 | [src/screen.rs](src/screen.rs) | 1116 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
 | [src/db.rs](src/db.rs) | 1368 | `src/database.c` etc. | MySQL queries through sqlx | done |
-| [src/board.rs](src/board.rs) | 1470 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
-| [src/browse.rs](src/browse.rs) | 2890 | `src/section_list_display.c`, `src/section_list_loader.c` | the article list, its keys, reading a post, the saved reading position | done |
+| [src/board.rs](src/board.rs) | 1474 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
+| [src/browse.rs](src/browse.rs) | 3290 | `src/section_list_display.c`, `src/section_list_loader.c`, `src/menu_proc.c` (the two digest items) | the article list, its keys, reading a post, the saved reading position, and a board's digest tree | done |
 | [src/editor.rs](src/editor.rs) | 1812 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
 | [src/post.rs](src/post.rs) | 1488 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, and the transaction each writes in | done |
 | [src/viewlog.rs](src/viewlog.rs) | 366 | `src/article_view_log.c` | which posts this user has read | done |
@@ -176,8 +176,8 @@ differently from C, read the deviations section first — the reason is written 
 | [src/roster.rs](src/roster.rs) | 661 | `src/user_list_loader.c` | the online-user roster and the article counters | done |
 | [src/userinfo.rs](src/userinfo.rs) | 923 | `src/user_info_display.c`, `src/user_list_display.c` (the search), `src/bbs.c` (the level and sign tables) | one user's profile page, and the name search that reaches it | done |
 | [src/userlist.rs](src/userlist.rs) | 1024 | `src/user_list_display.c`, `src/menu_proc.c` (the two roster items) | the 线上使用者 and 已注册用户 pages: titles, columns, paging, and the keys between them | done |
-| [src/loader.rs](src/loader.rs) | 1406 | `src/section_list_loader.c` | the incremental refresh task, and the article cache files it writes | done |
-| [src/state.rs](src/state.rs) | 413 | the shared-memory segments | what the loader publishes and a session reads | done |
+| [src/loader.rs](src/loader.rs) | 1529 | `src/section_list_loader.c` | the incremental refresh task, the article cache files it writes, and each board's digest menu | done |
+| [src/state.rs](src/state.rs) | 407 | the shared-memory segments | what the loader publishes and a session reads | done |
 | [src/cache.rs](src/cache.rs) | 554 | `src/article_cache.c` | render and load `var/articles/<CID>` with its line index | done |
 | [src/menu.rs](src/menu.rs) | 2351 | `src/menu.c` | `menu.conf` parsing and navigation | parsing/navigation done, feature bodies not |
 | [src/lml.rs](src/lml.rs) | 689 | `src/lml.c` | LML markup rendering | done |
@@ -187,9 +187,9 @@ differently from C, read the deviations section first — the reason is written 
 | [src/session.rs](src/session.rs) | 613 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
 | [src/login.rs](src/login.rs) | 580 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
 | [src/bbsnet.rs](src/bbsnet.rs) | 1767 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
-| [src/bbs.rs](src/bbs.rs) | 761 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | prompts, menu loop and the browse commands done; a few menu actions still log and return |
-| [src/net.rs](src/net.rs) | 359 | `src/net_server.c` | accept, connection limits, graceful drain | done |
-| [src/ssh.rs](src/ssh.rs) | 493 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
+| [src/bbs.rs](src/bbs.rs) | 872 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | prompts, menu loop and the browse commands done; a few menu actions still log and return |
+| [src/net.rs](src/net.rs) | 360 | `src/net_server.c` | accept, connection limits, graceful drain | done |
+| [src/ssh.rs](src/ssh.rs) | 496 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
 | [src/main.rs](src/main.rs) | 542 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
 | [src/batch.rs](src/batch.rs) | 374 | `utils/lib/db_open.inc.php` + the lines the three scripts repeat | one generator's life: arguments, server root, `conf/bbsd.conf`, database, the PHP's own stdout text and exit bytes | done |
 | [src/section_list.rs](src/section_list.rs) | 149 | `utils/lib/section_list.inc.php` | the class/board hierarchy the generators walk, with the caller's per-board values | done |
@@ -198,8 +198,8 @@ differently from C, read the deviations section first — the reason is written 
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 394 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-30 428 lines in total, the tests included (they live in the modules they test). There are 452 tests: 446 in the
-library and 6 in the binary. 438 of them need nothing but the checked-out tree; the other 14 are ignored because
+31 177 lines in total, the tests included (they live in the modules they test). There are 462 tests: 456 in the
+library and 6 in the binary. 448 of them need nothing but the checked-out tree; the other 14 are ignored because
 they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
@@ -318,6 +318,17 @@ that does not run is described as if it did.
    it; `str_repeat` of a negative count is a fatal error that leaves the boards after it unwritten; an escaped title
    keeps the padding it was measured with before the backslash went in; a `NULL` date prints the current time; and
    `intval(log10($n))` counts the digits of a float, with `0` measured as if it were `1`.
+26. **A board's digest tree** — `section_list_ex_dir_display` (`section_list_display.c:1380-1471`), entered from the
+   article list's `x` key (`VIEW_EX_DIR`, `section_list_display.c:1353-1363`) and from the top menu's
+   `@LIST_EX_SECTION` (`menu_proc.c:259-276`), its posts read by `view_ex_article` (`menu_proc.c:218-257`). The tree
+   is the `var/gen_ex/<SID>` file of item 25, parsed once per board by the loader — C's `update_gen_ex` half of
+   `load_section_config_from_db` (`section_list_loader.c:162-179`) — and shared behind an `Arc` in place of the
+   shared memory C re-attached for every reader. C's three ways out of a visit stay three: a board whose
+   `ex_menu_tm` is still 0 prints 该版块精华区未开放 and waits for a key; a menu the loader could not read is the
+   `get_menu_shm_readonly` failure, and its timestamp is left behind so the next pass retries it; a
+   `VIEW_EX_ARTICLE` whose post is gone leaves the tree on screen exactly as the reader left it. The digest pager
+   writes only the status bar of `display_ex_article_key_handler` (`menu_proc.c:203-216`) — no thread switch, no
+   reply — and `Esc`/`←` is the only way out of it.
 
 ### 6.2 Verified against the live board database
 
@@ -358,12 +369,14 @@ PHP and in `gen_top`'s `#[ignore]`-marked parity test to the same ten years (2 5
 
 ### 6.3 ⬜ Not done
 
-1. **The screens behind the write path**: the digest/excerpt tree, the user-profile editor, statistics and
-   `display_article_meta`. Those keys log `... is not implemented` rather than pretending to work.
+1. **The screens behind the write path**: the user-profile editor, statistics and `display_article_meta`. Those
+   keys log `... is not implemented` rather than pretending to work.
 2. **Top-level menu actions** that resolve to one of those handlers: `bbs_do_choice` logs and returns, so the
-   top menu still has keys that only log. `LIST_ONLINE_USER`, `LIST_USER`, `RunMBEM` and `FAVOR_TOPIC` are wired,
-   and with the first two the profile page and the name search they lead to; `EDIT_INTRO`, `EDIT_SIGN`, `DATAMGR`,
-   `VIEW_EX_ARTICLE`, `LIST_EX_SECTION` and `M_FAVOR_SECTION` still fall through to the log line.
+   top menu still has keys that only log. `LIST_ONLINE_USER`, `LIST_USER`, `RunMBEM`, `FAVOR_TOPIC`,
+   `LIST_EX_SECTION` and `VIEW_EX_ARTICLE` are wired — the first two carry the profile page and the name search
+   they lead to, the last two the board's digest tree and the post read out of it (`src/browse.rs`, with the
+   tree itself loaded per board in `src/loader.rs`); `EDIT_INTRO`, `EDIT_SIGN`, `DATAMGR` and `M_FAVOR_SECTION`
+   still fall through to the log line.
 3. **Phase 2 polish**: GBK corner cases, the SSH window size (deliberately ignored, see the header of
    `src/ssh.rs`), and a side-by-side comparison with C over the whole phase-1 surface.
 
@@ -415,7 +428,7 @@ export LBBS_REF_TOP10=$PWD/var/bbs_top_menu.conf
 cargo test --all-targets -- --include-ignored
 ```
 
-Pointing the same three variables at the C tree (`~/Development/lbbs/...`) works too and is the stricter test,
+Pointing the same three variables at the C tree (`../lbbs/...`) works too and is the stricter test,
 since those are the files C generated.
 
 To keep the run read-only — which is what you want against a database the live site is using — leave out the
@@ -463,7 +476,9 @@ without it the process detaches and leaves only the log files.
 
 `--display-log` and `--display-error-log` send the two streams to stderr as well, and `--help`, `--version` and
 `--compile-config` print what their names say. `SIGHUP` reloads the configuration, `SIGUSR1` reopens the log
-files for logrotate and `SIGTERM` drains the sessions before exiting.
+files for logrotate and `SIGTERM` drains the sessions before exiting: the exit flag ends every key wait, so a
+session parked at a prompt runs its own goodbye instead of waiting out its idle limit — which is what C's
+children did when the parent's `kill(0, SIGTERM)` interrupted their `select()`.
 
 The configuration in this tree listens on telnet `2323` and SSH `2322` (from `bbs_port` and `bbs_ssh_port`),
 the same pair the reference C installation uses; the shipped template still has C's `23` and `22`.
@@ -768,14 +783,14 @@ next key, and page with space.
 | done | write path: new/reply/edit/delete, the editor, index updates, cache generation, badwords on submit | unit-tested, and a live guest is refused before any SQL runs |
 | done | the three `utils/bin` PHP generators as binaries: `gen_top`, `gen_section_menu`, `gen_ex_list` (§7.4) | their files match the PHP's byte for byte against the live database (§6.2) |
 | next | one real post end to end against a **test** database, then the same reply/modify/delete | the web site shows what the Rust server wrote, with the header and cache files C would have produced |
-| then | the menu actions left: the profile editor items, `DATAMGR`, the digest tree's two filters | the top menu has no key that only logs |
+| then | the menu actions left: the profile editor items, `DATAMGR`, `M_FAVOR_SECTION` | the top menu has no key that only logs |
 | last | a side-by-side comparison with C over the whole phase-1 surface | the same actions produce the same screen |
 
 ---
 
 ## 14. Further reading
 
-- **The original C source**: `~/Development/lbbs/src/` and `~/Development/lbbs/include/` — read-only.
+- **The original C source**: `../lbbs/src/` and `../lbbs/include/` — read-only.
 - [reference/schema.sql](reference/schema.sql) — the full database schema. **Start here when a table is confusing.**
 - [reference/sql_inventory.md](reference/sql_inventory.md) — every statement the C server issues. **Start here when hunting for a missing port.**
 - [tests/fixtures/](tests/fixtures) — sample article files and golden output captured from the C build.

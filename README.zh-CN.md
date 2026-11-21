@@ -19,7 +19,7 @@
 | 语言 | C（`src/*.c` 加 `include/*.h` 约 29,850 行） |
 | 许可证 | GPL-3.0-or-later |
 | 原作者 | Leaflet &lt;leaflet@leafok.com&gt; |
-| 本机参考副本 | `~/Development/lbbs` —— 只读；**我们不会修改它** |
+| 与本项目同级的参考副本 | `../lbbs` —— 只读；**我们不会修改它** |
 
 LBBS 是一个**用纯文本终端访问的论坛（BBS）服务器**。用户通过 telnet 或 SSH 连上来，按菜单键看版块、发帖。
 没有鼠标，也没有图片：画面完全由文字加上**终端控制序列**（形如 `ESC[...H` 的字符串，用来设置颜色和光标位置）画出来。
@@ -30,7 +30,7 @@ LBBS 是一个**用纯文本终端访问的论坛（BBS）服务器**。用户�
 
 参考端的 1.7.12 是 `v1.7.11..b7a8b16`：十八个提交、19 个文件、+106/−40 行，工作区与 `b7a8b16` 一致。
 Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订号，也就是说
-`git -C ~/Development/lbbs show b7a8b16:src/<文件>` 打印出来的，正是那条注释所描述的内容。
+`git -C ../lbbs show b7a8b16:src/<文件>` 打印出来的，正是那条注释所描述的内容。
 [第 10.3 节](#103-1712-这一轮参考端的修改在-rust-版里对应什么)记录 1.7.12 的每个修复在这里落在何处。
 
 ### 1.2 本项目（lbbs-rust）
@@ -125,7 +125,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | --- | --- | --- |
 | Phase 1a | 守护进程启动、两个监听端口、连接数限制、日志、信号、编码选择、登录、菜单 | **完成**，并已对真实数据库做过冒烟测试 |
 | Phase 1b | 版块列表、帖子列表、阅读（分页器）、发帖/回复、违禁词接入菜单 | **完成**，含写入路径与全屏编辑器 |
-| Phase 2 | 精华区树、统计、用户资料编辑器、GBK 完善、SSH 窗口尺寸 | 未开始 |
+| Phase 2 | 精华区树、统计、用户资料编辑器、GBK 完善、SSH 窗口尺寸 | 已开始一部分：精华区树可以浏览，其余未动 |
 
 每个阶段结束时都必须**编译通过、测试通过**。我们不靠“先堆一堆跑不起来的代码”前进。
 
@@ -148,15 +148,15 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 
 | Rust 文件 | 行数 | 对应 C | 职责 | 状态 |
 | --- | ---:| --- | --- | --- |
-| [src/paths.rs](src/paths.rs) | 113 | `include/bbs.h` 等 | 屏幕尺寸、各字段长度、路径名等常量 | 完成 |
+| [src/paths.rs](src/paths.rs) | 116 | `include/bbs.h` 等 | 屏幕尺寸、各字段长度、路径名等常量 | 完成 |
 | [src/config.rs](src/config.rs) | 384 | `src/init.c` | 读取 `conf/bbsd.conf` | 完成 |
 | [src/text.rs](src/text.rs) | 357 | `src/str_process.c` | 显示宽度（全角=2 列）与折行计算 | 完成 |
-| [src/term/mod.rs](src/term/mod.rs) | 584 | `src/io.c` | 字节管道、GBK 转码、`prints`/`iflush`、`igetch` | 完成 |
+| [src/term/mod.rs](src/term/mod.rs) | 697 | `src/io.c` | 字节管道、GBK 转码、`prints`/`iflush`、`igetch` | 完成 |
 | [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | 把 ESC 序列翻译成按键码 | 完成 |
 | [src/screen.rs](src/screen.rs) | 1116 | `src/screen.c` | 清屏、回显接管 `set_input_echo`、行输入 `str_input`、分页器 `display_data` | 完成 |
 | [src/db.rs](src/db.rs) | 1368 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
-| [src/board.rs](src/board.rs) | 1470 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
-| [src/browse.rs](src/browse.rs) | 2890 | `src/section_list_display.c`、`src/section_list_loader.c` | 帖子列表、列表按键、阅读帖子、阅读位置文件 | 完成 |
+| [src/board.rs](src/board.rs) | 1474 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
+| [src/browse.rs](src/browse.rs) | 3290 | `src/section_list_display.c`、`src/section_list_loader.c`、`src/menu_proc.c`（两个精华区入口） | 帖子列表、列表按键、阅读帖子、阅读位置文件，以及版块精华区树的浏览与树里读一篇帖子 | 完成 |
 | [src/editor.rs](src/editor.rs) | 1812 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
 | [src/post.rs](src/post.rs) | 1488 | `src/article_post.c`、`src/article_del.c`、`src/article_op.c` | 发帖、回复、修改、删除、精华标记，以及各自的事务 | 完成 |
 | [src/viewlog.rs](src/viewlog.rs) | 366 | `src/article_view_log.c` | 记录该用户读过哪些帖子 | 完成 |
@@ -165,7 +165,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/roster.rs](src/roster.rs) | 661 | `src/user_list_loader.c` | 在线用户列表与发帖数统计 | 完成 |
 | [src/userinfo.rs](src/userinfo.rs) | 923 | `src/user_info_display.c`、`src/user_list_display.c`（查找）、`src/bbs.c`（等级与星座表） | 一个用户的资料页，以及通向它的用户名查找 | 完成 |
 | [src/userlist.rs](src/userlist.rs) | 1024 | `src/user_list_display.c`、`src/menu_proc.c`（两个花名册入口） | 线上使用者与已注册用户两页：标题、栏目、翻页，以及在两页之间走动的按键 | 完成 |
-| [src/loader.rs](src/loader.rs) | 1406 | `src/section_list_loader.c` | 增量刷新任务，以及它顺带写出的文章缓存文件 | 完成 |
+| [src/loader.rs](src/loader.rs) | 1529 | `src/section_list_loader.c` | 增量刷新任务、它顺带写出的文章缓存文件，以及每个版块那棵精华区菜单 | 完成 |
 | [src/cache.rs](src/cache.rs) | 554 | `src/article_cache.c` | 渲染与读取 `var/articles/<CID>` 及其行偏移表 | 完成 |
 | [src/menu.rs](src/menu.rs) | 2351 | `src/menu.c` | `menu.conf` 解析与页面跳转 | 解析/跳转完成，功能本体未完成 |
 | [src/lml.rs](src/lml.rs) | 689 | `src/lml.c` | LML 标记渲染 | 完成 |
@@ -175,9 +175,9 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/session.rs](src/session.rs) | 613 | 各 `BBS_*` 全局变量 | 一次会话的状态 + 在线记录 | 完成 |
 | [src/login.rs](src/login.rs) | 580 | `src/login.c` | 登录、认证、用户协议（EULA） | 完成 |
 | [src/bbsnet.rs](src/bbsnet.rs) | 1767 | `src/bbs_net.c`、`src/menu_proc.c`（`@mod:` 分发） | 站点表、穿梭网格、对外连接与双向转发 | 完成 |
-| [src/bbs.rs](src/bbs.rs) | 761 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序（含回显接管）、`bbs_center` | 提示、菜单循环与浏览类命令完成，少数菜单动作仍只记日志 |
-| [src/net.rs](src/net.rs) | 359 | `src/net_server.c` | accept、连接数限制、优雅退出 | 完成 |
-| [src/ssh.rs](src/ssh.rs) | 493 | `src/net_server.c`（libssh 那一半） | 宿主密钥、密码认证、会话通道 | 完成 |
+| [src/bbs.rs](src/bbs.rs) | 872 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序（含回显接管）、`bbs_center` | 提示、菜单循环与浏览类命令完成，少数菜单动作仍只记日志 |
+| [src/net.rs](src/net.rs) | 360 | `src/net_server.c` | accept、连接数限制、优雅退出 | 完成 |
+| [src/ssh.rs](src/ssh.rs) | 496 | `src/net_server.c`（libssh 那一半） | 宿主密钥、密码认证、会话通道 | 完成 |
 | [src/main.rs](src/main.rs) | 542 | `src/main.c`、`src/net_server.c` | 启动顺序、信号处理、`SIGHUP` 重载、退出 | 完成 |
 | [src/batch.rs](src/batch.rs) | 374 | `utils/lib/db_open.inc.php` + 三个脚本里反复出现的那几行 | 一个生成工具的完整一生：参数、服务器根目录、`conf/bbsd.conf`、数据库，以及脚本自己的 stdout 文字与退出码 | 完成 |
 | [src/section_list.rs](src/section_list.rs) | 149 | `utils/lib/section_list.inc.php` | 生成工具要走的那棵分类/版块树，附带调用方自己的每版数据 | 完成 |
@@ -186,9 +186,9 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 394 | `utils/bin/gen_ex_list.php` | 被守护进程标了记的每个版块，各写出一个 `var/gen_ex/<SID>` 精华区树 | 完成 |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs)、[gen_section_menu.rs](src/bin/gen_section_menu.rs)、[gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | `php utils/bin/*.php` 那几行 crontab | 三个可执行文件：调用三个生成工具，把脚本的退出码原样交回给 shell | 完成 |
 
-另有 [src/daemon.rs](src/daemon.rs)（415 行，命令行与后台化）、[src/log.rs](src/log.rs)（497 行，两个日志文件）、[src/state.rs](src/state.rs)（413 行，加载器发布、会话读取的共享状态）。
+另有 [src/daemon.rs](src/daemon.rs)（415 行，命令行与后台化）、[src/log.rs](src/log.rs)（497 行，两个日志文件）、[src/state.rs](src/state.rs)（407 行，加载器发布、会话读取的共享状态）。
 
-合计 30,428 行（含测试，测试就写在被测模块里）。共 452 个测试：库 446 个、可执行文件 6 个。其中 438 个只读代码
+合计 31,177 行（含测试，测试就写在被测模块里）。共 462 个测试：库 456 个、可执行文件 6 个。其中 448 个只读代码
 仓库里的东西，另外 14 个默认跳过，因为它们要连真实数据库、读真实生成的文件。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
@@ -288,6 +288,15 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
     是一条记录一行、块内没有空行；`str_repeat` 的次数为负是致命错误，它之后的版块就不再写了；标题先量宽度
     再转义，转义撑长的部分不会补回空格；`NULL` 日期打印当前时间；`intval(log10($n))` 数的是浮点的位数，
     `0` 按 `1` 算。
+26. **版块的精华区树**——`section_list_ex_dir_display`（`section_list_display.c:1380-1471`），入口有两个：
+    帖子列表的 `x` 键（`VIEW_EX_DIR`，`section_list_display.c:1353-1363`）与上位菜单的 `@LIST_EX_SECTION`
+    （`menu_proc.c:259-276`），树里的帖子由 `view_ex_article`（`menu_proc.c:218-257`）读出。树就是第 25 条写出的
+    `var/gen_ex/<SID>`，由加载器每个版块解析一次——也就是 C 的 `load_section_config_from_db` 里 `update_gen_ex`
+    那一半（`section_list_loader.c:162-179`）——再用 `Arc` 共享出去，替掉 C 每读一次都要重新 attach 的共享内存。
+    C 分得清的三种情形照旧分开：`ex_menu_tm` 还是 0 的版块打印「该版块精华区未开放」并等一个键；加载器读不出来的
+    菜单等同于 `get_menu_shm_readonly` 失败，时间戳留在原处，下一轮再试；`VIEW_EX_ARTICLE` 指的帖子不在，树原样
+    留在屏上。精华区的分页器只写 `display_ex_article_key_handler` 那一条状态栏（`menu_proc.c:203-216`）：没有
+    同主题切换、没有回复，出去只能靠 `Esc`/`←`。
 
 ### 6.2 在真实论坛数据库上验证过
 
@@ -321,11 +330,12 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 
 ### 6.3 ⬜ 尚未完成
 
-1. **写入路径背后的界面**：精华区树、用户资料编辑器、统计、`display_article_meta`。
+1. **写入路径背后的界面**：用户资料编辑器、统计、`display_article_meta`。
    这些按键目前会记一条 `... is not implemented`，而不是假装能用。
 2. **指向上面这些处理函数的一级菜单条目**：`bbs_do_choice` 只记日志并返回，所以上位菜单仍有只会记日志的键。
-   `LIST_ONLINE_USER`、`LIST_USER`、`RunMBEM` 与 `FAVOR_TOPIC` 已经接上，前两个通向的资料页与用户名查找也一并
-   接好了；还在只记日志的是 `EDIT_INTRO`、`EDIT_SIGN`、`DATAMGR`、`VIEW_EX_ARTICLE`、`LIST_EX_SECTION` 与
+   `LIST_ONLINE_USER`、`LIST_USER`、`RunMBEM`、`FAVOR_TOPIC`、`LIST_EX_SECTION` 与 `VIEW_EX_ARTICLE` 已经接上：
+   前两个连同它们通向的资料页与用户名查找，后两个连同版块的精华区树与从树里读出的一篇帖子（树在 `src/browse.rs`
+   浏览、由各版块的菜单在 `src/loader.rs` 装载）。还在只记日志的是 `EDIT_INTRO`、`EDIT_SIGN`、`DATAMGR` 与
    `M_FAVOR_SECTION`。
 3. **Phase 2 的收尾**：GBK 的边角情况、SSH 的窗口大小（有意忽略，理由见 `src/ssh.rs` 文件头），
    以及与 C 就 Phase 1 全部界面做逐屏对照。
@@ -377,7 +387,7 @@ export LBBS_REF_TOP10=$PWD/var/bbs_top_menu.conf
 cargo test --all-targets -- --include-ignored
 ```
 
-把这三个变量指向 C 目录（`~/Development/lbbs/...`）同样有效，而且更严格——那才是 C 亲手生成的文件。
+把这三个变量指向 C 目录（`../lbbs/...`）同样有效，而且更严格——那才是 C 亲手生成的文件。
 
 如果想保持只读——对着线上正在使用的数据库时就该这样——把两条会写数据的测试排除掉：
 
@@ -421,7 +431,9 @@ Cargo 包叫 `lbbs`，编译出来的守护进程叫 `bbsd`，和 C 服务的名
 
 `--display-log`、`--display-error-log` 会把对应的日志同时打到 stderr；`--help`、`--version`、
 `--compile-config` 名实相符。`SIGHUP` 重载配置，`SIGUSR1` 重开日志文件（配合 logrotate），
-`SIGTERM` 会在退出前收尾在线会话。
+`SIGTERM` 会在退出前收尾在线会话：退出标记一置位，所有按键等待就立刻结束，停在提示上的会话因此
+能走完自己的告别流程，而不是干等到空闲超时——C 的子进程就是靠父进程 `kill(0, SIGTERM)` 打断
+`select()` 做到这一点的。
 
 本仓库带的配置监听 telnet `2323`、SSH `2322`（来自 `bbs_port` 和 `bbs_ssh_port`），与参考用的 C 目录一致；
 模板文件里写的还是 C 的 `23` 和 `22`。
@@ -741,14 +753,14 @@ hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用�
 | 已完成 | 写入路径：新帖/回复/修改/删除、编辑器、索引更新、缓存生成、提交时过滤违禁词 | 有单元测试覆盖，且联机游客按 `^P` 在任何 SQL 之前被拒绝 |
 | 已完成 | `utils/bin` 的三个 PHP 生成工具改成可执行文件：`gen_top`、`gen_section_menu`、`gen_ex_list`（见 7.4） | 对着真实库，它们写出的文件与 PHP 逐字节一致（见 6.2） |
 | 下一步 | 在**测试库**上完整走一遍真实发帖，再依次验证回复/修改/删除 | 网页端能看到移植版写出的帖子，头信息与缓存文件和 C 一致 |
-| 再下一步 | 剩下的菜单条目：资料编辑两项、`DATAMGR`、精华区的两个筛选 | 上位菜单里不再有“只写日志”的按键 |
+| 再下一步 | 剩下的菜单条目：资料编辑两项、`DATAMGR`、`M_FAVOR_SECTION` | 上位菜单里不再有“只写日志”的按键 |
 | 最后 | 与 C 版就 Phase 1 的全部界面对比 | 同样操作得到同样的画面 |
 
 ---
 
 ## 14. 延伸阅读
 
-- **原始 C 源码**：`~/Development/lbbs/src/` 与 `~/Development/lbbs/include/` —— 只读。
+- **原始 C 源码**：`../lbbs/src/` 与 `../lbbs/include/` —— 只读。
 - [reference/schema.sql](reference/schema.sql) —— 完整数据库结构。**看不懂某张表时先看这里。**
 - [reference/sql_inventory.md](reference/sql_inventory.md) —— C 版发出的所有 SQL 清单。**排查漏移植时先看这里。**
 - [tests/fixtures/](tests/fixtures) —— 测试用帖子文件，以及从 C 版采集的基准（golden）输出。

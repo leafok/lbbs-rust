@@ -24,7 +24,7 @@ use crate::bbsnet;
 use crate::browse;
 use crate::favorlist;
 use crate::login::{self, Login};
-use crate::menu::{Action, MenuFlow, MenuNav, MenuReturn};
+use crate::menu::{Action, Draw, MenuFlow, MenuNav, MenuReturn};
 use crate::paths::{
     DATA_ACTIVE_BOARD, DATA_COPYRIGHT, DATA_EULA, DATA_LICENSE, DATA_VERSION, DATA_WELCOME,
     MAX_USER_COUNT, MAX_USER_IDLE_TIME, VAR_BBS_TOP,
@@ -373,6 +373,22 @@ pub fn bbs_do_choice<'a>(
             }
             MenuReturn::Redraw
         }
+        // `menu_proc.c:259-276`: the parameter is a board name. Only a board the pool does not
+        // have answers `NOREDRAW`; a digest menu that failed to open still redraws.
+        Action::ListExSection => {
+            if !browse::list_ex_section(term, session, param).await {
+                return MenuReturn::NoRedraw;
+            }
+            MenuReturn::Redraw
+        }
+        // `menu_proc.c:218-257`: an unknown `AID` or a missing cache is `NOREDRAW`, so the digest
+        // menu stays on screen exactly as the item left it.
+        Action::ViewExArticle => {
+            if !browse::view_ex_article(term, session, param).await {
+                return MenuReturn::NoRedraw;
+            }
+            MenuReturn::Redraw
+        }
         Action::Shutdown => {
             // `shutdown_bbs` (`menu_proc.c:176-193`): a cleared screen, one character asked for
             // with a default of `N`, and the order to exit only when what stands in that
@@ -458,7 +474,12 @@ pub(crate) async fn show_top10_menu(term: &mut Terminal, session: &mut Session) 
     screen::clearscr(term);
     screen::show_top(term, "", &session.config.bbs_name, "");
     screen::show_bottom(term, "", &session.username, session.login_tm);
-    nav.draw(term, session).await;
+    // `menu_proc.c:294`: `if (display_menu(&top10_menu) == 0)`. A menu with no selectable item
+    // answers -1 after printing 没有可选项 and taking one key press, and C then returns without
+    // opening the read loop — so that one press is the whole visit.
+    if nav.draw(term, session).await != Draw::Show {
+        return;
+    }
 
     while !session.state.is_exiting() {
         let key = term.read_key(MENU_KEY_TIMEOUT).await;
@@ -521,14 +542,15 @@ pub async fn bbs_main(term: &mut Terminal, session: &mut Session) {
     bbs_welcome(term, session).await;
 
     if session.is_ssh {
-        // `SSH_v2`: the transport authenticated the account, so the prompt is replaced by a
-        // greeting and a key press.
-        term.print(&format!(
+        // `bbs_main.c:376-380` and `screen.c:99-108`: the transport authenticated the account, so
+        // the login prompt is replaced by a greeting — and C hands that greeting to
+        // `press_any_key_ex`, which parks the cursor on the bottom row and clears it first.
+        // Printing it at wherever the pager left the cursor instead lets that clear erase it.
+        let msg = format!(
             "\x1b[1m{} 欢迎使用ssh方式访问 \x1b[1;33m按任意键继续...\x1b[m",
             session.username
-        ));
-        let _ = term.flush().await;
-        if screen::press_any_key_ex(term, "", 60).await == KEY_NULL {
+        );
+        if screen::press_any_key_ex(term, &msg, 60).await == KEY_NULL {
             return;
         }
     } else if login::login(term, session).await == Login::Out {
@@ -756,6 +778,95 @@ mod tests {
         assert!(
             String::from_utf8_lossy(body).contains("Choose character set"),
             "the negotiation must come first: {body:?}"
+        );
+    }
+
+    /// The shipped `var/bbs_top_menu.conf` is a title, a screen body, and no items at all. C
+    /// enters `show_top10_menu`'s read loop only when `display_menu` returns 0, so such a menu
+    /// costs the single press `press_any_key` already asked for; the loop would ask for a second.
+    #[tokio::test]
+    async fn an_empty_top10_menu_ends_with_the_press_it_asks_for() {
+        let set = crate::menu::MenuSet::parse(
+            b"%menu M_TOP10\ntitle 0, 0, \"Top\"\nscreen 2, 0, S_TOP10\n%\n%S_TOP10\nten\n%\n",
+        )
+        .unwrap();
+        let mut session = crate::session::offline_session();
+        session.state.publish_top10(set);
+        let (client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+
+        let keyed = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            client.push(b"\r");
+            client
+        });
+
+        // A menu still stuck in its read loop never returns: the press it takes is the only one
+        // this test offers.
+        let visited =
+            tokio::time::timeout(Duration::from_secs(2), show_top10_menu(&mut term, &mut session))
+                .await;
+        assert!(visited.is_ok(), "the empty menu must end after one press");
+
+        let mut client = keyed.await.unwrap();
+        let painted = String::from_utf8_lossy(&client.take_available()).into_owned();
+        assert!(painted.contains("没有可选项"), "{painted}");
+    }
+
+    /// What C's `kill(0, SIGTERM)` achieved: the flag was raised, every child's key wait answered
+    /// at once, and each session ran its own exit path before the parent's 15 s wait was up. A
+    /// session that ignores the flag is only ever abandoned by the drain, so the daemon reports
+    /// "Give up waiting for N sessions" where C reported the children gone.
+    #[tokio::test]
+    async fn a_session_waits_on_the_client_not_on_the_shutdown() {
+        let (client, server) = Pipe::new();
+        let mut session = crate::session::offline_session();
+        let state = session.state.clone();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        term.set_exit_watch(state.exit_watch());
+
+        let parked = tokio::spawn(async move {
+            bbs_main(&mut term, &mut session).await;
+        });
+        // The client stays mute, so the session is inside a key wait when the notify lands.
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        state.exit();
+
+        let ended = tokio::time::timeout(Duration::from_secs(2), parked).await;
+        assert!(ended.is_ok(), "the session must end on the notify");
+        drop(client);
+    }
+
+    /// `bbs_main.c:378-379` hands the greeting to `press_any_key_ex`, and `screen.c:101-104` moves
+    /// to the bottom row and clears that row *before* printing. Printing the greeting at whatever
+    /// cursor position the welcome left, and then clearing the row for an empty prompt, is what
+    /// made the line never reach the client.
+    #[tokio::test]
+    async fn the_ssh_greeting_is_the_bottom_row_prompt() {
+        let (mut client, server) = Pipe::new();
+        let mut session = crate::session::offline_session();
+        session.is_ssh = true;
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+
+        let (ran, ()) = tokio::join!(
+            tokio::time::timeout(Duration::from_secs(3), bbs_main(&mut term, &mut session)),
+            async {
+                // The charset rule, the width rule, then the greeting: every key has to land
+                // after the `igetch_reset` opening the wait it answers.
+                for _ in 0..3 {
+                    tokio::time::sleep(Duration::from_millis(400)).await;
+                    client.push(b"\r");
+                }
+            }
+        );
+        assert!(ran.is_err(), "the session continues into its menu after the greeting");
+
+        let wire = String::from_utf8_lossy(&client.take_available()).into_owned();
+        assert!(
+            wire.contains(
+                "\x1b[24;0H\x1b[K\u{1b}[1m 欢迎使用ssh方式访问 \u{1b}[1;33m按任意键继续...\u{1b}[m"
+            ),
+            "the greeting must come from the prompt that clears the row: {wire:?}"
         );
     }
 }

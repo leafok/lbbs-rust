@@ -55,6 +55,7 @@ use crate::paths::{
     ARTICLE_LIMIT_PER_PAGE, ARTICLE_LIMIT_PER_SECTION, ARTICLE_TITLE_MAX_LEN, DATA_READ_HELP,
     MAX_USER_IDLE_TIME, NICKNAME_MAX_LEN, SCREEN_ROWS, USERNAME_MAX_LEN, VAR_ARTICLE_CACHE_DIR,
 };
+use crate::menu::{Draw, MenuFlow, MenuNav, MenuReturn};
 use crate::privilege::{S_LIST, S_MAN_S, S_POST};
 use crate::post;
 use crate::screen::{self, DisplayCtx, PagerHooks};
@@ -96,6 +97,12 @@ pub const MSG_NORMAL: &str = "| 返回[\x1b[32m←\x1b[33m,\x1b[32mESC\x1b[33m] 
 pub const MSG_TOPIC: &str = "| 返回[\x1b[32m←\x1b[33m,\x1b[32mESC\x1b[33m] \
     同主题阅读[\x1b[32m↑\x1b[33m/\x1b[32m↓\x1b[33m] \
     切换[\x1b[32mp\x1b[33m] 回复[\x1b[32mr\x1b[33m] 帮助[\x1b[32mh\x1b[33m] |";
+
+/// …and for a post read out of a digest menu, whose pager offers neither the thread switch nor
+/// the reply: `display_ex_article_key_handler` (`menu_proc.c:203-216`).
+pub const MSG_EX: &str = "| 返回[\x1b[32m←\x1b[33m,\x1b[32mESC\x1b[33m] | \
+    移动[\x1b[32m↑\x1b[33m/\x1b[32m↓\x1b[33m/\x1b[32mPgUp\x1b[33m/\x1b[32mPgDn\x1b[33m] | \
+    帮助[\x1b[32mh\x1b[33m] |";
 
 /// `enum select_cmd_t`, the return of `section_list_select`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1567,27 +1574,13 @@ impl Listing {
         })
     }
 
-    /// `section_list_ex_dir_display` (`:1380`). The loader does not read `var/gen_ex/` yet, so
-    /// every board still reports its精华区 closed, which is exactly C's `ex_menu_tm == 0`
-    /// branch; the other branch needs the per-board menu, which is not loaded either.
+    /// The `VIEW_EX_DIR` arm (`section_list_display.c:1353-1363`): the board's digest menu, and
+    /// C's `log_error` of a negative return — the list redraws either way, which the caller's
+    /// [`Flow::Redraw`] is.
     async fn view_ex_dir(&self, term: &mut Terminal, session: &mut Session) {
-        let open = {
-            let board = session.state.board();
-            board
-                .section(self.sid)
-                .is_some_and(|section| section.ex_menu_tm != 0)
-        };
-
-        if !open {
-            term.moveto(2, 1);
-            term.clrtoeol();
-            term.print("该版块精华区未开放");
-            let _ = term.flush().await;
-            screen::press_any_key(term).await;
-            return;
+        if !list_ex_dir(term, session, self.sid).await {
+            tracing::error!("section_list_ex_dir_display(sid={}) error", self.sid);
         }
-
-        tracing::error!("get_section_ex_menu_set(sid={}) is not implemented", self.sid);
     }
 
     /// The `VIEW_ARTICLE` arm (`:769`): the reader, the keys its pager hands back, and the row
@@ -1858,6 +1851,218 @@ pub async fn list_section(term: &mut Terminal, session: &mut Session, sname: &st
     if let Err(e) = Listing::run(term, session, sname, 0).await {
         tracing::error!("section_list_display({sname}) error: {e:?}");
     }
+}
+
+/// `section_list_ex_dir_display` (`section_list_display.c:1380-1471`): the digest tree of one
+/// board, walked by this session until it leaves it. `false` is one of the C negative returns —
+/// the board gone from the pool, or a menu the loader could not read — which every caller logs
+/// before going on as if the visit had succeeded.
+pub async fn list_ex_dir(term: &mut Terminal, session: &mut Session, sid: i16) -> bool {
+    let (ex_menu_tm, ex_menu_set) = {
+        let board = session.state.board();
+        let Some(section) = board.section(sid) else {
+            tracing::error!("NULL pointer error");
+            return false;
+        };
+        (section.ex_menu_tm, section.ex_menu_set.clone())
+    };
+
+    if ex_menu_tm == 0 {
+        term.moveto(2, 1);
+        term.clrtoeol();
+        term.print("该版块精华区未开放");
+        let _ = term.flush().await;
+        screen::press_any_key(term).await;
+        return true;
+    }
+
+    // `get_section_ex_menu_set` (`:1401-1405`) is the copy out of the pool that the board lock
+    // already gave us; `get_menu_shm_readonly` (`:1406-1410`) is attaching the tree, and the one
+    // way that fails here is the state a failed `load_menu` leaves — a timestamp and no menu.
+    let Some(menus) = ex_menu_set else {
+        tracing::error!("get_menu_shm_readonly(sid={sid}) error");
+        return false;
+    };
+
+    let mut nav = MenuNav::new(&menus);
+    // `section_list_loader.c:174` sets `allow_exit` on the menu set as it loads it; the port sets
+    // it on the walker, which is where the flag lives.
+    nav.set_allow_exit(true);
+
+    screen::clearscr(term);
+    screen::show_bottom(term, "", &session.username, session.login_tm);
+
+    // `:1415`: `if (display_menu(&ex_menu_set) == 0)`. An empty digest tree pauses on one key
+    // press and C never opens the read loop — that press is the whole visit.
+    if nav.draw(term, session).await != Draw::Show {
+        return true;
+    }
+
+    while !session.state.is_exiting() {
+        let ch = term.read_key(SELECT_KEY_TIMEOUT).await;
+
+        if ch != KEY_NULL && ch != KEY_TIMEOUT {
+            session.record_activity().await;
+        }
+
+        match ch {
+            KEY_NULL => {
+                tracing::debug!("KEY_NULL");
+                break;
+            }
+            KEY_TIMEOUT => {
+                if session::now() - session.last_access_tm >= MAX_USER_IDLE_TIME as i64 {
+                    tracing::debug!("User input timeout");
+                    break;
+                }
+                continue;
+            }
+            _ => {}
+        }
+
+        match nav.control(term, session, ch).await {
+            MenuFlow::ExitMenu => break,
+            MenuFlow::Redraw => {
+                screen::clearscr(term);
+                screen::show_bottom(term, "", &session.username, session.login_tm);
+                nav.draw(term, session).await;
+            }
+            // The inner switch has no `EXITBBS` case: an item that asks to leave the BBS is
+            // C's `default:`, and the digest loop goes back to waiting for a key.
+            MenuFlow::ExitBbs | MenuFlow::NoRedraw => {}
+            MenuFlow::Run(action, param) => {
+                // The handler's return code reaches the same switch as `menu_control`'s own, and
+                // only `REDRAW` repaints. `nested` is `false`: the `static int show_top10` guard
+                // of `menu_proc.c:280-288` belongs to the top-ten loop, not to this one.
+                if crate::bbs::bbs_do_choice(term, session, action, &param, false).await
+                    == MenuReturn::Redraw
+                {
+                    screen::clearscr(term);
+                    screen::show_bottom(term, "", &session.username, session.login_tm);
+                    nav.draw(term, session).await;
+                }
+            }
+        }
+        let _ = term.flush().await;
+    }
+
+    true
+}
+
+/// `list_ex_section` (`menu_proc.c:259-276`): a `LIST_EX_SECTION` item names a board, and the
+/// board's digest tree opens instead of its article list. `false` is C's `-1` — a board the pool
+/// does not have, which `menu_control` passes straight back and its caller treats as `NOREDRAW`;
+/// every other answer, including a menu that failed to open, asks for a redraw.
+pub async fn list_ex_section(term: &mut Terminal, session: &mut Session, sname: &str) -> bool {
+    let Some(sid) = session
+        .state
+        .board()
+        .section_by_name(sname)
+        .map(|section| section.sid)
+    else {
+        tracing::error!("Section {sname} not found");
+        return false;
+    };
+
+    if !list_ex_dir(term, session, sid).await {
+        tracing::error!("section_list_ex_dir_display(sid={sid}) error");
+    }
+
+    true
+}
+
+/// `view_ex_article` (`menu_proc.c:218-257`): a `VIEW_EX_ARTICLE` item carries the `AID` as its
+/// name, so the digest reader starts from an id rather than from a row of a list. `false` is C's
+/// `NOREDRAW`, which leaves the digest menu on the screen exactly as the reader left it.
+pub async fn view_ex_article(term: &mut Terminal, session: &mut Session, param: &str) -> bool {
+    // `atoi(param)`: anything that is not a number is 0, and 0 is not an article.
+    let aid = param.parse::<i32>().unwrap_or_default();
+
+    let cid = {
+        let board = session.state.board();
+        match board.article_by_aid(aid) {
+            Some(article) => article.cid,
+            None => {
+                tracing::error!("article_block_find_by_aid({aid}) error");
+                return false;
+            }
+        }
+    };
+
+    let dir = session.root.join(VAR_ARTICLE_CACHE_DIR);
+    let cache = match cache::load(&dir.to_string_lossy(), cid) {
+        Ok(Some(cached)) => cached,
+        Ok(None) => {
+            tracing::error!("article_cache_load(aid={aid}, cid={cid}) error");
+            return false;
+        }
+        Err(error) => {
+            tracing::error!("article_cache_load(aid={aid}, cid={cid}) error: {error}");
+            return false;
+        }
+    };
+
+    if let Err(e) = session.online_update(Some("VIEW_ARTICLE")).await {
+        tracing::error!("user_online_update(VIEW_ARTICLE) error: {e}");
+    }
+
+    let lines = cache.wrapped(term.fixed_width());
+    let mut hooks = ExArticleHooks { session };
+    screen::display_data(
+        term,
+        &cache.data,
+        &lines,
+        0,
+        &mut hooks,
+        DATA_READ_HELP,
+        MAX_USER_IDLE_TIME,
+    )
+    .await;
+
+    if let Err(e) = session.view_log.mark_viewed(&session.state.db, aid).await {
+        tracing::error!("article_view_log_set_viewed(aid={aid}) error: {e}");
+    }
+
+    true
+}
+
+/// `PagerHooks` for a post read out of a digest menu: the session does the bookkeeping and the
+/// status bar is the one `display_ex_article_key_handler` writes.
+struct ExArticleHooks<'a> {
+    session: &'a mut Session,
+}
+
+impl PagerHooks for ExArticleHooks<'_> {
+    async fn on_activity(&mut self) {
+        Session::record_activity(self.session).await;
+    }
+
+    async fn key_handler(&mut self, ch: &mut u32, ctx: &mut DisplayCtx) -> i32 {
+        ex_article_key_handler(ch, ctx)
+    }
+
+    fn help_enabled(&mut self) -> bool {
+        PagerHooks::help_enabled(self.session)
+    }
+
+    fn set_help_enabled(&mut self, enabled: bool) {
+        PagerHooks::set_help_enabled(self.session, enabled);
+    }
+
+    async fn show_help(&mut self, term: &mut Terminal, help_filename: &str) -> u32 {
+        self.session.display_file(term, help_filename, 1).await
+    }
+}
+
+/// `display_ex_article_key_handler` (`menu_proc.c:203-216`): only the `case 0` of the C switch,
+/// which writes the status bar. Every key answers 0 and no key is rewritten, so the digest
+/// reader has no thread switch, no reply and no end-of-file exit; it leaves with the Esc and
+/// Left that [`screen::display_data`] handles itself, or with `h` into the help file.
+pub fn ex_article_key_handler(ch: &mut u32, ctx: &mut DisplayCtx) -> i32 {
+    if *ch == 0 {
+        ctx.msg = MSG_EX.to_string();
+    }
+    0
 }
 
 /// `locate_article` (`menu_proc.c:350`): a `LOCATE_ARTICLE` item's `sname|aid` parameter,
@@ -2886,5 +3091,200 @@ mod tests {
             "an empty roster matches nothing: {drawn}"
         );
         assert!(!drawn.contains("存在多个匹配的用户"), "{drawn}");
+    }
+
+    /// The digest tree `gen_ex_list` writes for board 1: the screen every block points at, the
+    /// board's root directory, and the one post it holds. An article item's name is its `AID`,
+    /// which is what `VIEW_EX_ARTICLE` is handed as its parameter.
+    fn ex_menu_set() -> crate::menu::MenuSet {
+        crate::menu::MenuSet::parse(
+            concat!(
+                "%S_EX_DIR\n",
+                "  返回[\x1b[1;32m←\x1b[0;37m] 进入[\x1b[1;32m→\x1b[0;37m]\n",
+                "%\n",
+                "%menu M_EX_1_0\n",
+                "title       0, 0, \"精华区 > 测试板\"\n",
+                "screen      2, 0, S_EX_DIR\n",
+                "page        4, 1, 20\n",
+                "@VIEW_EX_ARTICLE   4, 4, 1, 0, \"100\", \"    100  title 100                          2023.11.14\"\n",
+                "%\n",
+            )
+            .as_bytes(),
+        )
+        .expect("the fixture must parse")
+    }
+
+    /// A board whose digest tree is loaded and whose post has a cache file, in a temp server root
+    /// the reader can open. `name` keeps the roots of the tests that use it apart.
+    fn digest_session(name: &str) -> (Session, std::path::PathBuf) {
+        let root = std::env::temp_dir().join(format!("lbbs-ex-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(VAR_ARTICLE_CACHE_DIR)).unwrap();
+
+        let mut board = board_with(&[]);
+        let article = Article {
+            aid: 100,
+            cid: 9001,
+            ..post(100)
+        };
+        board.append_article(&article).expect("append");
+        {
+            let section = board.section_mut(1).expect("section");
+            section.ex_menu_tm = NOW;
+            section.ex_menu_set = Some(std::sync::Arc::new(ex_menu_set()));
+        }
+
+        let mut session = crate::session::offline_session();
+        session.root = root.clone();
+        // The generated digest items ask for the `P_USER` bit — the `1` of their `…, 4, 1, 0`
+        // fields — which a guest does not hold, and a menu of hidden items is C's 没有可选项.
+        session.privs.g_priv |= crate::privilege::P_USER;
+        let dir = root.join(VAR_ARTICLE_CACHE_DIR);
+        cache::generate(
+            &dir.to_string_lossy(),
+            "枫林在线",
+            "www.bbs.test",
+            &article,
+            board.section(1).expect("section"),
+            "精华区的第一帖\n".as_bytes(),
+            "203.0.113.7",
+            true,
+            false,
+        )
+        .expect("the cache file must be written");
+
+        *session.state.board_mut() = board;
+        (session, root)
+    }
+
+    /// `section_list_display.c:1392-1399`: a board the generator never stamped is not an empty
+    /// digest tree — it is one line and a key press, and the menu never opens.
+    #[tokio::test]
+    async fn a_board_that_was_never_stamped_says_its_digest_is_closed() {
+        use crate::term::{ByteIo, Pipe, Terminal};
+
+        let mut session = crate::session::offline_session();
+        *session.state.board_mut() = board_with(&[]);
+        let (client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        let typed = type_later(client, 250, b" ");
+
+        let opened = tokio::time::timeout(
+            Duration::from_secs(5),
+            list_ex_dir(&mut term, &mut session, 1),
+        )
+        .await
+        .expect("the message ends on its key");
+        assert!(opened, "C answers a closed digest with 0");
+
+        let mut client = typed.await.unwrap();
+        let drawn = String::from_utf8_lossy(&client.take_available()).into_owned();
+        assert!(drawn.contains("该版块精华区未开放"), "{drawn}");
+        assert!(!drawn.contains("精华区 > 测试板"), "{drawn}");
+    }
+
+    /// The whole `LIST_EX_SECTION` visit: the tree draws, `Enter` runs the item's
+    /// `VIEW_EX_ARTICLE` through the same dispatch table the main menu uses, and the two Escapes
+    /// that follow leave the reader and then the tree.
+    #[tokio::test]
+    async fn a_digest_item_reads_its_post_and_hands_the_tree_back() {
+        use crate::term::{ByteIo, Pipe, Terminal};
+
+        let (mut session, root) = digest_session("item");
+        let (client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        let typed = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            client.push(b"\r");
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            client.push(b"\x1b");
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            client.push(b"\x1b");
+            client
+        });
+
+        let answered = tokio::time::timeout(
+            Duration::from_secs(6),
+            list_ex_section(&mut term, &mut session, "test"),
+        )
+        .await
+        .expect("the tree leaves on its second Escape");
+        assert!(answered, "a board the pool has always asks for a redraw");
+
+        let mut client = typed.await.unwrap();
+        let drawn = String::from_utf8_lossy(&client.take_available()).into_owned();
+        assert!(drawn.contains("精华区 > 测试板"), "{drawn}");
+        assert!(drawn.contains("精华区的第一帖"), "{drawn}");
+        // The digest pager: `display_ex_article_key_handler` answers every key with the bar that
+        // has neither the thread switch nor the reply.
+        assert!(drawn.contains("帮助[\x1b[32mh\x1b[33m] |"), "{drawn}");
+        assert!(!drawn.contains("回复[\x1b[32mr\x1b[33m]"), "{drawn}");
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// `menu_proc.c:262-266`: the parameter is a board name, and a name the pool does not have is
+    /// the handler's `-1` — `menu_control` hands it to the caller's `NOREDRAW` arm, which leaves
+    /// the menu that ran it untouched. A board that is there but whose menu never loaded is C's
+    /// `-3`, which its caller logs and still answers `REDRAW` with (`:268-274`).
+    #[tokio::test]
+    async fn a_missing_digest_board_redraws_nothing_and_a_broken_menu_does() {
+        use crate::menu::Action;
+        use crate::term::{ByteIo, Pipe, Terminal};
+
+        let mut board = board_with(&[]);
+        board.section_mut(1).expect("section").ex_menu_tm = NOW;
+
+        let (mut client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        let mut session = crate::session::offline_session();
+        *session.state.board_mut() = board;
+
+        let answered =
+            crate::bbs::bbs_do_choice(&mut term, &mut session, Action::ListExSection, "nope", false)
+                .await;
+        assert_eq!(answered, MenuReturn::NoRedraw, "Section nope not found");
+        let drawn = String::from_utf8_lossy(&client.take_available()).into_owned();
+        assert!(!drawn.contains("该版块精华区未开放"), "{drawn}");
+
+        let answered =
+            crate::bbs::bbs_do_choice(&mut term, &mut session, Action::ListExSection, "test", false)
+                .await;
+        assert_eq!(answered, MenuReturn::Redraw, "a stamped board with no menu");
+    }
+
+    /// `menu_proc.c:224-238`: a parameter that is not a number is `atoi`'s 0, and a post whose
+    /// cache file the loader never wrote both answer `NOREDRAW` — no screen, no database.
+    #[tokio::test]
+    async fn a_digest_post_that_is_not_there_leaves_the_screen_alone() {
+        use crate::menu::Action;
+        use crate::term::{ByteIo, Pipe, Terminal};
+
+        let (mut session, root) = digest_session("uncached");
+        {
+            // A second post, whose cache file is deliberately not generated.
+            let article = Article {
+                aid: 200,
+                cid: 9002,
+                ..post(200)
+            };
+            session.state.board_mut().append_article(&article).expect("append");
+        }
+        let (mut client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+
+        for (param, why) in [
+            ("", "atoi of an empty name is 0, which is no article"),
+            ("200", "the pool has the post but no cache file for it"),
+        ] {
+            let answered =
+                crate::bbs::bbs_do_choice(&mut term, &mut session, Action::ViewExArticle, param, false)
+                    .await;
+            assert_ne!(answered, MenuReturn::Redraw, "{why}");
+        }
+
+        let drawn = String::from_utf8_lossy(&client.take_available()).into_owned();
+        assert!(!drawn.contains("精华区的第一帖"), "{drawn}");
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

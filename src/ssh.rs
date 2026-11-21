@@ -142,7 +142,7 @@ struct Connection {
 impl Connection {
     fn new(admitted: &Admitted) -> Arc<Self> {
         let gateway = Arc::clone(&admitted.gateway);
-        let (terminal, net) = Pipe::new();
+        let (session_pipe, net) = Pipe::new();
         let (input_tx, input_rx) = mpsc::unbounded_channel();
         let addr = admitted.addr;
 
@@ -155,9 +155,12 @@ impl Connection {
             true,
         );
 
+        let mut terminal = Terminal::new(ByteIo::Pipe(session_pipe));
+        terminal.set_exit_watch(gateway.state.exit_watch());
+
         Arc::new(Connection {
             session: Mutex::new(Some(session)),
-            terminal: Mutex::new(Some(Terminal::new(ByteIo::Pipe(terminal)))),
+            terminal: Mutex::new(Some(terminal)),
             net: Mutex::new(Some(net)),
             input_tx: Mutex::new(Some(input_tx)),
             input_rx: Mutex::new(Some(input_rx)),

@@ -19,9 +19,20 @@
 //! * `load` takes the pool, not a live `MYSQL*`, and each statement autocommits. C's
 //!   `load_priv` returns `1` when the connection is `NULL` and `-1` on a query error; the
 //!   port returns the [`sqlx::Error`] instead, since every caller only tested `!= 0`.
-//! * `load` builds a fresh record rather than resetting the fields of a stale one. C
-//!   cleared `uid`, `level`, `g_priv` and `s_count` but left the previous session's
-//!   `s_priv_list` entries behind, which was harmless under fork-per-connection.
+//! * `load` builds a fresh record instead of resetting the fields of a reused global; C now
+//!   zeroes `s_priv_list` at the top of `load_priv`, so both start from the same place.
+//!
+//! # Outstanding divergence
+//!
+//! [`UserPriv::search`] is still the search C had before the fix (`while (left < right)`,
+//! no `found` flag), so the port keeps the defects C has since removed: the list goes out
+//! of order as soon as boards arrive out of order, an entry can then stop being findable,
+//! and the slot the search lands in is read even when nothing matched. C's fixed search
+//! inserts in place and reports a real hit, so a section master or a board mask reaches the
+//! board-specific word where the port still reads the global one. Porting it would change
+//! which privileges are reachable, so it is left open deliberately — see
+//! `tests::an_insert_that_lands_wrong_hides_a_board`, which pins the pre-fix result.
+//! [`Full`] and the dropping it counts are ported from the current C.
 
 use crate::db::Db;
 use crate::paths;
@@ -210,8 +221,41 @@ impl UserPriv {
     }
 }
 
-/// `setpriv` had nowhere left to put the entry: C dropped it silently once the list was
-/// full (`:79-82`), and so does the port.
+/// Bookkeeping for `setpriv` refusals: the list holds [`paths::MAX_SECTION`] boards, and
+/// each pass of [`load`] keeps going with the privileges it already gathered. A refused
+/// entry reads back as the global word, so a dropped board ban or read restriction quietly
+/// loosens access — hence the first refusal and the total are logged per pass.
+#[derive(Default)]
+struct Dropped {
+    count: usize,
+    first_sid: i16,
+}
+
+impl Dropped {
+    fn add(&mut self, sid: i16) {
+        if self.count == 0 {
+            self.first_sid = sid;
+        }
+        self.count += 1;
+    }
+
+    fn report(&self, uid: i32, stage: &str) {
+        if self.count > 0 {
+            tracing::error!(
+                "Drop privilege of {} section(s) of user {} from SID {} at {} stage: \
+                 s_priv_list limit {} reached",
+                self.count,
+                uid,
+                self.first_sid,
+                stage,
+                paths::MAX_SECTION
+            );
+        }
+    }
+}
+
+/// `setpriv` had nowhere left to put the entry (`:80-83`); [`Dropped`] is what reports it
+/// instead of leaving the refusal silent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Full;
 
@@ -237,17 +281,24 @@ pub async fn load(db: &Db, uid: i32) -> Result<UserPriv, sqlx::Error> {
     }
 
     // Section master (`:173`).
+    let mut dropped = Dropped::default();
     for row in db.masterships(uid).await? {
+        let sid = row.sid;
         let major = row.major;
         privs.level |= if major { P_MAN_M } else { P_MAN_S };
-        let (current, is_favor) = privs.getpriv(row.sid);
+        let (current, is_favor) = privs.getpriv(sid);
         let s_priv = current | if major { S_MAN_M } else { S_MAN_S };
-        let _ = privs.setpriv(row.sid, s_priv, is_favor);
+        if privs.setpriv(sid, s_priv, is_favor).is_err() {
+            dropped.add(sid);
+        }
     }
+    dropped.report(uid, "section master");
 
     // Section status (`:198`), a per-board pass over every enabled board.
+    let mut dropped = Dropped::default();
     for row in db.section_levels().await? {
-        let (mut s_priv, is_favor) = privs.getpriv(row.sid);
+        let sid = row.sid;
+        let (mut s_priv, is_favor) = privs.getpriv(sid);
         if privs.level < row.read_user_level as i32 {
             s_priv &= !S_LIST;
         }
@@ -257,23 +308,32 @@ pub async fn load(db: &Db, uid: i32) -> Result<UserPriv, sqlx::Error> {
         if !row.exp_get {
             s_priv &= !S_GETEXP;
         }
-        let _ = privs.setpriv(row.sid, s_priv, is_favor);
+        if privs.setpriv(sid, s_priv, is_favor).is_err() {
+            dropped.add(sid);
+        }
     }
+    dropped.report(uid, "section status");
 
     // Section ban (`:233`).
+    let mut dropped = Dropped::default();
     for sid in db.banned_sids(uid).await? {
         let (s_priv, is_favor) = privs.getpriv(sid);
-        let _ = privs.setpriv(sid, s_priv & !S_POST, is_favor);
+        if privs.setpriv(sid, s_priv & !S_POST, is_favor).is_err() {
+            dropped.add(sid);
+        }
     }
+    dropped.report(uid, "section ban");
 
     // Favourites (`:255`): the flag lives on the list entry, and reaching a board through
     // the global word first is what materialises the entry.
+    let mut dropped = Dropped::default();
     for sid in db.favorite_sids(uid).await? {
         let (s_priv, is_favor) = privs.getpriv(sid);
-        if !is_favor {
-            let _ = privs.setpriv(sid, s_priv, true);
+        if !is_favor && privs.setpriv(sid, s_priv, true).is_err() {
+            dropped.add(sid);
         }
     }
+    dropped.report(uid, "section favorite");
 
     Ok(privs)
 }

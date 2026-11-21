@@ -260,6 +260,7 @@ async fn serve_one(admitted: Admitted, stream: TcpStream) {
     let gateway = Arc::clone(&admitted.gateway);
     let addr = admitted.addr;
     let mut terminal = Terminal::new(ByteIo::Tcp(stream));
+    terminal.set_exit_watch(gateway.state.exit_watch());
     let mut session = crate::session::Session::new(
         Arc::clone(&gateway.state),
         gateway.root.clone(),

@@ -35,7 +35,9 @@ use crate::board::{Article, Board, Section};
 use crate::cache;
 use crate::db::{ArticleRow, ContentRow, Db, OpRow, SectionRow};
 use crate::ipmask;
-use crate::paths::{USER_OFF_LINE_SECS, VAR_ARTICLE_CACHE_DIR};
+use crate::paths::{
+    USER_OFF_LINE_SECS, VAR_ARTICLE_CACHE_DIR, VAR_GEN_EX_MENU_DIR,
+};
 use crate::roster::{OnlineList, Roster};
 use crate::state::AppState;
 
@@ -214,8 +216,8 @@ pub fn load_section_config_into(
         let section = board
             .section_mut(row.sid)
             .expect("the board was just created or found");
-        // `:153-156`. The gen_ex menu of `:158-175` is not loaded here, so `ex_menu_tm` stays
-        // at zero and every board is due for its menu the first time that lands.
+        // `:153-156`. The gen_ex menu of `:158-175` is the other half of the pass, in
+        // [`load_gen_ex_menus_into`], so `ex_menu_tm` here stays at zero until that lands.
         section.class_id = i32::from(row.cid);
         section.read_user_level = i32::from(row.read_user_level);
         section.write_user_level = i32::from(row.write_user_level);
@@ -223,6 +225,51 @@ pub fn load_section_config_into(
     }
 
     Ok(())
+}
+
+/// The `update_gen_ex` half of `load_section_config_from_db` (`:162-179`): the digest menu of
+/// every enabled board whose `section_config.ex_menu_tm` moved past the one the pool holds.
+///
+/// C runs it only from `main.c:389` and the reload `net_server.c:871`, never from the article
+/// loop's `section_list_loader.c:751`, which in the port is [`Loader::load_section_config`] — the
+/// only caller, for all three of those passes go through it.
+///
+/// A menu that will not read or will not parse is unloaded and the timestamp is left where it
+/// was (`:170-178`), so the board keeps its stale menu until the next pass retries — which is how
+/// C reaches `section_list_ex_dir_display` with `ex_menu_tm != 0` and an empty tree.
+pub fn load_gen_ex_menus_into(board: &mut Board, rows: &[SectionRow], dir: &Path) {
+    for row in rows {
+        let Some(section) = board.section_mut(row.sid) else {
+            continue;
+        };
+
+        // `atol(row[7] == NULL ? "0" : row[7]) > p_section->ex_menu_tm`, after the `enable` test.
+        let tm = row.ex_menu_tm.unwrap_or(0);
+        if !row.enable || tm <= section.ex_menu_tm {
+            continue;
+        }
+
+        let path = dir.join(row.sid.to_string());
+        let loaded = std::fs::read(&path)
+            .map_err(|err| err.to_string())
+            .and_then(|data| crate::menu::MenuSet::parse(&data).map_err(|err| err.to_string()));
+
+        match loaded {
+            Ok(set) => {
+                section.ex_menu_set = Some(std::sync::Arc::new(set));
+                section.ex_menu_tm = tm;
+                tracing::debug!(
+                    "Loaded gen_ex_menu of section {} [{}]",
+                    row.sid,
+                    section.sname
+                );
+            }
+            Err(error) => {
+                section.ex_menu_set = None;
+                tracing::error!("load_menu({}) error: {error}", path.display());
+            }
+        }
+    }
 }
 
 /// `append_articles_from_db` (`:197`) over rows already read. The arena links, the board
@@ -513,6 +560,9 @@ pub struct Loader {
     /// `VAR_ARTICLE_CACHE_DIR` under the server root: where [`cache::generate`] writes the file
     /// that [`crate::browse`] reads back.
     cache_dir: PathBuf,
+    /// `VAR_GEN_EX_MENU_DIR` under the same root: the one file per board that
+    /// [`load_gen_ex_menus_into`] reads.
+    gen_ex_dir: PathBuf,
     /// `tm_user_list_reload` and `tm_user_online_list_reload`, both started a full interval
     /// out because the startup pass has already loaded the two tables.
     next_users: Instant,
@@ -529,6 +579,7 @@ impl Loader {
             watermark: None,
             reload_config: false,
             cache_dir: root.join(VAR_ARTICLE_CACHE_DIR),
+            gen_ex_dir: root.join(VAR_GEN_EX_MENU_DIR),
             next_users: now + USER_LIST_INTERVAL,
             next_online: now + USER_ONLINE_INTERVAL,
         }
@@ -651,11 +702,13 @@ impl Loader {
         Ok(())
     }
 
-    /// `load_section_config_from_db(0)` (`:42`). The master names are read before the board
-    /// lock; the C original runs the same query per board while holding that board's lock and
-    /// breaks out with the boards it had reached already updated — a `break` that did not
-    /// release that lock until d7f2f5d. Here a failed query leaves the previous config in place,
-    /// which the next pass tries again.
+    /// `load_section_config_from_db(1)` (`:42`): the config rows and the digest menus together, as
+    /// `main.c:389` and `net_server.c:871` ask for it. The loader child's own refresh (`:751`)
+    /// passes `0`, and the port has no second process to keep the halves apart, so one pass does
+    /// what C's two did. The master names are read before the board lock; the C original runs the
+    /// same query per board while holding that board's lock and breaks out with the boards it had
+    /// reached already updated — a `break` that did not release that lock until d7f2f5d. Here a
+    /// failed query leaves the previous config in place, which the next pass tries again.
     pub async fn load_section_config(&self) -> Result<(), LoaderError> {
         let rows = self.state.db.sections().await?;
         let master_lists = join_all(rows.iter().map(|row| self.state.db.section_masters(row.sid)))
@@ -664,7 +717,9 @@ impl Loader {
             .collect::<Result<Vec<String>, sqlx::Error>>()?;
 
         let mut board = self.state.board_mut();
-        load_section_config_into(&mut board, &rows, &master_lists)
+        load_section_config_into(&mut board, &rows, &master_lists)?;
+        load_gen_ex_menus_into(&mut board, &rows, &self.gen_ex_dir);
+        Ok(())
     }
 
     /// `append_articles_from_db(last_aid + 1, 0, LOAD_ARTICLE_COUNT_LIMIT)`, run until a batch
@@ -1191,6 +1246,74 @@ mod tests {
         load_section_config_into(&mut board, &rows, &masters).unwrap();
 
         assert_eq!(board.sections.len(), 2);
+    }
+
+    /// `section_list_loader.c:162-179`: the row's stamp decides, `enable` gates, and a menu that
+    /// will not read leaves the board with no tree and its stamp behind, so the next pass retries.
+    #[test]
+    fn a_digest_menu_loads_when_its_stamp_moves_and_not_otherwise() {
+        let dir = std::env::temp_dir().join(format!("lbbs-gen-ex-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let menu = concat!(
+            "%S_EX_DIR\n",
+            "%\n",
+            "%menu M_EX_1_0\n",
+            "screen 2, 0, S_EX_DIR\n",
+            "@VIEW_EX_ARTICLE 4, 4, 1, 0, \"100\", \"(100)\"\n",
+            "%\n",
+        );
+        std::fs::write(dir.join("1"), menu).unwrap();
+        // Board 2 has a file that is not a menu, and board 3 has none at all.
+        std::fs::write(dir.join("2"), "%menu M\nscreen 2, 0, S_NONE\n%\n").unwrap();
+
+        let mut board = Board::default();
+        let mut rows = vec![
+            section_row(1, "test", "Test"),
+            section_row(2, "broken", "Broken"),
+            section_row(3, "gone", "Gone"),
+            section_row(4, "closed", "Closed"),
+            section_row(5, "unstamped", "Unstamped"),
+        ];
+        for row in &mut rows[..4] {
+            row.ex_menu_tm = Some(1000);
+        }
+        rows[3].enable = false;
+        let masters = vec![String::new(); rows.len()];
+        load_section_config_into(&mut board, &rows, &masters).unwrap();
+        load_gen_ex_menus_into(&mut board, &rows, &dir);
+
+        let set = board.section(1).unwrap().ex_menu_set.clone().expect("loaded");
+        assert_eq!(board.section(1).unwrap().ex_menu_tm, 1000, "the stamp moves on");
+        assert_eq!(set.items[0].name, "100", "the name is the AID the item passes on");
+
+        for sid in [2, 3] {
+            let section = board.section(sid).unwrap();
+            assert!(section.ex_menu_set.is_none(), "{sid} kept a tree it never read");
+            assert_eq!(section.ex_menu_tm, 0, "{sid} was stamped by a failed load");
+        }
+        // A disabled board is skipped before the stamp is looked at (`:164`), and a NULL
+        // `ex_menu_tm` is `atol` of nothing: neither is due for anything.
+        assert_eq!(board.section(4).unwrap().ex_menu_tm, 0);
+        assert_eq!(board.section(5).unwrap().ex_menu_tm, 0);
+
+        // The same stamp again: the file behind the board moved on, and the tree did not, because
+        // C only reloads while the row is *newer* than what the board holds.
+        std::fs::write(dir.join("1"), menu.replace("(100)", "(rewritten)")).unwrap();
+        load_gen_ex_menus_into(&mut board, &rows, &dir);
+        let set = board.section(1).unwrap().ex_menu_set.clone().unwrap();
+        assert_eq!(set.items[0].text, "(100)", "an unchanged stamp does not reload");
+
+        // A newer one does. Board 2 is retried on every pass all along: its stamp never advanced,
+        // so the row stays newer than what the board holds.
+        rows[0].ex_menu_tm = Some(2000);
+        load_gen_ex_menus_into(&mut board, &rows, &dir);
+        let set = board.section(1).unwrap().ex_menu_set.clone().unwrap();
+        assert_eq!(set.items[0].text, "(rewritten)");
+        assert_eq!(board.section(1).unwrap().ex_menu_tm, 2000);
+        assert!(board.section(2).unwrap().ex_menu_set.is_none());
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     fn temp_cache_dir(name: &str) -> String {

@@ -5,10 +5,12 @@ pub mod key;
 
 use encoding_rs::{Decoder, GBK};
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
 
 use crate::paths::LINE_BUFFER_LEN;
 use crate::text;
@@ -133,9 +135,49 @@ impl Pipe {
     }
 }
 
+/// `SYS_server_exit` as C's `io.c` reads it. A `select()` there was always cut short by the
+/// flag — `while (!SYS_server_exit && ch == KEY_TIMEOUT && …)` at `io.c:1104`, and the same test
+/// in the buffering loops at `:308`, `:456`, `:526` — because the parent's `kill(0, SIGTERM)`
+/// reached every child and the handler only raised the flag. A task cannot be interrupted from
+/// outside, so the port raises the flag *and* wakes a waiter: the wait then answers as its own
+/// timeout, which is what lets the caller reach the exit test in its loop.
+#[derive(Clone, Default)]
+pub struct ExitWatch {
+    exiting: Arc<AtomicBool>,
+    shutdown: Arc<Notify>,
+}
+
+impl ExitWatch {
+    pub fn is_exiting(&self) -> bool {
+        self.exiting.load(Ordering::Relaxed)
+    }
+
+    /// Raises the flag and wakes the waits registered by [`ExitWatch::wait`].
+    pub fn exit(&self) {
+        self.exiting.store(true, Ordering::Relaxed);
+        self.shutdown.notify_waiters();
+    }
+
+    /// Resolves once [`ExitWatch::exit`] has been called. The waiter registers before the flag
+    /// is read, since `notify_waiters()` only reaches waiters already registered.
+    pub async fn wait(&self) {
+        loop {
+            let notified = self.shutdown.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.is_exiting() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
 /// One client session's terminal.
 pub struct Terminal {
     io: ByteIo,
+    /// The daemon's shutdown flag, so a wait ends with it rather than with its own deadline.
+    exit: ExitWatch,
     charset: Charset,
     /// The `(V)变宽/(F)定宽` choice handed to `src/str_process.c` as `UTF8_fixed_width`.
     fixed_width: bool,
@@ -154,6 +196,7 @@ impl Terminal {
     pub fn new(io: ByteIo) -> Terminal {
         Terminal {
             io,
+            exit: ExitWatch::default(),
             charset: Charset::Utf8,
             fixed_width: true,
             input: Vec::new(),
@@ -177,6 +220,11 @@ impl Terminal {
 
     pub fn fixed_width(&self) -> bool {
         self.fixed_width
+    }
+
+    /// Hand the transport the daemon's shutdown flag, as a C child inherited it in shared memory.
+    pub fn set_exit_watch(&mut self, exit: ExitWatch) {
+        self.exit = exit;
     }
 
     pub fn set_fixed_width(&mut self, fixed: bool) {
@@ -321,7 +369,9 @@ impl Terminal {
                 return KEY_TIMEOUT;
             }
             let ch = self.read_key(remaining).await;
-            if ch != KEY_TIMEOUT {
+            if ch != KEY_TIMEOUT || self.exit.is_exiting() {
+                // `io.c:1104`: `press_any_key` answers the moment the flag is up, which is how a
+                // session parked here for its full idle limit still ends inside the drain.
                 return ch;
             }
         }
@@ -337,7 +387,17 @@ impl Terminal {
         let mut buf = [0u8; LINE_BUFFER_LEN];
         let kept = self.input.len();
         loop {
-            match tokio::time::timeout(timeout, read_bytes(&mut self.io, &mut buf)).await {
+            let exit = self.exit.clone();
+            let done = {
+                let read = tokio::time::timeout(timeout, read_bytes(&mut self.io, &mut buf));
+                tokio::pin!(read);
+                tokio::select! {
+                    biased;
+                    res = &mut read => res,
+                    _ = exit.wait() => return RawRead::Idle,
+                }
+            };
+            match done {
                 Ok(Ok(0)) => {
                     self.closed = true;
                     return RawRead::Closed;
@@ -352,7 +412,7 @@ impl Terminal {
                     return RawRead::Closed;
                 }
                 Err(_) => return RawRead::Idle,
-            };
+            }
         }
     }
 
@@ -369,7 +429,22 @@ impl Terminal {
     async fn refill(&mut self, timeout: Duration) -> Refill {
         let mut buf = [0u8; 1024];
         loop {
-            match tokio::time::timeout(timeout, read_bytes(&mut self.io, &mut buf)).await {
+            let exit = self.exit.clone();
+            let done = {
+                let read = tokio::time::timeout(timeout, read_bytes(&mut self.io, &mut buf));
+                tokio::pin!(read);
+                // `biased` so a key that lands together with the shutdown is still a key: C's
+                // `igetch` returned whatever the completed `select()` had read, and only tested
+                // `SYS_server_exit` around a wait that produced nothing (`io.c:1104`). Dropping a
+                // completed read here would swallow that byte, and the client would have to type
+                // the same key twice against a server that is going down anyway.
+                tokio::select! {
+                    biased;
+                    res = &mut read => res,
+                    _ = exit.wait() => return Refill::Timeout,
+                }
+            };
+            match done {
                 Ok(Ok(0)) => return Refill::Closed,
                 Ok(Ok(n)) => {
                     self.push_input(&buf[..n]);
@@ -378,7 +453,7 @@ impl Terminal {
                 Ok(Err(err)) if err.kind() == io::ErrorKind::Interrupted => continue,
                 Ok(Err(_)) => return Refill::Closed,
                 Err(_) => return Refill::Timeout,
-            };
+            }
         }
     }
 
@@ -580,5 +655,43 @@ mod tests {
         client.push(b"abc");
         term.reset_input().await;
         assert_eq!(term.read_key(Duration::from_millis(20)).await, KEY_TIMEOUT);
+    }
+
+    /// The daemon's `kill(0, SIGTERM)` reached a C child in the middle of its `select()`, and
+    /// `io.c:1104` answered that wait at once. Without the same cut-short, a session parked at
+    /// "press any key" for its idle limit never reaches the exit test its caller is in, and the
+    /// drain ends up reporting it as a straggler instead of closing it.
+    #[tokio::test]
+    async fn a_long_wait_ends_when_the_daemon_exits() {
+        let (mut term, _client) = session();
+        let exit = ExitWatch::default();
+        term.set_exit_watch(exit.clone());
+
+        let parked = tokio::spawn(async move { term.read_key_wait(600).await });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        exit.exit();
+
+        let answered = tokio::time::timeout(Duration::from_secs(1), parked).await;
+        assert!(answered.is_ok(), "the wait must not outlive the notify");
+        assert_eq!(
+            answered.unwrap().unwrap(),
+            KEY_TIMEOUT,
+            "the flag answers the wait as its own timeout, the way `igetch` did"
+        );
+    }
+
+    /// A key typed at the moment the daemon exits is still the key: the read branch is polled
+    /// first, so the shutdown cannot eat the byte the client sent.
+    #[tokio::test]
+    async fn a_key_landing_with_the_exit_is_still_the_key() {
+        let (client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        let exit = ExitWatch::default();
+        exit.exit();
+        term.set_exit_watch(exit);
+
+        client.push(b"A");
+        assert_eq!(term.read_key(Duration::from_secs(1)).await, b'A' as u32);
+        assert_eq!(term.read_key(Duration::from_secs(1)).await, KEY_TIMEOUT);
     }
 }

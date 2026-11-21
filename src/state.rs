@@ -66,10 +66,10 @@ pub struct AppState {
     max_client: AtomicUsize,
     /// `BBS_max_client_per_ip`.
     max_client_per_ip: AtomicUsize,
-    /// `SYS_server_exit`.
-    exiting: AtomicBool,
-    /// The wake-up that ends every task: `SIGTERM`/`SIGINT` in C, [`AppState::exit`] here.
-    shutdown: Notify,
+    /// `SYS_server_exit` and the wake-up that ends every task: `SIGTERM`/`SIGINT` in C,
+    /// [`AppState::exit`] here. Transport hands a copy to each terminal, because a C child read
+    /// the same flag out of shared memory inside its key waits.
+    exit: crate::term::ExitWatch,
     /// `SYS_conf_reload`, the flag a session raises through [`AppState::request_reload`].
     reloading: AtomicBool,
     /// The wake-up behind that flag.
@@ -104,8 +104,7 @@ impl AppState {
             top10: RwLock::new(Arc::new(MenuSet::default())),
             badwords: RwLock::new(Arc::new(Badwords::empty())),
             eula_tm: AtomicI64::new(0),
-            exiting: AtomicBool::new(false),
-            shutdown: Notify::const_new(),
+            exit: crate::term::ExitWatch::default(),
             reloading: AtomicBool::new(false),
             reload: Notify::const_new(),
         }
@@ -252,14 +251,19 @@ impl AppState {
 
     /// `SYS_server_exit`, which the menu loop and the key readers poll.
     pub fn is_exiting(&self) -> bool {
-        self.exiting.load(Ordering::Relaxed)
+        self.exit.is_exiting()
     }
 
     /// Set the flag and wake everyone waiting on [`AppState::shutdown`]. C's
     /// `net_server()` set the flag and then `kill(0, SIGTERM)`; one notify does both.
     pub fn exit(&self) {
-        self.exiting.store(true, Ordering::Relaxed);
-        self.shutdown.notify_waiters();
+        self.exit.exit();
+    }
+
+    /// The flag a transport watches so its waits end with the daemon's, rather than running out
+    /// their own idle deadlines first.
+    pub fn exit_watch(&self) -> crate::term::ExitWatch {
+        self.exit.clone()
     }
 
     /// `reload_bbs_conf`'s `kill(getppid(), SIGHUP)`: asks the daemon to run its reload pass.
@@ -288,20 +292,10 @@ impl AppState {
     }
 
     /// Resolves when the server is shutting down. A task that is already inside a blocking wait
-    /// still has to notice [`AppState::is_exiting`] the way the C loops checked the flag.
+    /// still has to notice [`AppState::is_exiting`] the way the C loops checked the flag —
+    /// [`AppState::exit_watch`] is how the transport gets that.
     pub async fn shutdown(&self) {
-        // The waiter is registered before the flag is read, as in [`AppState::wait_reload`]:
-        // an `exit()` landing in between would otherwise be missed, because
-        // `notify_waiters()` only reaches waiters that are already registered.
-        loop {
-            let notified = self.shutdown.notified();
-            tokio::pin!(notified);
-            notified.as_mut().enable();
-            if self.is_exiting() {
-                return;
-            }
-            notified.await;
-        }
+        self.exit.wait().await;
     }
 }
 
