@@ -480,8 +480,16 @@ pub(crate) async fn serve(admitted: Admitted, stream: TcpStream, config: Arc<ser
 
     // The future ends with russh's own loop for this connection: the client disconnected, a
     // protocol error happened, or the channel closed.
-    if let Err(err) = running.await {
-        tracing::error!("ssh event loop error: {err}");
+    match running.await {
+        // russh reads each packet with `read_exact()`, so a peer that vanishes between the length
+        // and the body — the usual way a terminal window is closed instead of logging out — ends
+        // the loop with `UnexpectedEof` rather than a protocol complaint. C's libssh loop simply
+        // returned from the same abrupt disconnect, so this is an ordinary ending, not a fault.
+        Err(russh::Error::IO(err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
+            tracing::debug!("SSH connection from {addr} ended: {err}");
+        }
+        Err(err) => tracing::error!("ssh event loop error: {err}"),
+        Ok(()) => {}
     }
 
     conn.hang_up().await;

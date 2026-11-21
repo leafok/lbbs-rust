@@ -12,27 +12,16 @@
 //!
 //! # Deviations from C
 //!
-//! * `s_priv_list` is a `Vec` capped at [`paths::MAX_SECTION`] instead of a fixed array.
-//!   The array in C is a zero-initialized global, so a search in an empty list compares
-//!   against `0`; [`UserPriv::search`] reproduces that by treating a missing entry as
-//!   `sid == 0`.
+//! * `s_priv_list` is a `Vec` capped at [`paths::MAX_SECTION`] instead of a fixed array;
+//!   C's array is a zero-initialized global whose unused slots still hold `0`, where the
+//!   port has no entry at all. `UserPriv::search` answers with a hit flag, as C does, so
+//!   neither one reads a slot that holds nothing.
 //! * `load` takes the pool, not a live `MYSQL*`, and each statement autocommits. C's
 //!   `load_priv` returns `1` when the connection is `NULL` and `-1` on a query error; the
 //!   port returns the [`sqlx::Error`] instead, since every caller only tested `!= 0`.
-//! * `load` builds a fresh record instead of resetting the fields of a reused global; C now
-//!   zeroes `s_priv_list` at the top of `load_priv`, so both start from the same place.
-//!
-//! # Outstanding divergence
-//!
-//! [`UserPriv::search`] is still the search C had before the fix (`while (left < right)`,
-//! no `found` flag), so the port keeps the defects C has since removed: the list goes out
-//! of order as soon as boards arrive out of order, an entry can then stop being findable,
-//! and the slot the search lands in is read even when nothing matched. C's fixed search
-//! inserts in place and reports a real hit, so a section master or a board mask reaches the
-//! board-specific word where the port still reads the global one. Porting it would change
-//! which privileges are reachable, so it is left open deliberately — see
-//! `tests::an_insert_that_lands_wrong_hides_a_board`, which pins the pre-fix result.
-//! [`Full`] and the dropping it counts are ported from the current C.
+//! * `load` builds a fresh record instead of resetting the fields of a reused global; C
+//!   zeroes `s_priv_list` at the top of `load_priv` (`:157`), so both start from the same
+//!   place.
 
 use crate::db::Db;
 use crate::paths;
@@ -77,7 +66,8 @@ pub struct UserPriv {
     pub uid: i32,
     pub level: i32,
     pub g_priv: i32,
-    /// `s_priv_list`, kept in the order C's insert left it in.
+    /// `s_priv_list`, in `sid` order — the order the fixed insert maintains, not the order
+    /// the boards arrived in.
     sections: Vec<SectionPriv>,
 }
 
@@ -108,16 +98,18 @@ impl UserPriv {
         &self.sections
     }
 
-    /// `search_priv` (`:30-58`): the binary search, left exactly as written, including the
-    /// way it can land on the wrong slot. The list is therefore not always sorted after an
-    /// insert, and a later lookup can miss an entry the same way it does in C.
+    /// `search_priv` (`:31-61`): the binary search, with C's `found` flag. An insert at the
+    /// offset it returns therefore keeps the list sorted, which is what makes every stored
+    /// board findable again — the flag also means a miss is a miss, not the slot the search
+    /// stopped beside.
     fn search(&self, sid: i16) -> (usize, bool) {
         // `left` and `right` are signed because C's are, and an empty list starts with
         // `right == -1`, which is what keeps its loop from running.
         let mut left: i64 = 0;
         let mut right = self.sections.len() as i64 - 1;
+        let mut found = false;
 
-        while left < right {
+        while left <= right {
             let mid = (left + right) / 2;
             let entry = self.sections[mid as usize].sid;
             if sid < entry {
@@ -125,20 +117,18 @@ impl UserPriv {
             } else if sid > entry {
                 left = mid + 1;
             } else {
+                found = true;
                 left = mid;
                 break;
             }
         }
 
-        let offset = left.max(0) as usize;
-        // C tests `sid == s_priv_list[left].sid` even when the list is empty, reading the
-        // zeroed global, where only `sid == 0` can match.
-        let found = self.sections.get(offset).map(|entry| entry.sid).unwrap_or(0) == sid;
-
-        (offset, found)
+        // `left` is the insertion point when nothing matched, and the match when something
+        // did; either way it stays inside `0..=len`.
+        (left as usize, found)
     }
 
-    /// `setpriv` (`:60-97`). `sid == 0` is the global word, not a list entry.
+    /// `setpriv` (`:63-101`). `sid == 0` is the global word, not a list entry.
     pub fn setpriv(&mut self, sid: i16, s_priv: i32, is_favor: bool) -> Result<(), Full> {
         if sid == 0 {
             self.g_priv = s_priv;
@@ -168,16 +158,13 @@ impl UserPriv {
         Ok(())
     }
 
-    /// `getpriv` (`:99-111`): the stored word, or the global one for an unknown positive
-    /// `sid`, or `S_NONE` for a negative one.
+    /// `getpriv` (`:103-115`): the stored word, or the global one for an unknown board, or
+    /// `S_NONE` for a negative `sid`. `sid == 0` is never a list entry, so it always reads
+    /// the global word — which is how `checkpriv(&BBS_priv, 0, priv)` works in the menu.
     pub fn getpriv(&self, sid: i16) -> (i32, bool) {
         let (offset, found) = self.search(sid);
-        if found {
-            // An empty list reports the zeroed slot C would have read.
-            return match self.sections.get(offset) {
-                Some(entry) => (entry.s_priv, entry.is_favor),
-                None => (S_NONE, false),
-            };
+        if let Some(entry) = self.sections.get(offset).filter(|_| found) {
+            return (entry.s_priv, entry.is_favor);
         }
 
         (if sid >= 0 { self.g_priv } else { S_NONE }, false)
@@ -213,8 +200,8 @@ impl UserPriv {
         self.getpriv(sid).1
     }
 
-    /// The board privileges a session may exercise, or `None` when the search did not land
-    /// on the board — which, given the search above, is not the same as "not in the list".
+    /// The board privileges a session may exercise, or `None` when the board is not in the
+    /// list, in which case [`UserPriv::getpriv`] reports the global word instead.
     pub fn section(&self, sid: i16) -> Option<SectionPriv> {
         let (offset, found) = self.search(sid);
         if found { self.sections.get(offset).copied() } else { None }
@@ -254,17 +241,17 @@ impl Dropped {
     }
 }
 
-/// `setpriv` had nowhere left to put the entry (`:80-83`); [`Dropped`] is what reports it
+/// `setpriv` had nowhere left to put the entry (`:81-84`); `Dropped` is what reports it
 /// instead of leaving the refusal silent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Full;
 
-/// `load_priv` (`user_priv.c:113-280`), one query per step in the original order — the
-/// order matters, because the insertion points depend on it.
+/// `load_priv` (`user_priv.c:141-337`), one query per step in the original order — the
+/// order matters because each pass reads the words the previous one left behind.
 pub async fn load(db: &Db, uid: i32) -> Result<UserPriv, sqlx::Error> {
     let mut privs = UserPriv::new(uid);
 
-    // Permission (`:130`): the two global bits come only from a verified account.
+    // Permission (`:162`): the two global bits come only from a verified account.
     if let Some(flags) = db.user_flags(uid).await? {
         if flags.p_post {
             privs.g_priv |= S_POST;
@@ -274,13 +261,13 @@ pub async fn load(db: &Db, uid: i32) -> Result<UserPriv, sqlx::Error> {
         }
     }
 
-    // Admin (`:151`).
+    // Admin (`:183`).
     if let Some(major) = db.admin_major(uid).await? {
         privs.level |= if major { P_ADMIN_M } else { P_ADMIN_S };
         privs.g_priv |= if major { S_ALL } else { S_ADMIN };
     }
 
-    // Section master (`:173`).
+    // Section master (`:205`).
     let mut dropped = Dropped::default();
     for row in db.masterships(uid).await? {
         let sid = row.sid;
@@ -294,7 +281,7 @@ pub async fn load(db: &Db, uid: i32) -> Result<UserPriv, sqlx::Error> {
     }
     dropped.report(uid, "section master");
 
-    // Section status (`:198`), a per-board pass over every enabled board.
+    // Section status (`:237`), a per-board pass over every enabled board.
     let mut dropped = Dropped::default();
     for row in db.section_levels().await? {
         let sid = row.sid;
@@ -314,7 +301,7 @@ pub async fn load(db: &Db, uid: i32) -> Result<UserPriv, sqlx::Error> {
     }
     dropped.report(uid, "section status");
 
-    // Section ban (`:233`).
+    // Section ban (`:279`).
     let mut dropped = Dropped::default();
     for sid in db.banned_sids(uid).await? {
         let (s_priv, is_favor) = privs.getpriv(sid);
@@ -324,7 +311,7 @@ pub async fn load(db: &Db, uid: i32) -> Result<UserPriv, sqlx::Error> {
     }
     dropped.report(uid, "section ban");
 
-    // Favourites (`:255`): the flag lives on the list entry, and reaching a board through
+    // Favourites (`:308`): the flag lives on the list entry, and reaching a board through
     // the global word first is what materialises the entry.
     let mut dropped = Dropped::default();
     for sid in db.favorite_sids(uid).await? {
@@ -357,6 +344,14 @@ mod tests {
         assert_eq!(privs.getpriv(42), (S_DEFAULT, false));
         // A negative board is not the global one.
         assert_eq!(privs.getpriv(-1), (S_NONE, false));
+        // `sid == 0` never enters the list, so `checkpriv(&BBS_priv, 0, priv)` in the menu
+        // reads the global word even for a session with boards recorded.
+        let mut privs = UserPriv::new(7);
+        privs.setpriv(4, S_POST, false).unwrap();
+        assert_eq!(privs.getpriv(0), (S_DEFAULT, false));
+        // A miss reports the global word, not the word of the board beside it.
+        assert_eq!(privs.getpriv(3), (S_DEFAULT, false));
+        assert_eq!(privs.getpriv(5), (S_DEFAULT, false));
     }
 
     #[test]
@@ -414,23 +409,52 @@ mod tests {
     }
 
     #[test]
-    fn an_insert_that_lands_wrong_hides_a_board() {
-        // The C search assumes a sorted list and inserts where it last looked, so the list
-        // goes out of order as soon as boards arrive out of order — and an entry can then
-        // stop being findable. Here 10 is stored but never found again. A port that
-        // "fixed" the search would report different privileges.
+    fn boards_that_arrive_out_of_order_stay_reachable() {
+        // This is what the fixed search is for: an insert lands in sort order no matter when
+        // the board turns up, so the word written for board 10 survives the boards that come
+        // after it. Before the fix the list ended up `[5, 7, 20, 10]` and board 10 read back
+        // as the global word.
         let mut privs = UserPriv::new(7);
         for (sid, word) in [(10, S_POST), (20, S_GETEXP), (7, S_MSG)] {
             privs.setpriv(sid, word, false).unwrap();
         }
         privs.setpriv(5, S_LIST, false).unwrap();
         let sids: Vec<i16> = privs.section_privs().iter().map(|e| e.sid).collect();
-        assert_eq!(sids, vec![5, 7, 20, 10]);
-        assert_eq!(privs.getpriv(10), (privs.g_priv, false));
-        assert_eq!(privs.section(10), None);
+        assert_eq!(sids, vec![5, 7, 10, 20]);
+        assert_eq!(privs.getpriv(10), (S_POST, false));
+        assert_eq!(privs.section(10), Some(SectionPriv { sid: 10, s_priv: S_POST, is_favor: false }));
         assert_eq!(privs.getpriv(5), (S_LIST, false));
         assert_eq!(privs.getpriv(7), (S_MSG, false));
         assert_eq!(privs.getpriv(20), (S_GETEXP, false));
+    }
+
+    #[test]
+    fn every_insertion_order_leaves_the_list_sorted_and_findable() {
+        // The section-master query has no `ORDER BY`, so a session can gain boards in any
+        // order; the status pass then rewrites each of them. Sweep several orders over the
+        // whole list and check the invariant both passes lean on afterwards.
+        for step in [1i32, 3, 7, 11, 37, 61, 99] {
+            let mut privs = UserPriv::new(7);
+            for i in 0..paths::MAX_SECTION as i32 {
+                let sid = (i * step % paths::MAX_SECTION as i32 + 1) as i16;
+                privs.setpriv(sid, S_LIST | (i as i32) % 8, false).unwrap();
+            }
+
+            let mut last = 0;
+            for entry in privs.section_privs() {
+                assert!(entry.sid > last, "step {step}: list not sorted at {}", entry.sid);
+                last = entry.sid;
+            }
+
+            for i in 0..paths::MAX_SECTION as i32 {
+                let sid = (i * step % paths::MAX_SECTION as i32 + 1) as i16;
+                assert_eq!(
+                    privs.getpriv(sid).0 & S_LIST,
+                    S_LIST,
+                    "step {step}: board {sid} became unreachable"
+                );
+            }
+        }
     }
 
     #[test]

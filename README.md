@@ -183,13 +183,13 @@ differently from C, read the deviations section first — the reason is written 
 | [src/lml.rs](src/lml.rs) | 689 | `src/lml.c` | LML markup rendering | done |
 | [src/bwf.rs](src/bwf.rs) | 241 | `src/trie_dict.c` etc. | badword matching and masking | done |
 | [src/ipmask.rs](src/ipmask.rs) | 109 | `src/ip_mask.c` | address masking (`202.38.64.x`) | done |
-| [src/privilege.rs](src/privilege.rs) | 385 | `src/user_priv.c` | privilege words and levels | done |
+| [src/privilege.rs](src/privilege.rs) | 445 | `src/user_priv.c` | privilege words and levels | done |
 | [src/session.rs](src/session.rs) | 613 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
 | [src/login.rs](src/login.rs) | 580 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
 | [src/bbsnet.rs](src/bbsnet.rs) | 1767 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
 | [src/bbs.rs](src/bbs.rs) | 872 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | prompts, menu loop and the browse commands done; a few menu actions still log and return |
 | [src/net.rs](src/net.rs) | 360 | `src/net_server.c` | accept, connection limits, graceful drain | done |
-| [src/ssh.rs](src/ssh.rs) | 496 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
+| [src/ssh.rs](src/ssh.rs) | 504 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
 | [src/main.rs](src/main.rs) | 542 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
 | [src/batch.rs](src/batch.rs) | 374 | `utils/lib/db_open.inc.php` + the lines the three scripts repeat | one generator's life: arguments, server root, `conf/bbsd.conf`, database, the PHP's own stdout text and exit bytes | done |
 | [src/section_list.rs](src/section_list.rs) | 149 | `utils/lib/section_list.inc.php` | the class/board hierarchy the generators walk, with the caller's per-board values | done |
@@ -198,7 +198,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 394 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-31 177 lines in total, the tests included (they live in the modules they test). There are 462 tests: 456 in the
+31 245 lines in total, the tests included (they live in the modules they test). There are 462 tests: 456 in the
 library and 6 in the binary. 448 of them need nothing but the checked-out tree; the other 14 are ignored because
 they read the real database and files.
 
