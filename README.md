@@ -165,7 +165,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/term/mod.rs](src/term/mod.rs) | 803 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
 | [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | turns ESC sequences into key codes | done |
 | [src/screen.rs](src/screen.rs) | 1116 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
-| [src/db.rs](src/db.rs) | 1368 | `src/database.c` etc. | MySQL queries through sqlx | done |
+| [src/db.rs](src/db.rs) | 1466 | `src/database.c` etc. | MySQL queries through sqlx | done |
 | [src/board.rs](src/board.rs) | 1474 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
 | [src/browse.rs](src/browse.rs) | 3298 | `src/section_list_display.c`, `src/section_list_loader.c`, `src/menu_proc.c` (the two digest items) | the article list, its keys, reading a post, the saved reading position, and a board's digest tree | done |
 | [src/editor.rs](src/editor.rs) | 1812 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
@@ -175,6 +175,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/favorlist.rs](src/favorlist.rs) | 768 | `src/article_favor_display.c`, `src/article_favor.c` (the page query), `src/menu_proc.c` (the `FAVOR_TOPIC` item) | the 我收藏的主题 list: two name columns, the star removed in place, and the board each row opens | done |
 | [src/roster.rs](src/roster.rs) | 661 | `src/user_list_loader.c` | the online-user roster and the article counters | done |
 | [src/userinfo.rs](src/userinfo.rs) | 923 | `src/user_info_display.c`, `src/user_list_display.c` (the search), `src/bbs.c` (the level and sign tables) | one user's profile page, and the name search that reaches it | done |
+| [src/user_info_update.rs](src/user_info_update.rs) | 618 | `src/user_info_update.c`, `src/menu_proc.c` (the two profile items) | the 说明档 and 签名档 editors: one `user_pubinfo` column through the editor, masked, counted and written back | done |
 | [src/userlist.rs](src/userlist.rs) | 1024 | `src/user_list_display.c`, `src/menu_proc.c` (the two roster items) | the 线上使用者 and 已注册用户 pages: titles, columns, paging, and the keys between them | done |
 | [src/loader.rs](src/loader.rs) | 1529 | `src/section_list_loader.c` | the incremental refresh task, the article cache files it writes, and each board's digest menu | done |
 | [src/state.rs](src/state.rs) | 407 | the shared-memory segments | what the loader publishes and a session reads | done |
@@ -188,7 +189,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/session.rs](src/session.rs) | 613 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
 | [src/login.rs](src/login.rs) | 580 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
 | [src/bbsnet.rs](src/bbsnet.rs) | 1767 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
-| [src/bbs.rs](src/bbs.rs) | 906 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | prompts, menu loop and the browse commands done; a few menu actions still log and return |
+| [src/bbs.rs](src/bbs.rs) | 953 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | menu loop done, and every action `conf/menu.conf` binds has a handler (the favourites filter is a menu filter, not an action) |
 | [src/net.rs](src/net.rs) | 360 | `src/net_server.c` | accept, connection limits, graceful drain | done |
 | [src/ssh.rs](src/ssh.rs) | 504 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
 | [src/main.rs](src/main.rs) | 542 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
@@ -199,8 +200,8 @@ differently from C, read the deviations section first — the reason is written 
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 394 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-31 877 lines in total, the tests included (they live in the modules they test). There are 473 tests: 467 in the
-library and 6 in the binary. 459 of them need nothing but the checked-out tree; the other 14 are ignored because
+32 641 lines in total, the tests included (they live in the modules they test). There are 487 tests: 481 in the
+library and 6 in the binary. 473 of them need nothing but the checked-out tree; the other 14 are ignored because
 they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
@@ -349,6 +350,22 @@ that does not run is described as if it did.
    nothing. A save goes to both paths — the `.user` copy first, since it is the copy a reinstall leaves alone — and
    the page then says a reload is what makes the change count, which is the truth:
    [`load_data_files`](src/state.rs) is what reads these files again.
+28. **The two profile texts** — `user_intro_edit` and `user_sign_edit`
+   ([`user_info_update::user_intro_edit`](src/user_info_update.rs)), the `@EDIT_INTRO`/`@EDIT_SIGN` pair of the top
+   menu's toolbox (`conf/menu.conf:155-156`, `menu_proc.c:402-420`) and the only two items there that write a row.
+   Each reads one `user_pubinfo` column — `introduction`, or the `sign_1`…`sign_3` whose number the signature
+   screen asks for one cell at a time — hands it to the same editor as item 27, and asks
+   `(S)保存, (C)取消 or (E)再编辑? [S]: ` until one answer settles it: `(C)` and a key that timed out leave with no
+   SQL at all, `(E)` goes back through the editor, anything else redraws the question, and `CR`/`(S)` masks the
+   text through the badword filter, renders it, counts its lines and writes it. Two of these screens' limits are
+   not what their numbers say: the mask is one `*` per byte rather than per character, and the line count includes
+   the empty display line a closing newline leaves behind, so nine lines are the longest save that passes the test
+   against ten. The update binds the text where C escaped and spliced it, the introduction's closing line quotes
+   the roster's own 60-second interval, and a text that does not fit the 4 KB buffer is C's `-3`, logged and
+   dropped. `M_FAVOR_SECTION`, the third name that used to be listed beside these two, turns out never to have
+   been an action: C asks its handler whether each row of the favourites submenu is visible
+   (`menu.c:1141-1143`, `menu_proc.c:196-201`), which is what
+   [`Session::filter_allows`](src/session.rs) already does.
 
 ### 6.2 Verified against the live board database
 
@@ -389,18 +406,16 @@ PHP and in `gen_top`'s `#[ignore]`-marked parity test to the same ten years (2 5
 
 ### 6.3 ⬜ Not done
 
-1. **The screens behind the write path**: the user-profile editor and the statistics page, each a menu action
-   with writes of its own. The list's `Ctrl-Q` metadata view, which logged the same way until now, is ported
-   (item 18).
-2. **Top-level menu actions** that resolve to one of those handlers: `bbs_do_choice` logs and returns, so the
-   top menu still has keys that only log. `LIST_ONLINE_USER`, `LIST_USER`, `RunMBEM`, `FAVOR_TOPIC`,
-   `LIST_EX_SECTION`, `VIEW_EX_ARTICLE` and `DATAMGR` are wired — the roster pair carries the profile page and
-   the name search it leads to, the digest pair the board's digest tree and the post read out of it
-   (`src/browse.rs`, with the tree loaded per board in `src/loader.rs`), and `DATAMGR` the editor that rewrites
-   the site's own data files (`src/data_file_mgr.rs`). `EDIT_INTRO`, `EDIT_SIGN` and `M_FAVOR_SECTION` still
-   fall through to the log line.
-3. **Phase 2 polish**: GBK corner cases, the SSH window size (deliberately ignored, see the header of
+1. **Phase 2 polish**: GBK corner cases, the SSH window size (deliberately ignored, see the header of
    `src/ssh.rs`), and a side-by-side comparison with C over the whole phase-1 surface.
+
+Two entries left this list on 2026-11-21, and neither of them was work waiting to be done. The 说明档/签名档
+editors are item 28. The "statistics page" beside them was a name for `src/user_stat.c`, which is not a screen at
+all and has no menu key: it is the in-memory article counter behind a profile's 发文 figure, ported as
+[`roster::UserStatMap`](src/roster.rs) and read by [`userinfo::user_info_display`](src/userinfo.rs).
+`M_FAVOR_SECTION` went the same way — a filter the menu asks per row, already answered, never a key that only
+logged. So §13's "then" row is closed: of the twenty names `bbs_cmd.c:19-40` binds, the nineteen that are actions
+all have handlers.
 
 So today the repository is "the server runs, a guest can browse a board and read a post, and the write path is
 wired and unit-tested". The first account that really posts should do it against a test database.
@@ -709,6 +724,8 @@ app disagrees with us. These behaviours are therefore reproduced verbatim and pi
 | A key sequence split across packets is dropped and reported as `ESC` | [`Terminal::read_key`](src/term/mod.rs#L275) | pager key handling must feel identical |
 | `S_DEFAULT = 0x3` (list + experience) and **no post bit** | [`privilege.rs`](src/privilege.rs) | making new accounts "more convenient" would diverge from the web app |
 | A station that **refuses** the connection is only reported when the ten-second budget runs out, and then as `连接超时！` | [`bbsnet::connect`](src/bbsnet.rs) | C's wait loop keeps spinning on a socket that is writable but unconnected, and the keys pressed while the bar runs are spent on the connect; failing fast would change both the screen and what reaches the station |
+| The profile editors have **no `SYS_server_exit` guard** in front of their `UPDATE`, where `data_file_mgr.c:201` has one: an edit the shutdown interrupts between two rounds still writes, with the text the last save left behind — the one the line count had just rejected — or with nothing at all | [`user_info_update.rs`](src/user_info_update.rs) | the column belongs to the web application as much as to the board; a port that quietly skipped the write would leave the two servers recording different things about the same shutdown |
+| The editors' **ten-line limit admits nine**: `split_data_lines` is a do/while, so the newline that closes the tenth line is counted as an eleventh line of its own | [`user_info_update.rs`](src/user_info_update.rs), [`text::split_data_lines`](src/text.rs) | counting the lines the way a reader does would accept texts C refuses with `长度超过限制 (10行)`, and the same counter decides what the profile page and the board lists fit on their screens |
 
 One entry left this table on 2026-11-21, and only because upstream moved first: the privilege list's binary
 search, which lost a stored board whenever the boards arrived out of `sid` order, and which — on an empty list —
@@ -855,7 +872,7 @@ next key, and page with space.
 | done | write path: new/reply/edit/delete, the editor, index updates, cache generation, badwords on submit | unit-tested, and a live guest is refused before any SQL runs |
 | done | the three `utils/bin` PHP generators as binaries: `gen_top`, `gen_section_menu`, `gen_ex_list` (§7.4) | their files match the PHP's byte for byte against the live database (§6.2) |
 | next | one real post end to end against a **test** database, then the same reply/modify/delete | the web site shows what the Rust server wrote, with the header and cache files C would have produced |
-| then | the menu actions left: the profile editor items and `M_FAVOR_SECTION` | the top menu has no key that only logs |
+| done | the menu actions left: the two profile editors (§6.1 item 28), and finding out what `M_FAVOR_SECTION` is — a menu filter, already ported | the top menu has no key that only logs |
 | last | a side-by-side comparison with C over the whole phase-1 surface | the same actions produce the same screen |
 
 ---

@@ -39,6 +39,7 @@ pub mod ssh;
 pub mod state;
 pub mod term;
 pub mod text;
+pub mod user_info_update;
 pub mod userinfo;
 pub mod userlist;
 pub mod viewlog;

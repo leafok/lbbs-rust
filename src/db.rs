@@ -793,6 +793,39 @@ impl Db {
             .await
             .map(|row| row.and_then(|r| r.try_get("sign").ok()))
     }
+
+    /// `SELECT introduction FROM user_pubinfo WHERE UID = %d` (`user_info_update.c:61`).
+    pub async fn introduction(&self, uid: i32) -> Result<Option<Option<String>>, sqlx::Error> {
+        one_text(
+            "SELECT introduction FROM user_pubinfo WHERE UID = ?",
+            uid,
+            &self.pool,
+        )
+        .await
+    }
+
+    /// [`Db::signature`] with the two reasons `user_info_update.c:237-252` separates them: an
+    /// empty signature is a NULL column, a missing row is the error of `:249`.
+    pub async fn signature_row(
+        &self,
+        uid: i32,
+        slot: SignSlot,
+    ) -> Result<Option<Option<String>>, sqlx::Error> {
+        one_text(slot.query(), uid, &self.pool).await
+    }
+}
+
+/// The one-column `SELECT` behind the two profile editors: the outer `Option` is C's
+/// `mysql_fetch_row` test, which treats no row at all as the error of `:79-83` and `:249-252`;
+/// the inner one is the NULL column that `row[0] ? row[0] : ""` (`:76`, `:245`) opens the
+/// editor on. `sqlx` reads a `mediumtext` as `Option<String>` either way.
+async fn one_text(
+    sql: &'static str,
+    uid: i32,
+    pool: &MySqlPool,
+) -> Result<Option<Option<String>>, sqlx::Error> {
+    let rows = sqlx::query(sql).bind(uid).fetch_optional(pool).await?;
+    rows.map(|row| row.try_get::<Option<String>, _>(0)).transpose()
 }
 
 /// The signature columns of `user_pubinfo`, addressed by index as in the original.
@@ -817,6 +850,27 @@ impl SignSlot {
             SignSlot::One => "SELECT sign_1 AS sign FROM user_pubinfo WHERE UID = ?",
             SignSlot::Two => "SELECT sign_2 AS sign FROM user_pubinfo WHERE UID = ?",
             SignSlot::Three => "SELECT sign_3 AS sign FROM user_pubinfo WHERE UID = ?",
+        }
+    }
+
+    /// The [`Db::update_signature`] of each slot, spelled out for the same reason as
+    /// [`SignSlot::query`].
+    pub fn update_query(self) -> &'static str {
+        match self {
+            SignSlot::One => "UPDATE user_pubinfo SET sign_1 = ? WHERE UID = ?",
+            SignSlot::Two => "UPDATE user_pubinfo SET sign_2 = ? WHERE UID = ?",
+            SignSlot::Three => "UPDATE user_pubinfo SET sign_3 = ? WHERE UID = ?",
+        }
+    }
+
+    /// `sign_id` of `user_sign_edit` (`:215-220`): the number the screen asks for is one past
+    /// the slot, and anything else is C's `ret = -1`.
+    pub fn from_index(index: i64) -> Option<SignSlot> {
+        match index {
+            1 => Some(SignSlot::One),
+            2 => Some(SignSlot::Two),
+            3 => Some(SignSlot::Three),
+            _ => None,
         }
     }
 }
@@ -1144,6 +1198,38 @@ pub async fn editable_content(db: &Db, aid: i32, with_reply_note: bool) -> Resul
     }))
 }
 
+/// `UPDATE user_pubinfo SET introduction = '%s' WHERE UID = %d` (`user_info_update.c:166-168`).
+/// C opens its own connection for this one statement, so the [`Db`] is the pool rather than a
+/// transaction.
+pub async fn update_introduction(
+    db: &Db,
+    uid: i32,
+    text: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE user_pubinfo SET introduction = ? WHERE UID = ?")
+        .bind(text)
+        .bind(uid)
+        .execute(&db.pool)
+        .await
+        .map(|_| ())
+}
+
+/// `UPDATE user_pubinfo SET sign_%d = '%s' WHERE UID = %d` (`user_info_update.c:336-338`), the
+/// column from [`SignSlot::update_query`] because a column name cannot be a bind parameter.
+pub async fn update_signature(
+    db: &Db,
+    uid: i32,
+    slot: SignSlot,
+    text: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(slot.update_query())
+        .bind(text)
+        .bind(uid)
+        .execute(&db.pool)
+        .await
+        .map(|_| ())
+}
+
 /// `UPDATE bbs SET reply_count = reply_count + 1, last_reply_dt = NOW(), last_reply_UID = …`
 /// (`article_reply` at `:1244-1249`), aimed at the topic root.
 pub async fn touch_topic(
@@ -1244,7 +1330,17 @@ mod tests {
         for slot in [SignSlot::One, SignSlot::Two, SignSlot::Three] {
             let expected = format!("SELECT {} AS sign FROM user_pubinfo WHERE UID = ?", slot.column());
             assert_eq!(slot.query(), expected);
+            let expected =
+                format!("UPDATE user_pubinfo SET {} = ? WHERE UID = ?", slot.column());
+            assert_eq!(slot.update_query(), expected);
         }
+
+        // `sign_id` of `user_sign_edit:215-220`: the three slots, and nothing else.
+        assert_eq!(SignSlot::from_index(0), None);
+        assert_eq!(SignSlot::from_index(-1), None);
+        assert_eq!(SignSlot::from_index(4), None);
+        assert_eq!(SignSlot::from_index(1), Some(SignSlot::One));
+        assert_eq!(SignSlot::from_index(3), Some(SignSlot::Three));
     }
 
     #[test]
@@ -1357,7 +1453,9 @@ mod tests {
         db.favorite_sids(uid).await.unwrap();
         for slot in [SignSlot::One, SignSlot::Two, SignSlot::Three] {
             db.signature(uid, slot).await.unwrap();
+            db.signature_row(uid, slot).await.unwrap();
         }
+        db.introduction(uid).await.unwrap();
 
         let mut tx = db.begin().await.unwrap();
         count_errors_by_ip(&mut tx, 10, "127.0.0%").await.unwrap();

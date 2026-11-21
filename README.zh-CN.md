@@ -154,7 +154,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/term/mod.rs](src/term/mod.rs) | 803 | `src/io.c` | 字节管道、GBK 转码、`prints`/`iflush`、`igetch` | 完成 |
 | [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | 把 ESC 序列翻译成按键码 | 完成 |
 | [src/screen.rs](src/screen.rs) | 1116 | `src/screen.c` | 清屏、回显接管 `set_input_echo`、行输入 `str_input`、分页器 `display_data` | 完成 |
-| [src/db.rs](src/db.rs) | 1368 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
+| [src/db.rs](src/db.rs) | 1466 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
 | [src/board.rs](src/board.rs) | 1474 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
 | [src/browse.rs](src/browse.rs) | 3298 | `src/section_list_display.c`、`src/section_list_loader.c`、`src/menu_proc.c`（两个精华区入口） | 帖子列表、列表按键、阅读帖子、阅读位置文件，以及版块精华区树的浏览与树里读一篇帖子 | 完成 |
 | [src/editor.rs](src/editor.rs) | 1812 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
@@ -164,6 +164,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/favorlist.rs](src/favorlist.rs) | 768 | `src/article_favor_display.c`、`src/article_favor.c`（取页）、`src/menu_proc.c`（`FAVOR_TOPIC` 菜单项） | 我收藏的主题列表：两个名称栏目、就地取消收藏，以及每行通向的看板 | 完成 |
 | [src/roster.rs](src/roster.rs) | 661 | `src/user_list_loader.c` | 在线用户列表与发帖数统计 | 完成 |
 | [src/userinfo.rs](src/userinfo.rs) | 923 | `src/user_info_display.c`、`src/user_list_display.c`（查找）、`src/bbs.c`（等级与星座表） | 一个用户的资料页，以及通向它的用户名查找 | 完成 |
+| [src/user_info_update.rs](src/user_info_update.rs) | 618 | `src/user_info_update.c`、`src/menu_proc.c`（那两个资料条目） | 说明档与签名档两个编辑器：取 `user_pubinfo` 的一列走一遍编辑器，过敏感词、数行数，再写回去 | 完成 |
 | [src/userlist.rs](src/userlist.rs) | 1024 | `src/user_list_display.c`、`src/menu_proc.c`（两个花名册入口） | 线上使用者与已注册用户两页：标题、栏目、翻页，以及在两页之间走动的按键 | 完成 |
 | [src/loader.rs](src/loader.rs) | 1529 | `src/section_list_loader.c` | 增量刷新任务、它顺带写出的文章缓存文件，以及每个版块那棵精华区菜单 | 完成 |
 | [src/cache.rs](src/cache.rs) | 554 | `src/article_cache.c` | 渲染与读取 `var/articles/<CID>` 及其行偏移表 | 完成 |
@@ -176,7 +177,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/session.rs](src/session.rs) | 613 | 各 `BBS_*` 全局变量 | 一次会话的状态 + 在线记录 | 完成 |
 | [src/login.rs](src/login.rs) | 580 | `src/login.c` | 登录、认证、用户协议（EULA） | 完成 |
 | [src/bbsnet.rs](src/bbsnet.rs) | 1767 | `src/bbs_net.c`、`src/menu_proc.c`（`@mod:` 分发） | 站点表、穿梭网格、对外连接与双向转发 | 完成 |
-| [src/bbs.rs](src/bbs.rs) | 906 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序（含回显接管）、`bbs_center` | 提示、菜单循环与浏览类命令完成，少数菜单动作仍只记日志 |
+| [src/bbs.rs](src/bbs.rs) | 953 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序（含回显接管）、`bbs_center` | 菜单循环完成，`conf/menu.conf` 绑定的每个动作都有处理函数（收藏目录那个是菜单过滤条件，不是动作） |
 | [src/net.rs](src/net.rs) | 360 | `src/net_server.c` | accept、连接数限制、优雅退出 | 完成 |
 | [src/ssh.rs](src/ssh.rs) | 504 | `src/net_server.c`（libssh 那一半） | 宿主密钥、密码认证、会话通道 | 完成 |
 | [src/main.rs](src/main.rs) | 542 | `src/main.c`、`src/net_server.c` | 启动顺序、信号处理、`SIGHUP` 重载、退出 | 完成 |
@@ -189,7 +190,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 
 另有 [src/daemon.rs](src/daemon.rs)（415 行，命令行与后台化）、[src/log.rs](src/log.rs)（497 行，两个日志文件）、[src/state.rs](src/state.rs)（407 行，加载器发布、会话读取的共享状态）。
 
-合计 31,877 行（含测试，测试就写在被测模块里）。共 473 个测试：库 467 个、可执行文件 6 个。其中 459 个只读代码
+合计 32,641 行（含测试，测试就写在被测模块里）。共 487 个测试：库 481 个、可执行文件 6 个。其中 473 个只读代码
 仓库里的东西，另外 14 个默认跳过，因为它们要连真实数据库、读真实生成的文件。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
@@ -313,6 +314,17 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
     C 的两个边角照旧：没有预览过之后的 `(S)` 不算回答，而守护进程正在退出时结束的编辑一个字都不写。保存会写两个
     路径——先写 `.user` 那份，因为重装时留下的正是它——然后按 C 的原话说明要重新加载配置才会生效，这也确实是事实：
     再读这些文件的是 [`load_data_files`](src/state.rs)。
+28. **两段个人资料文字**——`user_intro_edit` 与 `user_sign_edit`
+    （[`user_info_update::user_intro_edit`](src/user_info_update.rs)），上位菜单工具箱里的 `@EDIT_INTRO`/`@EDIT_SIGN`
+    这一对（`conf/menu.conf:155-156`、`menu_proc.c:402-420`），也是那里唯二会写数据库行的条目。各自读 `user_pubinfo`
+    的一列——`introduction`，或者签名档屏幕一次一格问出来的 `sign_1`…`sign_3`——交给第 27 条那个同样的编辑器，
+    然后反复问 `(S)保存, (C)取消 or (E)再编辑? [S]: ` 直到某个回答把它定下来：`(C)` 和超时的按键直接离开、一条 SQL
+    都不发，`(E)` 回编辑器再走一遍，其余回答重画这个问题，`CR`/`(S)` 则把文字过一遍敏感词、渲染、数行数，再写回去。
+    这两屏有两个上限和字面数字对不上：打码是按字节而不是按字符出 `*`，行数里也算上收尾换行留下的那行空显示行，
+    所以过得了十行检查的最长存档是九行。写回时 C 转义拼接的地方这里用绑定参数，说明档末尾那行引用的是花名册自己的
+    60 秒刷新间隔，装不进 4 KB 缓冲的文字就是 C 的 `-3`：记一条日志，然后丢掉。曾和这两个名字并列的第三个
+    `M_FAVOR_SECTION` 其实从来不是一个动作：C 是在问它的处理函数收藏夹子菜单的每一行可不可见
+    （`menu.c:1141-1143`、`menu_proc.c:196-201`），这件事 [`Session::filter_allows`](src/session.rs) 已经做了。
 
 ### 6.2 在真实论坛数据库上验证过
 
@@ -346,15 +358,15 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 
 ### 6.3 ⬜ 尚未完成
 
-1. **写入路径背后的界面**：用户资料编辑器与统计页，各自都是一个菜单条目加一批自己的写入。
-   列表上原本同样只会记日志的 `Ctrl-Q` 已经移植好了（见第 18 条）。
-2. **指向上面这些处理函数的一级菜单条目**：`bbs_do_choice` 只记日志并返回，所以上位菜单仍有只会记日志的键。
-   `LIST_ONLINE_USER`、`LIST_USER`、`RunMBEM`、`FAVOR_TOPIC`、`LIST_EX_SECTION`、`VIEW_EX_ARTICLE` 与 `DATAMGR`
-   已经接上：前两个连同它们通向的资料页与用户名查找，中间两个连同版块的精华区树与从树里读出的一篇帖子
-   （树在 `src/browse.rs` 浏览、由各版块的菜单在 `src/loader.rs` 装载），`DATAMGR` 则连同改写站点自己的数据文件
-   的那个编辑器（`src/data_file_mgr.rs`）。还在只记日志的是 `EDIT_INTRO`、`EDIT_SIGN` 与 `M_FAVOR_SECTION`。
-3. **Phase 2 的收尾**：GBK 的边角情况、SSH 的窗口大小（有意忽略，理由见 `src/ssh.rs` 文件头），
+1. **Phase 2 的收尾**：GBK 的边角情况、SSH 的窗口大小（有意忽略，理由见 `src/ssh.rs` 文件头），
    以及与 C 就 Phase 1 全部界面做逐屏对照。
+
+2026-11-21 有两条从这份清单上划掉，而它们都不是还等着做的活。说明档/签名档编辑器是上面第 28 条。原先和它们并列
+写着的“统计页”只是 `src/user_stat.c` 的一个叫法，而它根本不是一屏界面、也没有菜单键：它是资料页那个 发文 数字背后
+的内存发帖计数器，已经作为 [`roster::UserStatMap`](src/roster.rs) 移植、由
+[`userinfo::user_info_display`](src/userinfo.rs) 读取。`M_FAVOR_SECTION` 走的是同一条路——菜单逐行问的过滤条件，
+早就有答案，从来不是一个只会记日志的键。于是第 13 节那行“再下一步”到此收尾：`bbs_cmd.c:19-40` 绑定的二十个名字里，
+属于动作的十九个都有了处理函数。
 
 所以目前仓库的状态是“**服务器能跑，游客可以浏览版块、读帖子，写入路径已接好并有单元测试**。
 第一次真的发帖请先在测试数据库上做。
@@ -647,6 +659,8 @@ Rust 里这些路径集中放在 [src/paths.rs](src/paths.rs)，
 | 跨包被切断的按键序列会被丢弃并报成 `ESC` | [`Terminal::read_key`](src/term/mod.rs#L275) | 分页器的按键手感必须完全一致 |
 | `S_DEFAULT = 0x3`（可看列表 + 可得经验值），**不含发帖位** | [`privilege.rs`](src/privilege.rs) | 让新账号“更方便”就会与网页端不一致 |
 | 被对方**拒绝**的连接不会立刻报出来，要等十秒预算走完，然后报 `连接超时！` | [`bbsnet::connect`](src/bbsnet.rs) | C 的等待循环在“可写但没连上”的套接字上继续空转，进度条期间按下的键也被连接吃掉；提前失败会同时改掉屏幕上的字和真正送到站点的按键 |
+| 资料编辑器在 `UPDATE` 前面**没有 `SYS_server_exit` 判断**，而 `data_file_mgr.c:201` 有：退出流程若在两轮之间打断一次编辑，那笔写入照样发生——写的可能是上一轮存下的文字（也就是刚被行数检查拒掉的那一份），也可能什么都没有 | [`user_info_update.rs`](src/user_info_update.rs) | 那一列和论坛本身一样属于网页应用；端口悄悄省掉这次写入，只会让两台服务器在同一次退出里记下不同的东西 |
+| 编辑器的**十行上限其实只容得下九行**：`split_data_lines` 是 do/while，收尾第十行的那个换行自己又算出一行显示行 | [`user_info_update.rs`](src/user_info_update.rs)、[`text::split_data_lines`](src/text.rs) | 按读者的数法数行，就会接受 C 用 `长度超过限制 (10行)` 拒掉的文字；而同一个计数器也决定资料页与版块列表一屏放得下什么 |
 
 有一条在 2026-11-21 离开了这张表，而且只因为参考端先动：权限列表的折半查找——版块加入的顺序一旦不是 `sid`
 序，已存下的权限就可能再也查不到；列表为空时它还会去看第 0 个槽位（即全局权限位）。这两处本项目都照搬下来并
@@ -782,7 +796,7 @@ hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用�
 | 已完成 | 写入路径：新帖/回复/修改/删除、编辑器、索引更新、缓存生成、提交时过滤违禁词 | 有单元测试覆盖，且联机游客按 `^P` 在任何 SQL 之前被拒绝 |
 | 已完成 | `utils/bin` 的三个 PHP 生成工具改成可执行文件：`gen_top`、`gen_section_menu`、`gen_ex_list`（见 7.4） | 对着真实库，它们写出的文件与 PHP 逐字节一致（见 6.2） |
 | 下一步 | 在**测试库**上完整走一遍真实发帖，再依次验证回复/修改/删除 | 网页端能看到移植版写出的帖子，头信息与缓存文件和 C 一致 |
-| 再下一步 | 剩下的菜单条目：资料编辑两项与 `M_FAVOR_SECTION` | 上位菜单里不再有“只写日志”的按键 |
+| 已完成 | 剩下的菜单条目：资料编辑那两个编辑器（见 6.1 第 28 条），以及弄清 `M_FAVOR_SECTION` 到底是什么——它是一个菜单过滤条件，早就移植过了 | 上位菜单里不再有“只写日志”的按键 |
 | 最后 | 与 C 版就 Phase 1 的全部界面对比 | 同样操作得到同样的画面 |
 
 ---

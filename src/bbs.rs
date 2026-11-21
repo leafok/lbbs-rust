@@ -35,6 +35,7 @@ use crate::session::{self, Session};
 use crate::term::Charset;
 use crate::term::Terminal;
 use crate::term::key::{CR, KEY_NULL, KEY_TIMEOUT};
+use crate::user_info_update;
 use crate::userlist;
 
 /// `ACTIVE_BOARD_HEIGHT` (`screen.c:1007`'s window): the rows of `data/active_board.txt` the
@@ -459,8 +460,23 @@ pub fn bbs_do_choice<'a>(
             data_file_mgr::data_file_mgr(term, session).await;
             MenuReturn::Redraw
         }
-        // The write and profile handlers arrive with their own tasks; until then an item that
-        // resolves to one reports itself instead of looking like a hung key.
+        // `menu_proc.c:402-420`: the two profile editors ignore the menu parameter, answer a
+        // negative return with a `log_error` of their own and redraw the menu either way — the
+        // cancel, the timeout and the failed query all look the same from here.
+        Action::EditIntro => {
+            if user_info_update::user_intro_edit(term, session).await < 0 {
+                tracing::error!("user_intro_edit({}) error", session.privs.uid);
+            }
+            MenuReturn::Redraw
+        }
+        Action::EditSign => {
+            if user_info_update::user_sign_edit(term, session).await < 0 {
+                tracing::error!("user_sign_edit({}) error", session.privs.uid);
+            }
+            MenuReturn::Redraw
+        }
+        // The remaining handlers arrive with their own tasks; until then an item that resolves to
+        // one reports itself instead of looking like a hung key.
         _ => {
             tracing::error!("Action {}({param}) is not implemented", action.name());
             MenuReturn::Redraw
@@ -748,6 +764,37 @@ mod tests {
         assert!(screen.contains("数据文件列表: "), "{screen}");
         assert!(screen.contains(" 1. 进站欢迎"), "{screen}");
         assert!(screen.contains(" 8. 穿梭配置"), "{screen}");
+        assert!(!screen.contains("再编辑"), "{screen}");
+    }
+
+    /// `@EDIT_INTRO` and `@EDIT_SIGN` both begin with a query, so on a session with nothing behind
+    /// it they fail before either screen is drawn — and the menu still comes back, which is C's
+    /// `REDRAW` after the `log_error` of a negative return (`menu_proc.c:402-420`).
+    #[tokio::test]
+    async fn the_profile_items_give_the_menu_back_when_their_query_fails() {
+        let (_client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        let mut session = crate::session::offline_session();
+
+        let ret = bbs_do_choice(&mut term, &mut session, Action::EditIntro, "", false).await;
+
+        assert_eq!(ret, MenuReturn::Redraw);
+
+        let (mut client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        let mut session = crate::session::offline_session();
+
+        let (ret, ()) = tokio::join!(
+            bbs_do_choice(&mut term, &mut session, Action::EditSign, "", false),
+            async {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                client.push(b"0\r");
+            }
+        );
+
+        assert_eq!(ret, MenuReturn::Redraw);
+        let screen = String::from_utf8_lossy(&client.take_available()).into_owned();
+        assert!(screen.contains("请输入需要编辑的签名档编号（1-3）: "), "{screen}");
         assert!(!screen.contains("再编辑"), "{screen}");
     }
 
