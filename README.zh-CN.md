@@ -167,6 +167,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/userlist.rs](src/userlist.rs) | 1024 | `src/user_list_display.c`、`src/menu_proc.c`（两个花名册入口） | 线上使用者与已注册用户两页：标题、栏目、翻页，以及在两页之间走动的按键 | 完成 |
 | [src/loader.rs](src/loader.rs) | 1529 | `src/section_list_loader.c` | 增量刷新任务、它顺带写出的文章缓存文件，以及每个版块那棵精华区菜单 | 完成 |
 | [src/cache.rs](src/cache.rs) | 554 | `src/article_cache.c` | 渲染与读取 `var/articles/<CID>` 及其行偏移表 | 完成 |
+| [src/data_file_mgr.rs](src/data_file_mgr.rs) | 417 | `src/data_file_mgr.c`、`src/bbs_cmd.c`（`DATAMGR` 那条） | `@DATAMGR` 列表：按编号选一份站点固定文字，编辑、预览，再把结果同时写回安装的那份和它的 `.user` 副本 | 完成 |
 | [src/menu.rs](src/menu.rs) | 2351 | `src/menu.c` | `menu.conf` 解析与页面跳转 | 解析/跳转完成，功能本体未完成 |
 | [src/lml.rs](src/lml.rs) | 689 | `src/lml.c` | LML 标记渲染 | 完成 |
 | [src/bwf.rs](src/bwf.rs) | 241 | `src/trie_dict.c` 等 | 违禁词匹配与遮蔽 | 完成 |
@@ -175,7 +176,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/session.rs](src/session.rs) | 613 | 各 `BBS_*` 全局变量 | 一次会话的状态 + 在线记录 | 完成 |
 | [src/login.rs](src/login.rs) | 580 | `src/login.c` | 登录、认证、用户协议（EULA） | 完成 |
 | [src/bbsnet.rs](src/bbsnet.rs) | 1767 | `src/bbs_net.c`、`src/menu_proc.c`（`@mod:` 分发） | 站点表、穿梭网格、对外连接与双向转发 | 完成 |
-| [src/bbs.rs](src/bbs.rs) | 872 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序（含回显接管）、`bbs_center` | 提示、菜单循环与浏览类命令完成，少数菜单动作仍只记日志 |
+| [src/bbs.rs](src/bbs.rs) | 906 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序（含回显接管）、`bbs_center` | 提示、菜单循环与浏览类命令完成，少数菜单动作仍只记日志 |
 | [src/net.rs](src/net.rs) | 360 | `src/net_server.c` | accept、连接数限制、优雅退出 | 完成 |
 | [src/ssh.rs](src/ssh.rs) | 504 | `src/net_server.c`（libssh 那一半） | 宿主密钥、密码认证、会话通道 | 完成 |
 | [src/main.rs](src/main.rs) | 542 | `src/main.c`、`src/net_server.c` | 启动顺序、信号处理、`SIGHUP` 重载、退出 | 完成 |
@@ -188,7 +189,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 
 另有 [src/daemon.rs](src/daemon.rs)（415 行，命令行与后台化）、[src/log.rs](src/log.rs)（497 行，两个日志文件）、[src/state.rs](src/state.rs)（407 行，加载器发布、会话读取的共享状态）。
 
-合计 31,425 行（含测试，测试就写在被测模块里）。共 467 个测试：库 461 个、可执行文件 6 个。其中 453 个只读代码
+合计 31,877 行（含测试，测试就写在被测模块里）。共 473 个测试：库 467 个、可执行文件 6 个。其中 459 个只读代码
 仓库里的东西，另外 14 个默认跳过，因为它们要连真实数据库、读真实生成的文件。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
@@ -304,6 +305,14 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
     菜单等同于 `get_menu_shm_readonly` 失败，时间戳留在原处，下一轮再试；`VIEW_EX_ARTICLE` 指的帖子不在，树原样
     留在屏上。精华区的分页器只写 `display_ex_article_key_handler` 那一条状态栏（`menu_proc.c:203-216`）：没有
     同主题切换、没有回复，出去只能靠 `Esc`/`←`。
+27. **数据文件管理页**——`data_file_mgr`（[`data_file_mgr::data_file_mgr`](src/data_file_mgr.rs)），上位菜单的
+    `@DATAMGR` 条目（`bbs_cmd.c:28`），也是唯一会改写站点根目录下文件的菜单动作。屏幕上列出八个编号，回答按两个
+    显示宽度读进三字节的缓冲区，于是 `atoi` 读出来的就是全部选择：什么都没输入、输入 `0`、输入一个超出列表的编号，
+    都从原路回去。文件先按 `<路径>.user` 打开，站点没有这份副本时才读安装时的那一份；下面的编辑器与预览分页器，
+    就是写入路径在用的 [`editor::editor_display`](src/editor.rs) 与 [`screen::display_file`](src/screen.rs)。
+    C 的两个边角照旧：没有预览过之后的 `(S)` 不算回答，而守护进程正在退出时结束的编辑一个字都不写。保存会写两个
+    路径——先写 `.user` 那份，因为重装时留下的正是它——然后按 C 的原话说明要重新加载配置才会生效，这也确实是事实：
+    再读这些文件的是 [`load_data_files`](src/state.rs)。
 
 ### 6.2 在真实论坛数据库上验证过
 
@@ -340,10 +349,10 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 1. **写入路径背后的界面**：用户资料编辑器与统计页，各自都是一个菜单条目加一批自己的写入。
    列表上原本同样只会记日志的 `Ctrl-Q` 已经移植好了（见第 18 条）。
 2. **指向上面这些处理函数的一级菜单条目**：`bbs_do_choice` 只记日志并返回，所以上位菜单仍有只会记日志的键。
-   `LIST_ONLINE_USER`、`LIST_USER`、`RunMBEM`、`FAVOR_TOPIC`、`LIST_EX_SECTION` 与 `VIEW_EX_ARTICLE` 已经接上：
-   前两个连同它们通向的资料页与用户名查找，后两个连同版块的精华区树与从树里读出的一篇帖子（树在 `src/browse.rs`
-   浏览、由各版块的菜单在 `src/loader.rs` 装载）。还在只记日志的是 `EDIT_INTRO`、`EDIT_SIGN`、`DATAMGR` 与
-   `M_FAVOR_SECTION`。
+   `LIST_ONLINE_USER`、`LIST_USER`、`RunMBEM`、`FAVOR_TOPIC`、`LIST_EX_SECTION`、`VIEW_EX_ARTICLE` 与 `DATAMGR`
+   已经接上：前两个连同它们通向的资料页与用户名查找，中间两个连同版块的精华区树与从树里读出的一篇帖子
+   （树在 `src/browse.rs` 浏览、由各版块的菜单在 `src/loader.rs` 装载），`DATAMGR` 则连同改写站点自己的数据文件
+   的那个编辑器（`src/data_file_mgr.rs`）。还在只记日志的是 `EDIT_INTRO`、`EDIT_SIGN` 与 `M_FAVOR_SECTION`。
 3. **Phase 2 的收尾**：GBK 的边角情况、SSH 的窗口大小（有意忽略，理由见 `src/ssh.rs` 文件头），
    以及与 C 就 Phase 1 全部界面做逐屏对照。
 
@@ -664,7 +673,7 @@ Rust 里这些路径集中放在 [src/paths.rs](src/paths.rs)，
 | `a2f6c10` | `article_post.c:276`、`:1149`：`len_content` 累加的是 `snprintf` *想*写的长度；`article_reply` 忽略 `lml_render` 的负返回 | [`post.rs`](src/post.rs) 头部的“页脚”那一条 |
 | `37dfc47` | `screen.c` 用 `sizeof(MENU_ITEM)` 走 screen 池，上限也误用 `menu_item_count` | [`menu.rs`](src/menu.rs) —— `set.screens.len() >= MAX_MENUS` 上方的注释 |
 | `c996502` | `lml.c:482-486` 把长度等于 `LML_TAG_PARAM_BUF_LEN` 的参数拷进同样长度的缓冲区，覆盖掉调用方的 NUL | [`lml.rs`](src/lml.rs) —— 参数拷贝处的钳制 |
-| `a02a212`、`c6444e2` | `db_open` 有三条失败路径没 `mysql_close`；`data_file_mgr.c` 对 `MAP_FAILED` 调了 `munmap` | [`db.rs`](src/db.rs)（连接池没有句柄可漏）、[`state.rs`](src/state.rs)（根本没有映射） |
+| `a02a212`、`c6444e2` | `db_open` 有三条失败路径没 `mysql_close`；`data_file_mgr.c` 对 `MAP_FAILED` 调了 `munmap` | [`db.rs`](src/db.rs)（连接池没有句柄可漏）、[`state.rs`](src/state.rs) 与 [`data_file_mgr.rs`](src/data_file_mgr.rs)（根本没有映射） |
 | `b2e764c` | `bwf.c` 把零长度的行当成空行；`user_list.c` 读 `row[3][0]` 少了邻居都有的 NULL 判断 | [`bwf.rs`](src/bwf.rs) —— 空行跳过处的注释；[`db.rs`](src/db.rs#L334) —— `gender` 解码成不可能为 NULL 的 `String`，因为该列是 `char(1) NOT NULL DEFAULT 'M'` |
 | `51b1c7f` | 两处 `prints(buffer)` 让用户文本里的 `%` 被当成格式 | [`Terminal::print`](src/term/mod.rs) —— Rust 的 `print` 根本不接收格式 |
 | `d7f2f5d` | `section_list_loader.c:145-152` 跳出版块循环时仍持着写锁 | [`loader.rs`](src/loader.rs) —— `load_section_config` 的文档；这里的 guard 不可能活过一趟刷新 |
@@ -773,7 +782,7 @@ hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用�
 | 已完成 | 写入路径：新帖/回复/修改/删除、编辑器、索引更新、缓存生成、提交时过滤违禁词 | 有单元测试覆盖，且联机游客按 `^P` 在任何 SQL 之前被拒绝 |
 | 已完成 | `utils/bin` 的三个 PHP 生成工具改成可执行文件：`gen_top`、`gen_section_menu`、`gen_ex_list`（见 7.4） | 对着真实库，它们写出的文件与 PHP 逐字节一致（见 6.2） |
 | 下一步 | 在**测试库**上完整走一遍真实发帖，再依次验证回复/修改/删除 | 网页端能看到移植版写出的帖子，头信息与缓存文件和 C 一致 |
-| 再下一步 | 剩下的菜单条目：资料编辑两项、`DATAMGR`、`M_FAVOR_SECTION` | 上位菜单里不再有“只写日志”的按键 |
+| 再下一步 | 剩下的菜单条目：资料编辑两项与 `M_FAVOR_SECTION` | 上位菜单里不再有“只写日志”的按键 |
 | 最后 | 与 C 版就 Phase 1 的全部界面对比 | 同样操作得到同样的画面 |
 
 ---

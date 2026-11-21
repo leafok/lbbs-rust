@@ -22,6 +22,7 @@ use std::time::Duration;
 
 use crate::bbsnet;
 use crate::browse;
+use crate::data_file_mgr;
 use crate::favorlist;
 use crate::login::{self, Login};
 use crate::menu::{Action, Draw, MenuFlow, MenuNav, MenuReturn};
@@ -451,6 +452,13 @@ pub fn bbs_do_choice<'a>(
             favorlist::article_favor_display(term, session).await;
             MenuReturn::Redraw
         }
+        // `bbs_cmd.c:28` calls `data_file_mgr.c:55-273`, which ignores its menu parameter and
+        // answers `REDRAW` whichever way it leaves: the number that was not a row, the file that
+        // could not be opened, the key that timed out, the cancel, the shutdown, or the save.
+        Action::DataMgr => {
+            data_file_mgr::data_file_mgr(term, session).await;
+            MenuReturn::Redraw
+        }
         // The write and profile handlers arrive with their own tasks; until then an item that
         // resolves to one reports itself instead of looking like a hung key.
         _ => {
@@ -715,6 +723,32 @@ mod tests {
         let screen = String::from_utf8_lossy(&client.take_available()).into_owned();
         assert!(screen.contains("[主题收藏]"), "{screen}");
         assert!(screen.contains("移除[\x1b[1;32m-\x1b[0;37m"), "{screen}");
+    }
+
+    /// `@DATAMGR` ignores its menu parameter, so the dispatch only has to reach the list and read
+    /// the number back: an answer that is not one of the eight rows opens nothing, and the return
+    /// is the `REDRAW` C gives on every one of its ways out.
+    #[tokio::test]
+    async fn the_data_item_draws_the_list_it_asks_a_number_for() {
+        let (mut client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        let mut session = crate::session::offline_session();
+        session.root = std::env::temp_dir().join(format!("lbbs-datamgr-menu-{}", std::process::id()));
+
+        let (ret, ()) = tokio::join!(
+            bbs_do_choice(&mut term, &mut session, Action::DataMgr, "", false),
+            async {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                client.push(b"9\r");
+            }
+        );
+
+        assert_eq!(ret, MenuReturn::Redraw);
+        let screen = String::from_utf8_lossy(&client.take_available()).into_owned();
+        assert!(screen.contains("数据文件列表: "), "{screen}");
+        assert!(screen.contains(" 1. 进站欢迎"), "{screen}");
+        assert!(screen.contains(" 8. 穿梭配置"), "{screen}");
+        assert!(!screen.contains("再编辑"), "{screen}");
     }
 
     /// `@RunMBEM` answers with the entry named after the `#` in its own parameter, so the shuttle

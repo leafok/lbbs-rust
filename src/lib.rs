@@ -13,6 +13,7 @@ pub mod bwf;
 pub mod cache;
 pub mod config;
 pub mod daemon;
+pub mod data_file_mgr;
 pub mod db;
 pub mod editor;
 pub mod favorlist;
