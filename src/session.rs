@@ -31,7 +31,7 @@ use crate::db::SID_PREFIX;
 use crate::favorlog::FavorLog;
 use crate::menu::{Action, MenuItem, MenuView, is_permitted};
 use crate::paths::{
-    CURRENT_ACTION_MAX_LEN, DATA_GOODBYE, NICKNAME_MAX_LEN, USERNAME_MAX_LEN, USER_TZ_MAX_LEN,
+    CURRENT_ACTION_MAX_LEN, DATA_GOODBYE, NICKNAME_MAX_LEN, USER_TZ_MAX_LEN, USERNAME_MAX_LEN,
     VAR_SECTION_AID_LOC_DIR,
 };
 use crate::privilege::{P_MAN_S, UserPriv};
@@ -251,20 +251,20 @@ impl Session {
         eof_exit: i32,
     ) -> Pin<Box<dyn Future<Output = u32> + Send + 'a>> {
         Box::pin(async move {
-        if let Err(e) = self.online_update(Some("VIEW_FILE")).await {
-            tracing::error!("user_online_update(VIEW_FILE) error: {e}");
-        }
-
-        let path = self.root.join(filename);
-        let data = match tokio::fs::read(&path).await {
-            Ok(data) => data,
-            Err(e) => {
-                tracing::error!("display_file({filename}) error: {e}");
-                return KEY_NULL;
+            if let Err(e) = self.online_update(Some("VIEW_FILE")).await {
+                tracing::error!("user_online_update(VIEW_FILE) error: {e}");
             }
-        };
 
-        screen::display_file(term, self, &data, eof_exit).await
+            let path = self.root.join(filename);
+            let data = match tokio::fs::read(&path).await {
+                Ok(data) => data,
+                Err(e) => {
+                    tracing::error!("display_file({filename}) error: {e}");
+                    return KEY_NULL;
+                }
+            };
+
+            screen::display_file(term, self, &data, eof_exit).await
         })
     }
 
@@ -514,7 +514,10 @@ mod tests {
 
     #[test]
     fn strings_are_clamped_to_the_column_widths() {
-        assert_eq!(clamp_bytes("toomuchtoolongname", USERNAME_MAX_LEN), "toomuchtoolo");
+        assert_eq!(
+            clamp_bytes("toomuchtoolongname", USERNAME_MAX_LEN),
+            "toomuchtoolo"
+        );
         // A cut that lands inside a multi-byte character drops the whole character.
         assert_eq!(clamp_bytes("视图", 3), "视");
         assert_eq!(clamp_bytes("ok", 40), "ok");
@@ -565,7 +568,10 @@ mod tests {
         assert!(session.permits(&public));
 
         session.privs = UserPriv::new(7);
-        assert!(!session.permits(&post), "an unverified account has no post bit");
+        assert!(
+            !session.permits(&post),
+            "an unverified account has no post bit"
+        );
         session.privs.g_priv |= S_POST;
         assert!(session.permits(&post));
         assert_eq!(session.privs.g_priv, S_DEFAULT | S_POST);

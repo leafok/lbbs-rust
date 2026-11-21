@@ -48,23 +48,23 @@ use std::time::Duration;
 
 use chrono::TimeZone;
 
-use crate::board::{Artp, Article, Board, Section};
+use crate::board::{Article, Artp, Board, Section};
 use crate::cache::{self, Cached};
 use crate::favorlog::FavorLog;
+use crate::menu::{Draw, MenuFlow, MenuNav, MenuReturn};
 use crate::paths::{
     ARTICLE_LIMIT_PER_PAGE, ARTICLE_LIMIT_PER_SECTION, ARTICLE_TITLE_MAX_LEN, DATA_READ_HELP,
     MAX_USER_IDLE_TIME, NICKNAME_MAX_LEN, SCREEN_ROWS, USERNAME_MAX_LEN, VAR_ARTICLE_CACHE_DIR,
 };
-use crate::menu::{Draw, MenuFlow, MenuNav, MenuReturn};
-use crate::privilege::{S_LIST, S_MAN_S, S_POST};
 use crate::post;
+use crate::privilege::{S_LIST, S_MAN_S, S_POST};
 use crate::screen::{self, DisplayCtx, PagerHooks};
 use crate::session::{self, Session};
+use crate::term::Terminal;
 use crate::term::key::{
     CR, KEY_DOWN, KEY_END, KEY_ESC, KEY_HOME, KEY_LEFT, KEY_NULL, KEY_PGDN, KEY_PGUP, KEY_RIGHT,
     KEY_TIMEOUT, KEY_UP,
 };
-use crate::term::Terminal;
 use crate::text;
 use crate::viewlog::ViewLog;
 
@@ -234,7 +234,10 @@ pub fn query_section(board: &Board, section: &Section, page_id: i32) -> Result<P
         return Ok(page);
     }
     if page_id < 0 || page_id >= page.page_count {
-        tracing::debug!("Invalid page_id={page_id}, not in range [0, {})", page.page_count);
+        tracing::debug!(
+            "Invalid page_id={page_id}, not in range [0, {})",
+            page.page_count
+        );
         return Err(BrowseError::OutOfRange { sid, page_id });
     }
 
@@ -472,9 +475,20 @@ pub fn scan_by_title(board: &Board, cur: Artp, direction: i32, title: &str) -> O
 
 /// The walk the three scans share. C guards it with `p_article != p_article_cur`, which is the
 /// circular list coming back around to where it started.
-fn scan(board: &Board, cur: Artp, direction: i32, matches: impl Fn(&Article) -> bool) -> Option<Artp> {
+fn scan(
+    board: &Board,
+    cur: Artp,
+    direction: i32,
+    matches: impl Fn(&Article) -> bool,
+) -> Option<Artp> {
     let articles = board.articles();
-    let link = |article: &Article| if direction >= 0 { article.next } else { article.prior };
+    let link = |article: &Article| {
+        if direction >= 0 {
+            article.next
+        } else {
+            article.prior
+        }
+    };
 
     let mut art = link(&articles[cur]);
     while art != cur {
@@ -503,7 +517,8 @@ pub fn name_column(article: &Article, display_nickname: bool) -> (&str, i64) {
     } else {
         (
             &article.username,
-            USERNAME_MAX_LEN as i64 - text::display_width(article.username.as_bytes(), true, false) as i64,
+            USERNAME_MAX_LEN as i64
+                - text::display_width(article.username.as_bytes(), true, false) as i64,
         )
     }
 }
@@ -581,11 +596,7 @@ pub fn favor_column(article: &Article, favor: &FavorLog) -> char {
 pub fn article_flag(article: &Article, uid: i32, view_log: &ViewLog) -> char {
     let is_viewed = article.uid == uid || view_log.is_viewed(article.aid);
     if article.excerption {
-        if is_viewed {
-            'm'
-        } else {
-            'M'
-        }
+        if is_viewed { 'm' } else { 'M' }
     } else if article.lock && is_viewed {
         'x'
     } else if is_viewed {
@@ -1023,7 +1034,8 @@ impl Listing {
                     if matches!(ch, KEY_DOLLAR | KEY_END) && self.page_count > 0 {
                         self.page_id = self.page_count - 1;
                     }
-                    if matches!(ch, KEY_DOLLAR | KEY_END | KEY_UPPER_N | KEY_PGDN) && self.count > 0 {
+                    if matches!(ch, KEY_DOLLAR | KEY_END | KEY_UPPER_N | KEY_PGDN) && self.count > 0
+                    {
                         self.selected = self.count - 1;
                     }
                     if self.selected + 1 >= self.count {
@@ -1125,7 +1137,11 @@ impl Listing {
             // asked for.
             let board = session.state.board();
             if let Some(article) = listing.current().and_then(|art| board.article(art)) {
-                listing.topic_tid = if article.tid == 0 { article.aid } else { article.tid };
+                listing.topic_tid = if article.tid == 0 {
+                    article.aid
+                } else {
+                    article.tid
+                };
                 session.aid_locations.insert(listing.sid, article.aid);
             }
         }
@@ -1193,15 +1209,16 @@ impl Listing {
                     }
                 };
                 if let Err(e) = session.favor.mark(&session.state.db, target, set).await {
-                    tracing::error!(
-                        "article_favor_set(aid={target}, {}) error: {e}",
-                        set as i32
-                    );
+                    tracing::error!("article_favor_set(aid={target}, {}) error: {e}", set as i32);
                 }
                 Ok(Flow::Stay)
             }
             SelectCmd::FirstTopicArticle | SelectCmd::LastTopicArticle => {
-                let direction = if cmd == SelectCmd::FirstTopicArticle { -1 } else { 1 };
+                let direction = if cmd == SelectCmd::FirstTopicArticle {
+                    -1
+                } else {
+                    1
+                };
                 let located = self.step(session, direction, ARTICLE_LIMIT_PER_SECTION)?;
                 self.jump(session, located).await
             }
@@ -1228,12 +1245,20 @@ impl Listing {
                 self.jump(session, located).await
             }
             SelectCmd::ScanArticleBackwardByUser | SelectCmd::ScanArticleForwardByUser => {
-                let direction = if cmd == SelectCmd::ScanArticleForwardByUser { 1 } else { -1 };
+                let direction = if cmd == SelectCmd::ScanArticleForwardByUser {
+                    1
+                } else {
+                    -1
+                };
                 let located = self.scan_author(term, session, direction).await?;
                 self.jump(session, located).await
             }
             SelectCmd::ScanArticleBackwardByTitle | SelectCmd::ScanArticleForwardByTitle => {
-                let direction = if cmd == SelectCmd::ScanArticleForwardByTitle { 1 } else { -1 };
+                let direction = if cmd == SelectCmd::ScanArticleForwardByTitle {
+                    1
+                } else {
+                    -1
+                };
                 let located = self.scan_title(term, session, direction).await?;
                 self.jump(session, located).await
             }
@@ -1274,7 +1299,10 @@ impl Listing {
                     return Ok(Flow::Stay); // No permission
                 }
                 let Some((aid, excerption)) = target else {
-                    tracing::error!("article_modify(sid={}) error: the cursor is not on an article", self.sid);
+                    tracing::error!(
+                        "article_modify(sid={}) error: the cursor is not on an article",
+                        self.sid
+                    );
                     return Ok(Flow::Redraw);
                 };
 
@@ -1303,7 +1331,10 @@ impl Listing {
                 let Some(target) = target else {
                     // The row vanished between the draw and the key; C would have deleted a
                     // `NULL` article, which its own guard returns `-1` for.
-                    tracing::error!("article_del(aid={}) error: the cursor is not on an article", self.sid);
+                    tracing::error!(
+                        "article_del(aid={}) error: the cursor is not on an article",
+                        self.sid
+                    );
                     return Ok(Flow::Redraw);
                 };
 
@@ -1326,7 +1357,10 @@ impl Listing {
                 let (aid, set) = {
                     let board = session.state.board();
                     let Some(article) = self.current().and_then(|art| board.article(art)) else {
-                        tracing::error!("article_excerption_set(sid={}) error: the cursor is not on an article", self.sid);
+                        tracing::error!(
+                            "article_excerption_set(sid={}) error: the cursor is not on an article",
+                            self.sid
+                        );
                         return Ok(Flow::Redraw);
                     };
                     (article.aid, !article.excerption)
@@ -1347,7 +1381,9 @@ impl Listing {
                 let aid = {
                     let board = session.state.board();
                     let Some(article) = self.current().and_then(|art| board.article(art)) else {
-                        tracing::error!("display_article_meta error: the cursor is not on an article");
+                        tracing::error!(
+                            "display_article_meta error: the cursor is not on an article"
+                        );
                         return Ok(Flow::Redraw);
                     };
                     article.aid
@@ -1359,7 +1395,9 @@ impl Listing {
                 let uid = {
                     let board = session.state.board();
                     let Some(article) = self.current().and_then(|art| board.article(art)) else {
-                        tracing::error!("query_user_info_by_uid error: the cursor is not on an article");
+                        tracing::error!(
+                            "query_user_info_by_uid error: the cursor is not on an article"
+                        );
                         return Ok(Flow::Redraw);
                     };
                     article.uid
@@ -1399,7 +1437,9 @@ impl Listing {
         step: i32,
     ) -> Result<Option<Located>, BrowseError> {
         let board = session.state.board();
-        let section = board.section(self.sid).ok_or(BrowseError::SectionNotFound)?;
+        let section = board
+            .section(self.sid)
+            .ok_or(BrowseError::SectionNotFound)?;
         let cur = self.row_under_cursor()?;
         Ok(locate_article(&board, section, cur, direction, step))
     }
@@ -1413,7 +1453,9 @@ impl Listing {
         step: i32,
     ) -> Result<Option<Located>, BrowseError> {
         let board = session.state.board();
-        let section = board.section(self.sid).ok_or(BrowseError::SectionNotFound)?;
+        let section = board
+            .section(self.sid)
+            .ok_or(BrowseError::SectionNotFound)?;
         Ok(locate_article(&board, section, art, direction, step))
     }
 
@@ -1439,7 +1481,9 @@ impl Listing {
     /// [`last_article`] under its own lock.
     fn newest_visible(&self, session: &Session) -> Result<Option<Artp>, BrowseError> {
         let board = session.state.board();
-        let section = board.section(self.sid).ok_or(BrowseError::SectionNotFound)?;
+        let section = board
+            .section(self.sid)
+            .ok_or(BrowseError::SectionNotFound)?;
         Ok(last_article(&board, section))
     }
 
@@ -1491,7 +1535,11 @@ impl Listing {
         term.moveto(SCREEN_ROWS, 1);
         term.clrtoeol();
 
-        let prompt = if direction == 1 { "↓搜寻作者: " } else { "↑搜寻作者: " };
+        let prompt = if direction == 1 {
+            "↓搜寻作者: "
+        } else {
+            "↑搜寻作者: "
+        };
         let typed = screen::get_data(
             term,
             SCREEN_ROWS,
@@ -1548,7 +1596,11 @@ impl Listing {
         term.moveto(SCREEN_ROWS, 1);
         term.clrtoeol();
 
-        let prompt = if direction == 1 { "↓搜寻标题: " } else { "↑搜寻标题: " };
+        let prompt = if direction == 1 {
+            "↓搜寻标题: "
+        } else {
+            "↑搜寻标题: "
+        };
         let typed = screen::get_data(
             term,
             SCREEN_ROWS,
@@ -1712,7 +1764,9 @@ impl Listing {
                 }
                 KEY_EQUAL | KEY_BACKSLASH => {
                     let direction = if ret == KEY_EQUAL { -1 } else { 1 };
-                    if let Some(located) = self.locate(session, cur, direction, ARTICLE_LIMIT_PER_SECTION)? {
+                    if let Some(located) =
+                        self.locate(session, cur, direction, ARTICLE_LIMIT_PER_SECTION)?
+                    {
                         // C only re-queries when the page moved, and always keeps reading.
                         self.jump(session, Some(located)).await?;
                         again = true;
@@ -1725,7 +1779,11 @@ impl Listing {
                 // Update current topic, which is what colours the thread in the list.
                 let board = session.state.board();
                 if let Some(article) = self.current().and_then(|art| board.article(art)) {
-                    self.topic_tid = if article.tid == 0 { article.aid } else { article.tid };
+                    self.topic_tid = if article.tid == 0 {
+                        article.aid
+                    } else {
+                        article.tid
+                    };
                 }
                 break;
             }
@@ -1767,9 +1825,10 @@ pub fn valid_username(username: &str) -> bool {
     if bytes.is_empty() || bytes.len() > USERNAME_MAX_LEN {
         return false;
     }
-    bytes.iter().enumerate().all(|(i, &ch)| {
-        ch.is_ascii_alphabetic() || (i > 0 && (ch.is_ascii_digit() || ch == b'_'))
-    })
+    bytes
+        .iter()
+        .enumerate()
+        .all(|(i, &ch)| ch.is_ascii_alphabetic() || (i > 0 && (ch.is_ascii_digit() || ch == b'_')))
 }
 
 /// `PagerHooks` for a post being read: the session does the bookkeeping, the listing owns the
@@ -2127,7 +2186,11 @@ mod tests {
 
     fn board_with(articles: &[Article]) -> Board {
         let mut board = Board::default();
-        assert!(board.create_section(1, "test", "测试板", "master").is_some());
+        assert!(
+            board
+                .create_section(1, "test", "测试板", "master")
+                .is_some()
+        );
         for article in articles {
             board.append_article(article).expect("append");
         }
@@ -2187,7 +2250,10 @@ mod tests {
 
         let page = page_of(&board, 1);
         assert_eq!(page.count(), 20);
-        assert_eq!(page.ontop_start_offset, 20, "no room for a sticky on a full page");
+        assert_eq!(
+            page.ontop_start_offset, 20,
+            "no room for a sticky on a full page"
+        );
 
         let page = page_of(&board, 2);
         assert_eq!(aids(&board, &page), (130..140).collect::<Vec<i32>>());
@@ -2276,14 +2342,8 @@ mod tests {
         assert_eq!((located.page_id, located.offset), (0, 0));
 
         // A whole step finds the newest visible post of the thread.
-        let located = locate_article(
-            &board,
-            section,
-            art(100),
-            1,
-            ARTICLE_LIMIT_PER_SECTION,
-        )
-        .expect("last of thread");
+        let located = locate_article(&board, section, art(100), 1, ARTICLE_LIMIT_PER_SECTION)
+            .expect("last of thread");
         assert_eq!((located.page_id, located.offset), (0, 4));
 
         // Nothing newer, nothing older: the walk comes back to the row it was asked from,
@@ -2380,8 +2440,7 @@ mod tests {
 
         // An author id that is not in the user list any more is matched by name, case first.
         assert_eq!(
-            scan_by_username(&board, art(100), 1, "SOMEONE")
-                .map(|a| board.article(a).unwrap().aid),
+            scan_by_username(&board, art(100), 1, "SOMEONE").map(|a| board.article(a).unwrap().aid),
             Some(102)
         );
     }
@@ -2394,8 +2453,7 @@ mod tests {
         let art = |aid: i32| board.article_index(aid).unwrap();
 
         assert_eq!(
-            scan_by_title(&board, art(100), 1, "examplebbs")
-                .map(|a| board.article(a).unwrap().aid),
+            scan_by_title(&board, art(100), 1, "examplebbs").map(|a| board.article(a).unwrap().aid),
             Some(101)
         );
         // Backward starts at `prior`, so the row the reader is on never matches itself …
@@ -2556,8 +2614,7 @@ mod tests {
             ..env
         };
         assert!(row_line(&article, false, &env).starts_with("  \x1b[1;33m  12345"));
-        assert!(row_line(&reply(12346, 12345), true, &env)
-            .contains("\x1b[1;36mtitle 12346\x1b[m"));
+        assert!(row_line(&reply(12346, 12345), true, &env).contains("\x1b[1;36mtitle 12346\x1b[m"));
     }
 
     #[test]
@@ -2632,11 +2689,8 @@ mod tests {
     /// The on-disk shape `section_aid_locations_save` writes for the C daemon to read back.
     #[test]
     fn saved_positions_are_pairs_of_native_integers() {
-        let path = std::env::temp_dir().join(format!(
-            "lbbs-aid-loc-{}-{}",
-            std::process::id(),
-            NOW
-        ));
+        let path =
+            std::env::temp_dir().join(format!("lbbs-aid-loc-{}-{}", std::process::id(), NOW));
 
         let pairs = [(1i16, 100i32), (2, 0), (32_767, 1_234_567)];
         assert_eq!(aid_locations_write(&path, &pairs).unwrap(), 3);
@@ -2664,11 +2718,8 @@ mod tests {
 
     #[test]
     fn a_cut_short_pair_is_dropped_like_the_c_loop_drops_it() {
-        let path = std::env::temp_dir().join(format!(
-            "lbbs-aid-loc-cut-{}-{}",
-            std::process::id(),
-            NOW
-        ));
+        let path =
+            std::env::temp_dir().join(format!("lbbs-aid-loc-cut-{}-{}", std::process::id(), NOW));
 
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&7i32.to_ne_bytes());
@@ -2802,10 +2853,7 @@ mod tests {
     }
 
     /// A guest, with the privileges the reference database gives uid 0.
-    async fn guest_session(
-        state: &std::sync::Arc<crate::state::AppState>,
-        root: &Path,
-    ) -> Session {
+    async fn guest_session(state: &std::sync::Arc<crate::state::AppState>, root: &Path) -> Session {
         let mut session = Session::new(
             state.clone(),
             root,
@@ -2962,7 +3010,10 @@ mod tests {
         let mut client = keyed.await.unwrap();
         let drawn = String::from_utf8_lossy(&client.take_available()).into_owned();
 
-        assert!(drawn.contains(&format!("讨论区 [{sname}]")), "the board header");
+        assert!(
+            drawn.contains(&format!("讨论区 [{sname}]")),
+            "the board header"
+        );
         assert!(drawn.contains(&aid.to_string()), "the row of aid {aid}");
         // The pager's own status bar, which no row of the list writes.
         assert!(drawn.contains("回复["), "the pager bar");
@@ -3060,7 +3111,10 @@ mod tests {
 
         let mut client = typed.await.unwrap();
         let drawn = String::from_utf8_lossy(&client.take_available()).into_owned();
-        assert!(drawn.contains("\x1b[2J"), "the screen is cleared first: {drawn}");
+        assert!(
+            drawn.contains("\x1b[2J"),
+            "the screen is cleared first: {drawn}"
+        );
         assert!(drawn.contains("该用户已升天"), "{drawn}");
         assert!(drawn.contains("按任意键继续"), "{drawn}");
     }
@@ -3248,16 +3302,26 @@ mod tests {
         let mut session = crate::session::offline_session();
         *session.state.board_mut() = board;
 
-        let answered =
-            crate::bbs::bbs_do_choice(&mut term, &mut session, Action::ListExSection, "nope", false)
-                .await;
+        let answered = crate::bbs::bbs_do_choice(
+            &mut term,
+            &mut session,
+            Action::ListExSection,
+            "nope",
+            false,
+        )
+        .await;
         assert_eq!(answered, MenuReturn::NoRedraw, "Section nope not found");
         let drawn = String::from_utf8_lossy(&client.take_available()).into_owned();
         assert!(!drawn.contains("该版块精华区未开放"), "{drawn}");
 
-        let answered =
-            crate::bbs::bbs_do_choice(&mut term, &mut session, Action::ListExSection, "test", false)
-                .await;
+        let answered = crate::bbs::bbs_do_choice(
+            &mut term,
+            &mut session,
+            Action::ListExSection,
+            "test",
+            false,
+        )
+        .await;
         assert_eq!(answered, MenuReturn::Redraw, "a stamped board with no menu");
     }
 
@@ -3276,7 +3340,11 @@ mod tests {
                 cid: 9002,
                 ..post(200)
             };
-            session.state.board_mut().append_article(&article).expect("append");
+            session
+                .state
+                .board_mut()
+                .append_article(&article)
+                .expect("append");
         }
         let (mut client, server) = Pipe::new();
         let mut term = Terminal::new(ByteIo::Pipe(server));
@@ -3285,9 +3353,14 @@ mod tests {
             ("", "atoi of an empty name is 0, which is no article"),
             ("200", "the pool has the post but no cache file for it"),
         ] {
-            let answered =
-                crate::bbs::bbs_do_choice(&mut term, &mut session, Action::ViewExArticle, param, false)
-                    .await;
+            let answered = crate::bbs::bbs_do_choice(
+                &mut term,
+                &mut session,
+                Action::ViewExArticle,
+                param,
+                false,
+            )
+            .await;
             assert_ne!(answered, MenuReturn::Redraw, "{why}");
         }
 

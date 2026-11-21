@@ -122,10 +122,7 @@ fn render(row: &Entry, rank: usize) -> Result<(String, String), Failure> {
     let sname = batch::text(&row.sname);
     let username = batch::text(&row.username);
 
-    let board_pad = batch::pad(
-        20,
-        (batch::str_length(s_title) + sname.len()) as i64,
-    )?;
+    let board_pad = batch::pad(20, (batch::str_length(s_title) + sname.len()) as i64)?;
     let user_pad = batch::pad(16, username.len() as i64)?;
 
     let line_section = format!(
@@ -137,7 +134,8 @@ fn render(row: &Entry, rank: usize) -> Result<(String, String), Failure> {
     // `:50`, then `:63-67`: sixty cells, padded out to sixty.
     let title = batch::first_line(batch::text(&row.title), 60);
     let title_pad = batch::pad(60, batch::str_length(&title) as i64)?;
-    let line_article = format!(" \x1b[1;37m       标题 : \x1b[44;37m{title}{title_pad}  \x1b[0;40;37m");
+    let line_article =
+        format!(" \x1b[1;37m       标题 : \x1b[44;37m{title}{title_pad}  \x1b[0;40;37m");
 
     Ok((line_section, line_article))
 }
@@ -180,7 +178,7 @@ mod tests {
                 " \x1b[1;37m第 \x1b[31m 1 \x1b[37m名 版块 : \x1b[33m水区 [Test]{} \
                  \x1b[37m【 \x1b[32mNov 20 08:09:10 \x1b[37m】\x1b[35m{}leaflet ",
                 " ".repeat(12), // 20 - str_length("水区") - strlen("Test")
-                " ".repeat(9) // 16 - strlen("leaflet")
+                " ".repeat(9)   // 16 - strlen("leaflet")
             )
         );
     }
@@ -291,7 +289,10 @@ mod tests {
         std::fs::write(out_dir.join("bbs_top.txt"), &text_file).unwrap();
         std::fs::write(out_dir.join("bbs_top_menu.conf"), &menu_file).unwrap();
 
-        for (name, generated) in [("bbs_top.txt", &text_file), ("bbs_top_menu.conf", &menu_file)] {
+        for (name, generated) in [
+            ("bbs_top.txt", &text_file),
+            ("bbs_top_menu.conf", &menu_file),
+        ] {
             let oracle = std::path::Path::new("/tmp/phpgen/relaxed_top").join(name);
             if oracle.exists() {
                 assert_eq!(

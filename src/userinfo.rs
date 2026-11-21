@@ -63,14 +63,14 @@ use crate::ipmask;
 use crate::lml;
 use crate::paths::{
     DATA_READ_HELP, LINE_BUFFER_LEN, MAX_USER_IDLE_TIME, SCREEN_COLS, SCREEN_ROWS,
-    USERNAME_MAX_LEN, USER_INTRO_MAX_LEN, USER_INTRO_MAX_LINE,
+    USER_INTRO_MAX_LEN, USER_INTRO_MAX_LINE, USERNAME_MAX_LEN,
 };
 use crate::privilege::{P_ADMIN_M, P_ADMIN_S};
 use crate::roster::UserInfo;
 use crate::screen::{self, DisplayCtx, PagerHooks};
 use crate::session::Session;
-use crate::term::key::{self, CR, KEY_ESC, KEY_NULL, KEY_TIMEOUT};
 use crate::term::Terminal;
+use crate::term::key::{self, CR, KEY_ESC, KEY_NULL, KEY_TIMEOUT};
 
 /// `BBS_max_sessions_per_user` and `USER_INFO_MAX_LEN` (`user_info_display.c:27-33`). The
 /// two members that only sized a C buffer — `LAST_LOGIN_DT_MAX_LEN` and
@@ -253,10 +253,7 @@ fn profile_screen(term: &Terminal, session: &Session, user: &UserInfo) -> Vec<u8
     let login_ip = match sessions.first() {
         Some(session_row) => ipmask::mask(
             &session_row.ip,
-            if session
-                .privs
-                .checklevel(P_ADMIN_M | P_ADMIN_S)
-            {
+            if session.privs.checklevel(P_ADMIN_M | P_ADMIN_S) {
                 1
             } else {
                 2
@@ -311,7 +308,14 @@ fn profile_screen(term: &Terminal, session: &Session, user: &UserInfo) -> Vec<u8
         )
         .as_bytes(),
     );
-    buf.extend(if is_online { "目前在线，状态如下: \n" } else { "" }.as_bytes());
+    buf.extend(
+        if is_online {
+            "目前在线，状态如下: \n"
+        } else {
+            ""
+        }
+        .as_bytes(),
+    );
     buf.extend(b"\x1b[1m");
     if is_online {
         buf.extend(&action_str);
@@ -383,7 +387,8 @@ pub async fn user_list_search(term: &mut Terminal, session: &mut Session) {
             USERNAME_MAX_LEN,
             MAX_USER_IDLE_TIME,
         )
-        .await else {
+        .await
+        else {
             return;
         };
         username = typed;
@@ -411,7 +416,11 @@ pub async fn user_list_search(term: &mut Terminal, session: &mut Session) {
         // `ret`, which in C is the count the query wrote (`:529`), the `> 1` grid below
         // narrowing it to an exact-match test.
         let found = if matches.len() > 1 {
-            for (i, row) in matches.iter().take(USERS_PER_LINE * MAX_USER_LINES).enumerate() {
+            for (i, row) in matches
+                .iter()
+                .take(USERS_PER_LINE * MAX_USER_LINES)
+                .enumerate()
+            {
                 term.moveto(
                     4 + i / USERS_PER_LINE,
                     3 + i % USERS_PER_LINE * (USERNAME_MAX_LEN + 3),
@@ -434,7 +443,8 @@ pub async fn user_list_search(term: &mut Terminal, session: &mut Session) {
                     // One more character appended to the prefix, and the search starts over
                     // (`:564-571`). C assigns the key code to a `char`, which only ever holds
                     // a byte the `isalnum` test already accepted.
-                    if username.len() + 1 <= USERNAME_MAX_LEN && (key::is_alnum(ch) || ch == b'_' as u32)
+                    if username.len() + 1 <= USERNAME_MAX_LEN
+                        && (key::is_alnum(ch) || ch == b'_' as u32)
                     {
                         username.push(ch as u8);
                     }
@@ -629,17 +639,32 @@ mod tests {
     async fn an_offline_profile_reports_the_logout_minute_and_an_unknown_address() {
         let screen = profile(roster(), OnlineList::default(), 10);
         assert!(screen.starts_with("\n"), "{screen}");
-        assert!(screen.contains("amy (昵称) 上站 [7] 发文 [-1]\n"), "{screen}");
-        assert!(screen.contains("从 [未知] 访问本站 经验值 [1000]\n"), "{screen}");
+        assert!(
+            screen.contains("amy (昵称) 上站 [7] 发文 [-1]\n"),
+            "{screen}"
+        );
+        assert!(
+            screen.contains("从 [未知] 访问本站 经验值 [1000]\n"),
+            "{screen}"
+        );
 
         // The logout is not after the login, so C prints the login minute twice.
         let login = clock_minute(1_700_000_000);
-        assert!(screen.contains(&format!("上次在 [{login}] 从 [")), "{screen}");
-        assert!(screen.contains(&format!("离线于 [{login}] 生命 [")), "{screen}");
+        assert!(
+            screen.contains(&format!("上次在 [{login}] 从 [")),
+            "{screen}"
+        );
+        assert!(
+            screen.contains(&format!("离线于 [{login}] 生命 [")),
+            "{screen}"
+        );
 
         // 1000 points is rank 4, labelled with its name and `level + 1`.
         assert!(screen.contains("等级 [小有作为(5)]"), "{screen}");
-        assert!(screen.contains("星座 [\x1b[1;36m摩羯座\x1b[m]\n"), "{screen}");
+        assert!(
+            screen.contains("星座 [\x1b[1;36m摩羯座\x1b[m]\n"),
+            "{screen}"
+        );
         // Offline: no status block, and the bold section wraps nothing.
         assert!(!screen.contains("目前在线"), "{screen}");
         assert!(screen.contains("\x1b[1m\x1b[m"), "{screen}");
@@ -651,7 +676,10 @@ mod tests {
         let mut row = user_row(10, "amy");
         row.gender = "f".to_owned();
         let screen = profile(Roster::load(&[row.clone()]), OnlineList::default(), 10);
-        assert!(screen.contains("星座 [\x1b[1;35m摩羯座\x1b[m]"), "female is violet: {screen}");
+        assert!(
+            screen.contains("星座 [\x1b[1;35m摩羯座\x1b[m]"),
+            "female is violet: {screen}"
+        );
 
         row.gender_pub = false;
         let screen = profile(Roster::load(&[row]), OnlineList::default(), 10);
@@ -916,8 +944,11 @@ mod tests {
         // stale prefix once more; the port leaves, so the screen never asks again.
         client.push(b"bob\r");
         client.hang_up();
-        tokio::time::timeout(Duration::from_secs(5), user_list_search(&mut term, &mut session))
-            .await
-            .expect("the search does not spin on a closed pipe");
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            user_list_search(&mut term, &mut session),
+        )
+        .await
+        .expect("the search does not spin on a closed pipe");
     }
 }

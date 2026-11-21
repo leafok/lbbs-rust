@@ -84,7 +84,8 @@ fn read<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
 }
 
 fn write<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
-    lock.write().unwrap_or_else(|poisoned| poisoned.into_inner())
+    lock.write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 impl AppState {
@@ -135,8 +136,7 @@ impl AppState {
     /// missing. The C loader `mmap`ed each into `data_files[i].p_shm`; a `Vec<u8>` per name is
     /// the same thing without the segment.
     pub fn load_data_files(&self, root: &Path) -> Vec<String> {
-        let mut files: HashMap<String, Vec<u8>> =
-            HashMap::with_capacity(DATA_FILES_STARTUP.len());
+        let mut files: HashMap<String, Vec<u8>> = HashMap::with_capacity(DATA_FILES_STARTUP.len());
         let mut failed = Vec::new();
 
         for name in DATA_FILES_STARTUP {
@@ -344,7 +344,10 @@ mod tests {
 
     /// The item count of the `TOPMENU` in a published set.
     fn topmenu_len(set: &MenuSet) -> usize {
-        set.menu(set.menu_by_name("TOPMENU").unwrap()).unwrap().items.len()
+        set.menu(set.menu_by_name("TOPMENU").unwrap())
+            .unwrap()
+            .items
+            .len()
     }
 
     #[tokio::test]

@@ -47,17 +47,17 @@ use chrono::{Datelike, Timelike};
 
 use crate::browse::{self, padding};
 use crate::paths::{
-    DATA_READ_HELP, MAX_USER_IDLE_TIME, NICKNAME_MAX_LEN, USERNAME_MAX_LEN, USER_LIMIT_PER_PAGE,
+    DATA_READ_HELP, MAX_USER_IDLE_TIME, NICKNAME_MAX_LEN, USER_LIMIT_PER_PAGE, USERNAME_MAX_LEN,
 };
 use crate::roster::{OnlineUser, UserInfo};
 use crate::screen;
 use crate::session::{self, Session};
 use crate::state::AppState;
+use crate::term::Terminal;
 use crate::term::key::{
     CR, KEY_DOWN, KEY_END, KEY_ESC, KEY_F5, KEY_HOME, KEY_LEFT, KEY_NULL, KEY_PGDN, KEY_PGUP,
     KEY_RIGHT, KEY_TIMEOUT, KEY_UP,
 };
-use crate::term::Terminal;
 
 /// The rows the two drawers fill: `moveto(4 + i, 1)` for at most
 /// `BBS_user_limit_per_page` of them, inside `clrline(4, 23)` (`:68`, `:102`, `:128`, `:179`).
@@ -85,8 +85,7 @@ const KEY_HELP_LINE: &str = "返回[\x1b[1;32m←\x1b[0;37m,\x1b[1;32mESC\x1b[0;
 /// Row 3, the column titles (`:50` and `:54`). The two differ only in their last field, and
 /// both are padded to the same width.
 const ONLINE_TITLE: &str = "\x1b[44;37m \x1b[1;37m 编  号  用户名       昵称                 在线时长 空闲   最后活动            \x1b[m";
-const REGISTERED_TITLE: &str =
-    "\x1b[44;37m \x1b[1;37m 编  号  用户名       昵称                 上次登陆距今                        \x1b[m";
+const REGISTERED_TITLE: &str = "\x1b[44;37m \x1b[1;37m 编  号  用户名       昵称                 上次登陆距今                        \x1b[m";
 
 /// `select_cmd_t` (`:28-36`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -719,7 +718,10 @@ mod tests {
 
     #[tokio::test]
     async fn the_registered_page_draws_its_titles_and_its_rows() {
-        let mut session = session_with(roster(USER_LIMIT_PER_PAGE as usize + 2), OnlineList::default());
+        let mut session = session_with(
+            roster(USER_LIMIT_PER_PAGE as usize + 2),
+            OnlineList::default(),
+        );
         let screen = run(&mut session, false, b"\x1b").await;
 
         assert!(screen.contains("\x1b[2J"), "cleared first: {screen}");
@@ -733,7 +735,10 @@ mod tests {
         assert!(!screen.contains("在线时长"), "{screen}");
         assert!(screen.contains("\x1b[4;1H       1  user01"), "{screen}");
         // Page 1 of 2, and the cursor on the first row.
-        assert!(screen.contains("[第\x1b[36m1\x1b[33m/\x1b[36m2\x1b[33m页]"), "{screen}");
+        assert!(
+            screen.contains("[第\x1b[36m1\x1b[33m/\x1b[36m2\x1b[33m页]"),
+            "{screen}"
+        );
         assert!(screen.contains("\x1b[24;0H"), "the status row: {screen}");
         assert_eq!(drawings(&screen), 1, "{screen}");
         assert!(screen.contains("\x1b[4;1H>"), "{screen}");
@@ -758,7 +763,10 @@ mod tests {
         let mut session = session_with(Roster::default(), OnlineList::default());
         let screen = run(&mut session, false, b"\r\x1b").await;
 
-        assert!(screen.contains("[第\x1b[36m1\x1b[33m/\x1b[36m1\x1b[33m页]"), "{screen}");
+        assert!(
+            screen.contains("[第\x1b[36m1\x1b[33m/\x1b[36m1\x1b[33m页]"),
+            "{screen}"
+        );
         // With no rows the cursor is not drawn, and Enter does not open a profile.
         assert!(!screen.contains("\x1b[4;1H>"), "{screen}");
         assert!(!screen.contains("上站 ["), "{screen}");
@@ -779,17 +787,26 @@ mod tests {
 
     #[tokio::test]
     async fn down_at_the_last_row_of_the_page_turns_it() {
-        let mut session =
-            session_with(roster(USER_LIMIT_PER_PAGE as usize + 1), OnlineList::default());
+        let mut session = session_with(
+            roster(USER_LIMIT_PER_PAGE as usize + 1),
+            OnlineList::default(),
+        );
         // 20 rows on page 0: nineteen downs reach the last, and the twentieth turns the page.
         let mut keys = [b"\x1b[B".as_slice(); USER_LIMIT_PER_PAGE as usize].concat();
         keys.extend_from_slice(b"\x1b");
         let screen = run(&mut session, false, &keys).await;
 
         assert!(screen.contains("[第\x1b[36m2\x1b[33m/"), "{screen}");
-        assert!(screen.contains("user21"), "the first row of page 2: {screen}");
+        assert!(
+            screen.contains("user21"),
+            "the first row of page 2: {screen}"
+        );
         // A page turn re-reads the rows without redrawing the titles.
-        assert_eq!(drawings(&screen), 1, "the page turn draws no titles: {screen}");
+        assert_eq!(
+            drawings(&screen),
+            1,
+            "the page turn draws no titles: {screen}"
+        );
     }
 
     #[tokio::test]
@@ -799,7 +816,10 @@ mod tests {
 
         // One page, so rotation lands on the last row of the list, not the last of a page.
         assert!(screen.contains("\x1b[5;1H>"), "{screen}");
-        assert!(screen.contains("[第\x1b[36m1\x1b[33m/\x1b[36m1\x1b[33m页]"), "{screen}");
+        assert!(
+            screen.contains("[第\x1b[36m1\x1b[33m/\x1b[36m1\x1b[33m页]"),
+            "{screen}"
+        );
     }
 
     #[tokio::test]
@@ -814,14 +834,20 @@ mod tests {
         // END: last page, and its last row: 23 users over two pages, so page 2 holds 3.
         assert!(screen.contains("[第\x1b[36m2\x1b[33m/"), "{screen}");
         assert!(screen.contains("\x1b[6;1H>"), "{screen}");
-        assert!(screen.contains("user23"), "the tail of the roster: {screen}");
+        assert!(
+            screen.contains("user23"),
+            "the tail of the roster: {screen}"
+        );
 
         let mut session = session_with(roster(users), OnlineList::default());
         let screen = run(&mut session, false, b"\x1b[4~\x1b[1~\x1b").await;
 
         // HOME from page 2: the page is set to 0, then `P` runs, then `k`, and at the head of
         // an empty direction nothing moves.
-        assert!(screen.contains("[第\x1b[36m1\x1b[33m/\x1b[36m2\x1b[33m页]"), "{screen}");
+        assert!(
+            screen.contains("[第\x1b[36m1\x1b[33m/\x1b[36m2\x1b[33m页]"),
+            "{screen}"
+        );
         assert!(screen.contains("\x1b[4;1H>"), "{screen}");
     }
 
@@ -841,7 +867,10 @@ mod tests {
         let screen = screen_text(typed.await.unwrap());
 
         assert!(screen.contains("user02 (nick2) 上站 [7]"), "{screen}");
-        assert!(screen.contains("按任意键继续"), "the pager's own row: {screen}");
+        assert!(
+            screen.contains("按任意键继续"),
+            "the pager's own row: {screen}"
+        );
         // `user_list_draw_screen` runs again on the way back, titles and all.
         assert_eq!(drawings(&screen), 2, "{screen}");
     }

@@ -35,9 +35,7 @@ use crate::board::{Article, Board, Section};
 use crate::cache;
 use crate::db::{ArticleRow, ContentRow, Db, OpRow, SectionRow};
 use crate::ipmask;
-use crate::paths::{
-    USER_OFF_LINE_SECS, VAR_ARTICLE_CACHE_DIR, VAR_GEN_EX_MENU_DIR,
-};
+use crate::paths::{USER_OFF_LINE_SECS, VAR_ARTICLE_CACHE_DIR, VAR_GEN_EX_MENU_DIR};
 use crate::roster::{OnlineList, Roster};
 use crate::state::AppState;
 
@@ -127,7 +125,9 @@ impl fmt::Display for LoaderError {
         match self {
             Self::Sql(e) => write!(f, "loader query failed: {e}"),
             Self::UnknownSection => write!(f, "unknown section"),
-            Self::SectionPoolFull => write!(f, "section list is full or a board name is duplicated"),
+            Self::SectionPoolFull => {
+                write!(f, "section list is full or a board name is duplicated")
+            }
         }
     }
 }
@@ -194,7 +194,9 @@ pub fn article_from_row(row: &ArticleRow, board: &Board) -> Article {
 /// rewrites only `sname`, `stitle` and `master_list`. Renaming a board therefore leaves the
 /// arena links alone, and the articles loaded under the old name stay where they are.
 pub fn load_section_config_into(
-    board: &mut Board, rows: &[SectionRow], master_lists: &[String],
+    board: &mut Board,
+    rows: &[SectionRow],
+    master_lists: &[String],
 ) -> Result<(), LoaderError> {
     for (row, master_list) in rows.iter().zip(master_lists) {
         // `atoi(row[0])` of a `mediumint`. A NULL `sname` or `title` reaches `strncpy` in C
@@ -342,7 +344,15 @@ pub fn generate_caches_from_rows(
             continue;
         };
 
-        if render_cache(cache_dir, bbs_name, bbs_server, &article, section, content, row.sub_ip.as_deref()) {
+        if render_cache(
+            cache_dir,
+            bbs_name,
+            bbs_server,
+            &article,
+            section,
+            content,
+            row.sub_ip.as_deref(),
+        ) {
             rendered += 1;
         }
     }
@@ -390,7 +400,15 @@ pub fn generate_caches_from_modifies(
             continue;
         };
 
-        if render_cache(cache_dir, bbs_name, bbs_server, article, section, content, row.sub_ip.as_deref()) {
+        if render_cache(
+            cache_dir,
+            bbs_name,
+            bbs_server,
+            article,
+            section,
+            content,
+            row.sub_ip.as_deref(),
+        ) {
             rendered += 1;
         }
     }
@@ -631,7 +649,9 @@ impl Loader {
 
         match self.replay_ops().await {
             Ok(0) => {}
-            Ok(count) => tracing::info!(count, last_mid = ?self.watermark, "proceeded article logs"),
+            Ok(count) => {
+                tracing::info!(count, last_mid = ?self.watermark, "proceeded article logs")
+            }
             Err(e) => {
                 tracing::warn!("article op replay failed: {e}");
                 if matches!(e, LoaderError::UnknownSection) {
@@ -711,10 +731,13 @@ impl Loader {
     /// failed query leaves the previous config in place, which the next pass tries again.
     pub async fn load_section_config(&self) -> Result<(), LoaderError> {
         let rows = self.state.db.sections().await?;
-        let master_lists = join_all(rows.iter().map(|row| self.state.db.section_masters(row.sid)))
-            .await
-            .into_iter()
-            .collect::<Result<Vec<String>, sqlx::Error>>()?;
+        let master_lists = join_all(
+            rows.iter()
+                .map(|row| self.state.db.section_masters(row.sid)),
+        )
+        .await
+        .into_iter()
+        .collect::<Result<Vec<String>, sqlx::Error>>()?;
 
         let mut board = self.state.board_mut();
         load_section_config_into(&mut board, &rows, &master_lists)?;
@@ -729,7 +752,11 @@ impl Loader {
 
         loop {
             let start_aid = self.state.board().last_aid() + 1;
-            let rows = self.state.db.articles_from(start_aid, LOAD_BATCH as i32).await?;
+            let rows = self
+                .state
+                .db
+                .articles_from(start_aid, LOAD_BATCH as i32)
+                .await?;
             let fetched = rows.len();
             let outcome = {
                 let mut board = self.state.board_mut();
@@ -847,7 +874,9 @@ impl Loader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::paths::{ARTICLE_TITLE_MAX_LEN, MASTER_LIST_BYTES, NICKNAME_MAX_LEN, USERNAME_MAX_LEN};
+    use crate::paths::{
+        ARTICLE_TITLE_MAX_LEN, MASTER_LIST_BYTES, NICKNAME_MAX_LEN, USERNAME_MAX_LEN,
+    };
 
     fn board() -> Board {
         let mut board = Board::default();
@@ -878,7 +907,10 @@ mod tests {
     }
 
     fn reply_to(aid: i32, sid: i16, tid: i32) -> ArticleRow {
-        ArticleRow { tid, ..row(aid, sid) }
+        ArticleRow {
+            tid,
+            ..row(aid, sid)
+        }
     }
 
     fn op(mid: i32, aid: i32, kind: &str) -> OpRow {
@@ -981,11 +1013,7 @@ mod tests {
     #[test]
     fn deleting_a_topic_hides_its_replies_and_re_indexes_the_pages() {
         let mut board = board();
-        append_articles_into(
-            &mut board,
-            &[row(1, 1), reply_to(2, 1, 1), row(3, 1)],
-        )
-        .unwrap();
+        append_articles_into(&mut board, &[row(1, 1), reply_to(2, 1, 1), row(3, 1)]).unwrap();
 
         let replay = apply_ops(&mut board, &[op(7, 1, "D")], &[]);
         assert_eq!(replay.applied, 1);
@@ -1231,7 +1259,10 @@ mod tests {
         load_section_config_into(&mut board, &[section_row(1, "test", "Test")], &masters).unwrap();
 
         // `char master_list[(BBS_username_max_len + 1) * 3 + 1]`, the NUL excluded.
-        assert_eq!(board.section(1).unwrap().master_list.len(), MASTER_LIST_BYTES);
+        assert_eq!(
+            board.section(1).unwrap().master_list.len(),
+            MASTER_LIST_BYTES
+        );
     }
 
     #[test]
@@ -1283,13 +1314,28 @@ mod tests {
         load_section_config_into(&mut board, &rows, &masters).unwrap();
         load_gen_ex_menus_into(&mut board, &rows, &dir);
 
-        let set = board.section(1).unwrap().ex_menu_set.clone().expect("loaded");
-        assert_eq!(board.section(1).unwrap().ex_menu_tm, 1000, "the stamp moves on");
-        assert_eq!(set.items[0].name, "100", "the name is the AID the item passes on");
+        let set = board
+            .section(1)
+            .unwrap()
+            .ex_menu_set
+            .clone()
+            .expect("loaded");
+        assert_eq!(
+            board.section(1).unwrap().ex_menu_tm,
+            1000,
+            "the stamp moves on"
+        );
+        assert_eq!(
+            set.items[0].name, "100",
+            "the name is the AID the item passes on"
+        );
 
         for sid in [2, 3] {
             let section = board.section(sid).unwrap();
-            assert!(section.ex_menu_set.is_none(), "{sid} kept a tree it never read");
+            assert!(
+                section.ex_menu_set.is_none(),
+                "{sid} kept a tree it never read"
+            );
             assert_eq!(section.ex_menu_tm, 0, "{sid} was stamped by a failed load");
         }
         // A disabled board is skipped before the stamp is looked at (`:164`), and a NULL
@@ -1302,7 +1348,10 @@ mod tests {
         std::fs::write(dir.join("1"), menu.replace("(100)", "(rewritten)")).unwrap();
         load_gen_ex_menus_into(&mut board, &rows, &dir);
         let set = board.section(1).unwrap().ex_menu_set.clone().unwrap();
-        assert_eq!(set.items[0].text, "(100)", "an unchanged stamp does not reload");
+        assert_eq!(
+            set.items[0].text, "(100)",
+            "an unchanged stamp does not reload"
+        );
 
         // A newer one does. Board 2 is retried on every pass all along: its stamp never advanced,
         // so the row stays newer than what the board holds.
@@ -1352,7 +1401,10 @@ mod tests {
         let rows = [cached_row(31, 1), cached_row(32, 1)];
         assert_eq!(append_articles_into(&mut board, &rows).unwrap(), 2);
 
-        assert_eq!(generate_caches_from_rows(&dir, SITE, SERVER, &board, &rows), 2);
+        assert_eq!(
+            generate_caches_from_rows(&dir, SITE, SERVER, &board, &rows),
+            2
+        );
         assert_eq!(dir_entries(&dir), ["31", "32"]);
 
         let cached = cache::load(&dir, 31).unwrap().unwrap();
@@ -1372,12 +1424,18 @@ mod tests {
         let mut board = board();
         let rows = [cached_row(33, 1)];
         append_articles_into(&mut board, &rows).unwrap();
-        assert_eq!(generate_caches_from_rows(&dir, SITE, SERVER, &board, &rows), 1);
+        assert_eq!(
+            generate_caches_from_rows(&dir, SITE, SERVER, &board, &rows),
+            1
+        );
 
         // C opens the file read-only and returns without writing; a second pass that found a
         // body already rendered must not touch it, only report nothing as new.
         std::fs::write(format!("{dir}33"), b"sentinel").unwrap();
-        assert_eq!(generate_caches_from_rows(&dir, SITE, SERVER, &board, &rows), 0);
+        assert_eq!(
+            generate_caches_from_rows(&dir, SITE, SERVER, &board, &rows),
+            0
+        );
         assert_eq!(std::fs::read(format!("{dir}33")).unwrap(), b"sentinel");
     }
 
@@ -1388,7 +1446,10 @@ mod tests {
         let rows = [row(34, 1)];
         append_articles_into(&mut board, &rows).unwrap();
 
-        assert_eq!(generate_caches_from_rows(&dir, SITE, SERVER, &board, &rows), 0);
+        assert_eq!(
+            generate_caches_from_rows(&dir, SITE, SERVER, &board, &rows),
+            0
+        );
         assert!(dir_entries(&dir).is_empty());
     }
 
@@ -1400,7 +1461,10 @@ mod tests {
 
         // The same row is what makes `append_articles_into` return `UnknownSection`; the render
         // pass skips it instead of writing a header with no board name in it.
-        assert_eq!(generate_caches_from_rows(&dir, SITE, SERVER, &board, &rows), 0);
+        assert_eq!(
+            generate_caches_from_rows(&dir, SITE, SERVER, &board, &rows),
+            0
+        );
         assert!(dir_entries(&dir).is_empty());
     }
 
@@ -1424,7 +1488,15 @@ mod tests {
         let replay = apply_ops(&mut board, &ops, &extras);
         assert_eq!(replay.applied, 1);
 
-        let rendered = generate_caches_from_modifies(&dir, SITE, SERVER, &board, &ops, &extras, replay.applied);
+        let rendered = generate_caches_from_modifies(
+            &dir,
+            SITE,
+            SERVER,
+            &board,
+            &ops,
+            &extras,
+            replay.applied,
+        );
         assert_eq!(rendered, 1);
         assert_eq!(dir_entries(&dir), ["35", "700"]);
 
@@ -1502,7 +1574,9 @@ mod tests {
             posted += i32::from(board.user_article_count(user.uid).unwrap_or_default() > 0);
         }
         assert!(posted > 0);
-        let newest_cid = board.article_by_aid(board.last_aid()).map(|article| article.cid);
+        let newest_cid = board
+            .article_by_aid(board.last_aid())
+            .map(|article| article.cid);
         drop(board);
 
         // Every post the scan took needs a file for the reader to open, which is the render of

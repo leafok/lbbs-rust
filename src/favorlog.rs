@@ -175,7 +175,10 @@ impl FavorLog {
         let (add, remove) = self.pending_changes();
         let (inserted, deleted) = db.favor_update(self.uid, &add, &remove).await?;
 
-        tracing::info!("Saved {inserted} and deleted {deleted} article_favorite records for uid={}", self.uid);
+        tracing::info!(
+            "Saved {inserted} and deleted {deleted} article_favorite records for uid={}",
+            self.uid
+        );
 
         Ok((inserted, deleted))
     }
@@ -360,7 +363,10 @@ mod tests {
         favor.inc.extend(1..=MAX_FAVOR_AID_INC_CNT as i32);
 
         assert!(favor.is_full());
-        assert_eq!(favor.pending_changes(), ((1..=1000).collect::<Vec<_>>(), vec![]));
+        assert_eq!(
+            favor.pending_changes(),
+            ((1..=1000).collect::<Vec<_>>(), vec![])
+        );
     }
 
     #[test]

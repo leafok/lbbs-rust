@@ -31,7 +31,7 @@
 use chrono::NaiveDateTime;
 use sqlx::FromRow;
 
-use crate::batch::{self, Batch, Failure, EXIT_DEEP};
+use crate::batch::{self, Batch, EXIT_DEEP, Failure};
 use crate::db::Db;
 use crate::paths::VAR_GEN_EX_MENU_DIR;
 
@@ -90,7 +90,14 @@ fn menu_header(sid: i16, fid: i32, name: &str) -> String {
 
 /// `:41-44`: the line that opens a sub-directory. Field 5 is the raw path, which is what the
 /// `S_EX_DIR` screen and `@LIST_EX_SECTION` hand back as the current directory.
-fn dir_item(sid: i16, fid: i32, dir: &str, name: &str, dt: &Option<NaiveDateTime>, row: i32) -> Result<String, Failure> {
+fn dir_item(
+    sid: i16,
+    fid: i32,
+    dir: &str,
+    name: &str,
+    dt: &Option<NaiveDateTime>,
+    row: i32,
+) -> Result<String, Failure> {
     let name_f = format!(
         "{}{}",
         batch::addslashes(name),
@@ -156,7 +163,15 @@ async fn gen_ex_dir(
     let mut display_row = 4;
     for child in children {
         let child_dir = batch::text(&child.dir);
-        match Box::pin(gen_ex_dir(db, sid, child.fid, child_dir, batch::text(&child.name))).await? {
+        match Box::pin(gen_ex_dir(
+            db,
+            sid,
+            child.fid,
+            child_dir,
+            batch::text(&child.name),
+        ))
+        .await?
+        {
             Some(subtree) => output.push_str(&subtree),
             None => {
                 print!("gen_ex_dir({sid}, {child_dir}) error\n");
@@ -290,7 +305,15 @@ mod tests {
     fn a_directory_line_keeps_the_raw_path_and_pads_the_name() {
         // `gen_ex_list.php:37-44`: six cells of `老站务` leave forty-nine of padding.
         assert_eq!(
-            dir_item(18, 23, "精华区/老站务/", "老站务", &dt("2026-01-02 03:04:05"), 4).unwrap(),
+            dir_item(
+                18,
+                23,
+                "精华区/老站务/",
+                "老站务",
+                &dt("2026-01-02 03:04:05"),
+                4
+            )
+            .unwrap(),
             format!(
                 "!M_EX_18_23   4, 4, 1, 0, \"精华区/老站务/\", \" [目录]  老站务{} 2026.01.02\"\n",
                 " ".repeat(49)
@@ -313,12 +336,16 @@ mod tests {
     #[test]
     fn a_small_aid_is_padded_more_than_a_large_one() {
         // Six spaces in front of a one-digit number, none in front of a seven-digit one.
-        assert!(article_item(1, "t", &None, 0).unwrap().starts_with(
-            "@VIEW_EX_ARTICLE   0, 4, 1, 0, \"1\", \"      1  t"
-        ));
-        assert!(article_item(1234567, "t", &None, 0).unwrap().starts_with(
-            "@VIEW_EX_ARTICLE   0, 4, 1, 0, \"1234567\", \"1234567  t"
-        ));
+        assert!(
+            article_item(1, "t", &None, 0)
+                .unwrap()
+                .starts_with("@VIEW_EX_ARTICLE   0, 4, 1, 0, \"1\", \"      1  t")
+        );
+        assert!(
+            article_item(1234567, "t", &None, 0)
+                .unwrap()
+                .starts_with("@VIEW_EX_ARTICLE   0, 4, 1, 0, \"1234567\", \"1234567  t")
+        );
     }
 
     #[test]
@@ -335,7 +362,9 @@ mod tests {
 
     #[test]
     fn the_screen_block_is_the_php_bytes() {
-        assert!(SCREEN.starts_with("#---------------------------------------------------------------------\n%S_EX_DIR\n"));
+        assert!(SCREEN.starts_with(
+            "#---------------------------------------------------------------------\n%S_EX_DIR\n"
+        ));
         assert!(SCREEN.contains("\x1b[44;37m    \x1b[1;37m编  号"));
         assert!(SCREEN.ends_with(&format!("{}%\n", "\n".repeat(20))));
         assert_eq!(SCREEN.len(), 318);
@@ -381,7 +410,8 @@ mod tests {
             let file = format!("{SCREEN}{buffer}");
             std::fs::write(out_dir.join(sid.to_string()), &file).unwrap();
 
-            let oracle = std::path::Path::new("/tmp/phpgen/oracle_live2/gen_ex").join(sid.to_string());
+            let oracle =
+                std::path::Path::new("/tmp/phpgen/oracle_live2/gen_ex").join(sid.to_string());
             if oracle.exists() {
                 assert_eq!(
                     std::fs::read_to_string(&oracle).unwrap(),

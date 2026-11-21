@@ -113,7 +113,12 @@ impl Article {
     /// (`section_list_loader.c:266-271`), which is where the 12 / 40 / 160-byte limits bite.
     /// The C original feeds `strncpy` whatever the server returned, so a `NULL` column would
     /// crash it; the port reads an absent value as empty.
-    pub fn set_labels(&mut self, username: Option<&str>, nickname: Option<&str>, title: Option<&str>) {
+    pub fn set_labels(
+        &mut self,
+        username: Option<&str>,
+        nickname: Option<&str>,
+        title: Option<&str>,
+    ) {
         self.username = trunc_bytes(username.unwrap_or(""), USERNAME_MAX_LEN);
         self.nickname = trunc_bytes(nickname.unwrap_or(""), NICKNAME_MAX_LEN);
         self.title = trunc_bytes(title.unwrap_or(""), ARTICLE_TITLE_MAX_LEN);
@@ -227,7 +232,9 @@ impl Section {
     /// `section_list_append_article` (`:810`). `articles` is the arena the new article is
     /// copied to the end of.
     pub fn append_article(
-        &mut self, articles: &mut Vec<Article>, src: &Article,
+        &mut self,
+        articles: &mut Vec<Article>,
+        src: &Article,
     ) -> Result<Artp, BoardError> {
         if self.sid != src.sid {
             return Err(BoardError::SidMismatch);
@@ -285,7 +292,10 @@ impl Section {
             self.head = Some(idx);
             self.tail = Some(idx);
         }
-        let (head, tail) = (self.head.expect("head was just set"), self.tail.expect("tail was just set"));
+        let (head, tail) = (
+            self.head.expect("head was just set"),
+            self.tail.expect("tail was just set"),
+        );
         articles[idx].prior = tail;
         articles[idx].next = head;
         articles[head].prior = idx;
@@ -322,8 +332,13 @@ impl Section {
     /// back, and neither direction re-indexes the pages — the caller decides whether to run
     /// [`Section::calculate_page`] (the C loader does not).
     pub fn set_article_visible(
-        &mut self, articles: &mut Vec<Article>, aid: i32, visible: bool, stats: &mut UserStatMap,
-    ) -> Result<i32, BoardError> {        let idx = arena_index(articles, aid).ok_or(BoardError::NotFound)?;
+        &mut self,
+        articles: &mut Vec<Article>,
+        aid: i32,
+        visible: bool,
+        stats: &mut UserStatMap,
+    ) -> Result<i32, BoardError> {
+        let idx = arena_index(articles, aid).ok_or(BoardError::NotFound)?;
         if self.sid != articles[idx].sid {
             return Err(BoardError::SidMismatch);
         }
@@ -374,7 +389,10 @@ impl Section {
     /// `section_list_set_article_excerption` (`:1050`): 1 if the flag changed, 0 if it was
     /// already set.
     pub fn set_article_excerption(
-        &mut self, articles: &mut [Article], aid: i32, excerption: bool,
+        &mut self,
+        articles: &mut [Article],
+        aid: i32,
+        excerption: bool,
     ) -> Result<i32, BoardError> {
         let idx = arena_index(articles, aid).ok_or(BoardError::NotFound)?;
         if self.sid != articles[idx].sid {
@@ -392,7 +410,9 @@ impl Section {
     /// full. Called for the flag the article already carries, which the C op handler assigns
     /// to the arena first.
     pub fn update_article_ontop(
-        &mut self, articles: &[Article], art: Artp,
+        &mut self,
+        articles: &[Article],
+        art: Artp,
     ) -> Result<(), BoardError> {
         if self.sid != articles[art].sid {
             return Err(BoardError::SidMismatch);
@@ -442,7 +462,8 @@ impl Section {
     /// show, which folds the sticky articles into the last page.
     pub fn page_count_with_ontop(&self) -> i32 {
         let count = self.page_count() - 1
-            + (self.last_page_visible_article_count + self.ontop_article_count()
+            + (self.last_page_visible_article_count
+                + self.ontop_article_count()
                 + ARTICLE_LIMIT_PER_PAGE
                 - 1)
                 / ARTICLE_LIMIT_PER_PAGE;
@@ -456,7 +477,7 @@ impl Section {
         } else {
             (self.last_page_visible_article_count + self.ontop_article_count()
                 - ARTICLE_LIMIT_PER_PAGE * (page_id - self.page_count() + 1))
-            .clamp(0, ARTICLE_LIMIT_PER_PAGE)
+                .clamp(0, ARTICLE_LIMIT_PER_PAGE)
         }
     }
 
@@ -464,9 +485,7 @@ impl Section {
     ///
     /// [`ArticleAt::article`] is `None` when the board does not hold `aid`, in which case
     /// [`ArticleAt::next`] is where it belongs — the property `move_topic` inserts by.
-    pub fn find_article_with_offset(
-        &self, articles: &[Article], aid: i32,
-    ) -> Option<ArticleAt> {
+    pub fn find_article_with_offset(&self, articles: &[Article], aid: i32) -> Option<ArticleAt> {
         let page = match self.find_page(articles, aid) {
             Some(page) => page,
             None => return Some(ArticleAt::default()),
@@ -549,7 +568,11 @@ impl Section {
 
     /// `section_list_calculate_page` (`:1310`): rebuild the page index from `start_aid`
     /// (or from the head of the section when it is not positive).
-    pub fn calculate_page(&mut self, articles: &[Article], start_aid: i32) -> Result<(), BoardError> {
+    pub fn calculate_page(
+        &mut self,
+        articles: &[Article],
+        start_aid: i32,
+    ) -> Result<(), BoardError> {
         let Some(head) = self.head else {
             self.page_first.clear();
             self.last_page_visible_article_count = 0;
@@ -773,17 +796,26 @@ impl Board {
     /// `section_list_create`, which the loader calls for every `bbs_section` row; the C
     /// trie's uniqueness check on `sname` is the map insert.
     pub fn create_section(
-        &mut self, sid: i16, sname: &str, stitle: &str, master_list: &str,
+        &mut self,
+        sid: i16,
+        sname: &str,
+        stitle: &str,
+        master_list: &str,
     ) -> Option<&mut Section> {
         if self.sections.len() >= MAX_SECTION {
             // `section_count reach limit %d`
             return None;
         }
-        if self.by_name.insert(sname.to_owned(), self.sections.len()).is_some() {
+        if self
+            .by_name
+            .insert(sname.to_owned(), self.sections.len())
+            .is_some()
+        {
             // `trie_dict_set` returns something other than 1 for an existing key.
             return None;
         }
-        self.sections.push(Section::new(sid, sname, stitle, master_list));
+        self.sections
+            .push(Section::new(sid, sname, stitle, master_list));
         Some(self.sections.last_mut().expect("just pushed"))
     }
 
@@ -839,15 +871,17 @@ impl Board {
     /// `section_list_set_article_visible`, including the `user_article_cnt_inc` calls the C
     /// function makes, and returning its `affected_count`.
     pub fn set_article_visible(
-        &mut self, sid: i16, aid: i32, visible: bool,
+        &mut self,
+        sid: i16,
+        aid: i32,
+        visible: bool,
     ) -> Result<i32, BoardError> {
         let index = self
             .sections
             .iter()
             .position(|s| s.sid == sid)
             .ok_or(BoardError::NotFound)?;
-        self.sections[index]
-            .set_article_visible(&mut self.articles, aid, visible, &mut self.stats)
+        self.sections[index].set_article_visible(&mut self.articles, aid, visible, &mut self.stats)
     }
 
     /// `user_stat_update` (`user_list.c:1619`) and the map update it drives: widen the
@@ -869,7 +903,10 @@ impl Board {
 
     /// `section_list_set_article_excerption`.
     pub fn set_article_excerption(
-        &mut self, sid: i16, aid: i32, excerption: bool,
+        &mut self,
+        sid: i16,
+        aid: i32,
+        excerption: bool,
     ) -> Result<i32, BoardError> {
         let index = self
             .sections
@@ -940,7 +977,10 @@ impl Board {
 /// The body of `section_list_move_topic`. A free function so the two sections and the arena
 /// can be borrowed at once, which is what the C pointers do implicitly.
 fn move_topic_at(
-    articles: &mut Vec<Article>, src: &mut Section, dest: &mut Section, aid: i32,
+    articles: &mut Vec<Article>,
+    src: &mut Section,
+    dest: &mut Section,
+    aid: i32,
 ) -> Result<i32, BoardError> {
     if src.sid == dest.sid {
         return Err(BoardError::SidMismatch);
@@ -1118,7 +1158,11 @@ mod tests {
 
     fn board() -> Board {
         let mut board = Board::default();
-        assert!(board.create_section(1, "test", "测试板", "master ").is_some());
+        assert!(
+            board
+                .create_section(1, "test", "测试板", "master ")
+                .is_some()
+        );
         assert!(board.create_section(2, "other", "另一个板", "").is_some());
         board
     }
@@ -1199,7 +1243,10 @@ mod tests {
         let head = board.article_index(100).unwrap();
         let articles = board.articles();
         // Replies join at the tail, so the head's `topic_prior` is the newest of them.
-        assert_eq!(articles[head].topic_prior, board.article_index(102).unwrap());
+        assert_eq!(
+            articles[head].topic_prior,
+            board.article_index(102).unwrap()
+        );
         let mut visited = vec![head];
         let mut art = articles[head].topic_next;
         while art != head {
@@ -1246,7 +1293,10 @@ mod tests {
                 })
                 .unwrap();
         }
-        assert_eq!(board.section(1).unwrap().sticky_aids(board.articles()), full);
+        assert_eq!(
+            board.section(1).unwrap().sticky_aids(board.articles()),
+            full
+        );
 
         // Older than everything already stuck on the board: the C original drops the new
         // article instead of evicting the oldest, which only happens once the list is full.
@@ -1257,7 +1307,10 @@ mod tests {
         board.sections[0].article_count += 1;
         let art = board.articles.len() - 1;
         board.update_article_ontop(1, art).unwrap();
-        assert_eq!(board.section(1).unwrap().sticky_aids(board.articles()), full);
+        assert_eq!(
+            board.section(1).unwrap().sticky_aids(board.articles()),
+            full
+        );
 
         // In the middle: the oldest goes, and the new article slots in before its successor.
         board.articles.push(Article {
@@ -1280,7 +1333,11 @@ mod tests {
         assert_eq!(empty.page_count_with_ontop(), 0);
         assert_eq!(empty.page_article_count_with_ontop(0), 0);
 
-        fill(&mut board, 1, &(100..125).map(|aid| post(aid, 1)).collect::<Vec<_>>());
+        fill(
+            &mut board,
+            1,
+            &(100..125).map(|aid| post(aid, 1)).collect::<Vec<_>>(),
+        );
         let section = board.section(1).unwrap();
         // 25 visible articles index as two pages (20 + 5), and `BBS_article_limit_per_page`
         // is what both helpers divide by.
@@ -1295,7 +1352,11 @@ mod tests {
     #[test]
     fn find_article_reports_where_a_missing_aid_would_go() {
         let mut board = board();
-        fill(&mut board, 1, &(100..121).map(|aid| post(aid, 1)).collect::<Vec<_>>());
+        fill(
+            &mut board,
+            1,
+            &(100..121).map(|aid| post(aid, 1)).collect::<Vec<_>>(),
+        );
         let section = board.section(1).unwrap();
         let articles = board.articles();
 
@@ -1336,7 +1397,10 @@ mod tests {
         assert_eq!(before, after);
         // 19 visible articles, none of them enough to open a second page.
         assert_eq!(after.len(), 1);
-        assert_eq!(board.section(1).unwrap().last_page_visible_article_count, 19);
+        assert_eq!(
+            board.section(1).unwrap().last_page_visible_article_count,
+            19
+        );
     }
 
     #[test]
@@ -1345,7 +1409,12 @@ mod tests {
         fill(
             &mut board,
             1,
-            &[post(100, 1), reply(101, 1, 100), reply(102, 1, 100), post(103, 1)],
+            &[
+                post(100, 1),
+                reply(101, 1, 100),
+                reply(102, 1, 100),
+                post(103, 1),
+            ],
         );
 
         // head + two replies, which is the C `affected_count`.
@@ -1372,11 +1441,17 @@ mod tests {
         assert_eq!(board.last_aid(), 0);
         board.append_article(&post(5, 1)).unwrap();
         assert_eq!(board.last_aid(), 5);
-        assert_eq!(board.append_article(&post(4, 1)), Err(BoardError::AidNotAscending));
+        assert_eq!(
+            board.append_article(&post(4, 1)),
+            Err(BoardError::AidNotAscending)
+        );
         assert_eq!(board.append_article(&post(6, 3)), Err(BoardError::NotFound));
 
         board.sections[0].article_count = ARTICLE_LIMIT_PER_SECTION;
-        assert_eq!(board.append_article(&post(7, 1)), Err(BoardError::SectionFull));
+        assert_eq!(
+            board.append_article(&post(7, 1)),
+            Err(BoardError::SectionFull)
+        );
     }
 
     #[test]
@@ -1462,7 +1537,11 @@ mod tests {
             Some(&"t".repeat(200)),
         );
         assert_eq!(
-            (article.username.len(), article.nickname.len(), article.title.len()),
+            (
+                article.username.len(),
+                article.nickname.len(),
+                article.title.len()
+            ),
             (USERNAME_MAX_LEN, NICKNAME_MAX_LEN, ARTICLE_TITLE_MAX_LEN)
         );
 

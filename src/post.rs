@@ -46,8 +46,8 @@ use crate::paths::{LINE_BUFFER_LEN, MAX_USER_IDLE_TIME};
 use crate::privilege::{S_GETEXP, S_POST};
 use crate::screen;
 use crate::session::Session;
-use crate::term::key::{KEY_ESC, KEY_NULL, KEY_TIMEOUT};
 use crate::term::Terminal;
+use crate::term::key::{KEY_ESC, KEY_NULL, KEY_TIMEOUT};
 use crate::text;
 
 /// The four arena fields `article_del` reads (`:40`, `:155`, `:166-173`, `:191`, `:202`).
@@ -97,7 +97,14 @@ pub async fn article_del(
         return Ok(false);
     }
 
-    if !ask(term, session, "真的要删除文章？(Y)是, (N)否 [N]: ", b'Y' as u32).await {
+    if !ask(
+        term,
+        session,
+        "真的要删除文章？(Y)是, (N)否 [N]: ",
+        b'Y' as u32,
+    )
+    .await
+    {
         return Ok(false);
     }
 
@@ -126,7 +133,14 @@ pub async fn article_del(
 
     db::hide_thread(&mut tx, target.aid, m_del).await?;
     db::add_exp(&mut tx, session.privs.uid, exp_change).await?;
-    db::log_article_op(&mut tx, target.aid, session.privs.uid, op_kind, &session.hostaddr).await?;
+    db::log_article_op(
+        &mut tx,
+        target.aid,
+        session.privs.uid,
+        op_kind,
+        &session.hostaddr,
+    )
+    .await?;
 
     if target.tid != 0 {
         db::dec_reply_count(&mut tx, target.tid).await?;
@@ -136,7 +150,10 @@ pub async fn article_del(
 
     notice(
         term,
-        &format!("删除成功，请在{}秒后刷新列表。", SECTION_LIST_INTERVAL.as_secs()),
+        &format!(
+            "删除成功，请在{}秒后刷新列表。",
+            SECTION_LIST_INTERVAL.as_secs()
+        ),
     )
     .await;
 
@@ -208,7 +225,10 @@ pub async fn article_excerption_set(
     };
 
     if row.sid != sid {
-        tracing::error!("Inconsistent SID of article (aid={aid}): {sid}!={}", row.sid);
+        tracing::error!(
+            "Inconsistent SID of article (aid={aid}): {sid}!={}",
+            row.sid
+        );
         return Ok(false);
     }
 
@@ -242,7 +262,11 @@ pub async fn article_excerption_set(
     // C took the pool before committing and gave it back when a commit failed (`:214-250`), so
     // both the order and the revert are the original's. A pool that no longer holds the article
     // is C's `ret = -3`: no commit, and the dropped transaction undoes the SQL.
-    if let Err(err) = session.state.board_mut().set_article_excerption(sid, aid, set) {
+    if let Err(err) = session
+        .state
+        .board_mut()
+        .set_article_excerption(sid, aid, set)
+    {
         tracing::error!(
             "section_list_set_article_excerption(sid={sid}, aid={aid}, set={}) error: {err:?}",
             i32::from(set)
@@ -319,9 +343,7 @@ pub async fn article_post(
         term.print(&format!("使用第 \x1b[1;32m{sign_id}\x1b[m 个签名"));
 
         if upper(ch) != KEY_T {
-            term.print(
-                "    按\x1b[1;32m0\x1b[m~\x1b[1;32m3\x1b[m选签名档(0表示不使用)",
-            );
+            term.print("    按\x1b[1;32m0\x1b[m~\x1b[1;32m3\x1b[m选签名档(0表示不使用)");
             term.moveto(24, 1);
             term.print(&format!(
                 "\x1b[1;32mT\x1b[m改标题, \x1b[1;32mC\x1b[m取消, \x1b[1;32mZ\x1b[m设为{}, \x1b[1;32mN\x1b[m{}, \x1b[1;32mEnter\x1b[m继续: ",
@@ -685,7 +707,11 @@ pub async fn article_reply(
     let split = text::split_line(&title_input, TITLE_INPUT_MAX_LEN, false, fixed);
     title_input.truncate(split.bytes.min(title_input.len()));
 
-    let root_aid = if target.tid == 0 { target.aid } else { target.tid };
+    let root_aid = if target.tid == 0 {
+        target.aid
+    } else {
+        target.tid
+    };
     if db::topic_lock(&session.state.db, root_aid).await? {
         notice(term, "该主题谢绝回复").await;
         return Ok(false);
@@ -820,9 +846,11 @@ pub async fn article_reply(
         }
 
         // The banner and the quoted lines, every one of them prefixed with `: ` (`:997-1022`).
-        let mut content =
-            format!("\n\n【 在 {} ({}) 的大作中提到: 】\n", target.username, target.nickname)
-                .into_bytes();
+        let mut content = format!(
+            "\n\n【 在 {} ({}) 的大作中提到: 】\n",
+            target.username, target.nickname
+        )
+        .into_bytes();
         let max_lines = if full_quote {
             editor::MAX_EDITOR_DATA_LINES
         } else {
@@ -1056,7 +1084,12 @@ mod tests {
     use std::sync::Arc;
 
     fn target(aid: i32, tid: i32, uid: i32, excerption: bool) -> Deletable {
-        Deletable { aid, tid, uid, excerption }
+        Deletable {
+            aid,
+            tid,
+            uid,
+            excerption,
+        }
     }
 
     /// The whole of `article_del`'s arithmetic: `m_del` says whether a moderator did it, and
@@ -1154,7 +1187,14 @@ mod tests {
             db: db.clone(),
         };
         let state = Arc::new(AppState::new(config, crate::db::Db::detached(&db)));
-        Session::new(state, Path::new("."), "lbbs-test".into(), "127.0.0.1".into(), 2323, false)
+        Session::new(
+            state,
+            Path::new("."),
+            "lbbs-test".into(),
+            "127.0.0.1".into(),
+            2323,
+            false,
+        )
     }
 
     /// The window a screen must stay silent before its answer is typed. A prompt flushes and then
@@ -1237,12 +1277,21 @@ mod tests {
             let session = detached_session();
 
             let keyed = answer(client, keys);
-            let asked = ask(&mut term, &session, "真的要删除文章？(Y)是, (N)否 [N]: ", b'Y' as u32).await;
+            let asked = ask(
+                &mut term,
+                &session,
+                "真的要删除文章？(Y)是, (N)否 [N]: ",
+                b'Y' as u32,
+            )
+            .await;
 
             assert_eq!(asked, accepted, "{keys:?}");
 
             let screen = screen_text(keyed.await.unwrap());
-            assert!(screen.contains("真的要删除文章？(Y)是, (N)否 [N]: "), "{keys:?}: {screen}");
+            assert!(
+                screen.contains("真的要删除文章？(Y)是, (N)否 [N]: "),
+                "{keys:?}: {screen}"
+            );
         }
     }
 
@@ -1273,8 +1322,14 @@ mod tests {
 
         assert!(!deleted, "C returns 0 from this branch");
         let screen = screen_text(keyed.await.unwrap());
-        assert!(screen.contains("该文章无法被删除，请联系版主。"), "{screen}");
-        assert!(!screen.contains("真的要删除文章"), "the gate is behind this branch: {screen}");
+        assert!(
+            screen.contains("该文章无法被删除，请联系版主。"),
+            "{screen}"
+        );
+        assert!(
+            !screen.contains("真的要删除文章"),
+            "the gate is behind this branch: {screen}"
+        );
     }
 
     /// `Ctrl-Q` shows one line and stops for a key: the article's web address, on the row C moves
@@ -1290,13 +1345,19 @@ mod tests {
         display_article_meta(&mut term, &session, 4242).await;
 
         let screen = screen_text(keyed.await.unwrap());
-        assert!(screen.contains("\x1b[2J"), "the screen is cleared first: {screen}");
+        assert!(
+            screen.contains("\x1b[2J"),
+            "the screen is cleared first: {screen}"
+        );
         assert!(screen.contains("\x1b[3;1HWeb版 文章链接: "), "{screen}");
         assert!(
             screen.contains("\x1b[4;1Hhttps://www.bbs.test/bbs/view_article.php?id=4242#4242"),
             "the aid is written twice, into the query and into the fragment: {screen}"
         );
-        assert!(screen.contains("按任意键继续"), "the screen waits for a key: {screen}");
+        assert!(
+            screen.contains("按任意键继续"),
+            "the screen waits for a key: {screen}"
+        );
     }
 
     fn target_article() -> Quoted {
@@ -1351,9 +1412,16 @@ mod tests {
         let mut session = detached_session();
 
         let keyed = answer(client, b" ");
-        let replied = article_reply(&mut term, &mut session, 3, "test", "测试版", &target_article())
-            .await
-            .expect("the refusal is not a database error");
+        let replied = article_reply(
+            &mut term,
+            &mut session,
+            3,
+            "test",
+            "测试版",
+            &target_article(),
+        )
+        .await
+        .expect("the refusal is not a database error");
 
         assert!(!replied);
         let screen = screen_text(keyed.await.unwrap());
@@ -1374,7 +1442,10 @@ mod tests {
 
         assert!(!modified);
         let screen = screen_text(keyed.await.unwrap());
-        assert!(screen.contains("该文章无法被编辑，请联系版主。"), "{screen}");
+        assert!(
+            screen.contains("该文章无法被编辑，请联系版主。"),
+            "{screen}"
+        );
     }
 
     /// The whole of the writing half, up to the point where the answer is `C`: title prompt,
@@ -1405,7 +1476,10 @@ mod tests {
         let screen = screen_text(keyed.await.unwrap());
         // The Enter inside the editor is what flushes the typed text onto the screen: like C,
         // `Ctrl-W` returns without repainting.
-        assert!(screen.contains("正文"), "the editor painted what was typed: {screen}");
+        assert!(
+            screen.contains("正文"),
+            "the editor painted what was typed: {screen}"
+        );
         assert!(screen.contains("(S)发送, (C)取消"), "{screen}");
         assert!(screen.contains("取消..."), "{screen}");
     }
@@ -1420,8 +1494,14 @@ mod tests {
         notice(&mut term, "删除成功，请在1秒后刷新列表。").await;
 
         let screen = screen_text(keyed.await.unwrap());
-        assert!(screen.starts_with("\x1b[2J"), "clearscr comes first: {screen:?}");
-        assert!(screen.contains("\x1b[1;1H删除成功，请在1秒后刷新列表。"), "{screen:?}");
+        assert!(
+            screen.starts_with("\x1b[2J"),
+            "clearscr comes first: {screen:?}"
+        );
+        assert!(
+            screen.contains("\x1b[1;1H删除成功，请在1秒后刷新列表。"),
+            "{screen:?}"
+        );
     }
 
     /// The digest ladder against the live schema, in a transaction that is dropped instead of
@@ -1516,7 +1596,11 @@ mod tests {
                     .fetch_one(&mut *tx)
                     .await
                     .unwrap();
-            assert_eq!(after, before.map(|exp| exp + cost), "the author was billed {cost}");
+            assert_eq!(
+                after,
+                before.map(|exp| exp + cost),
+                "the author was billed {cost}"
+            );
             drop(tx);
 
             let (flag,): (bool,) = sqlx::query_as("SELECT excerption FROM bbs WHERE AID = ?")
@@ -1524,7 +1608,10 @@ mod tests {
                 .fetch_one(db.pool())
                 .await
                 .unwrap();
-            assert_eq!(flag, excerption, "the dropped transaction took the flag back");
+            assert_eq!(
+                flag, excerption,
+                "the dropped transaction took the flag back"
+            );
         }
     }
 }

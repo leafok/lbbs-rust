@@ -38,8 +38,8 @@ use crate::paths::{
 };
 use crate::screen;
 use crate::session::Session;
-use crate::term::key::{to_upper, KEY_NULL, KEY_TIMEOUT};
 use crate::term::Terminal;
+use crate::term::key::{KEY_NULL, KEY_TIMEOUT, to_upper};
 
 /// `DATA_FILE_MAX_LEN` (`:32`), the size of the buffer C saves the edited text into.
 const DATA_FILE_MAX_LEN: usize = 1024 * 1024 * 4;
@@ -240,8 +240,7 @@ mod tests {
 
     /// A site root with nothing in it but the directories the eight paths need.
     fn root(name: &str) -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("lbbs-datamgr-{name}-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("lbbs-datamgr-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("data")).unwrap();
         std::fs::create_dir_all(root.join("conf")).unwrap();
@@ -263,20 +262,14 @@ mod tests {
         let mut term = Terminal::new(ByteIo::Pipe(server));
         let mut session = test_session(root);
 
-        tokio::time::timeout(
-            Duration::from_secs(15),
-            async {
-                tokio::join!(
-                    data_file_mgr(&mut term, &mut session),
-                    async {
-                        for step in script {
-                            tokio::time::sleep(Duration::from_millis(250)).await;
-                            client.push(step);
-                        }
-                    }
-                );
-            },
-        )
+        tokio::time::timeout(Duration::from_secs(15), async {
+            tokio::join!(data_file_mgr(&mut term, &mut session), async {
+                for step in script {
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    client.push(step);
+                }
+            });
+        })
         .await
         .expect("the page ends on its keys");
         let _ = term.flush().await;
@@ -299,7 +292,10 @@ mod tests {
         assert!(screen.contains(" 1. 进站欢迎"), "{screen}");
         assert!(screen.contains(" 8. 穿梭配置"), "{screen}");
         assert!(screen.contains("请输入需要编辑的文件编号: "), "{screen}");
-        assert_eq!(std::fs::read(root.join(DATA_WELCOME)).unwrap(), "欢迎回来\n".as_bytes());
+        assert_eq!(
+            std::fs::read(root.join(DATA_WELCOME)).unwrap(),
+            "欢迎回来\n".as_bytes()
+        );
         assert!(!root.join(format!("{DATA_WELCOME}.user")).exists());
         std::fs::remove_dir_all(&root).unwrap();
     }
@@ -328,7 +324,10 @@ mod tests {
         assert!(screen.contains("USERCOPY"), "{screen}");
         assert!(!screen.contains("PACKAGED"), "{screen}");
         assert!(screen.contains("取消更改..."), "{screen}");
-        assert_eq!(std::fs::read(root.join(DATA_WELCOME)).unwrap(), b"PACKAGED\n");
+        assert_eq!(
+            std::fs::read(root.join(DATA_WELCOME)).unwrap(),
+            b"PACKAGED\n"
+        );
         assert_eq!(
             std::fs::read(root.join(format!("{DATA_WELCOME}.user"))).unwrap(),
             b"USERCOPY\n"
@@ -353,21 +352,39 @@ mod tests {
 
         let screen = run(
             &root,
-            &[b"1\r", b"HELLO\r", &[CTRL_W], b"S", b"\r", &[ESC], b"S", b" "],
+            &[
+                b"1\r",
+                b"HELLO\r",
+                &[CTRL_W],
+                b"S",
+                b"\r",
+                &[ESC],
+                b"S",
+                b" ",
+            ],
         )
         .await;
 
-        assert!(screen.contains("(P)预览, (C)取消 or (E)再编辑?"), "{screen}");
+        assert!(
+            screen.contains("(P)预览, (C)取消 or (E)再编辑?"),
+            "{screen}"
+        );
         // The `(S)` typed before anything was previewed only asked the same question again: the
         // line that offers it is written once, after the pager has run.
         assert_eq!(count(&screen, "(S)保存, (P)预览"), 1, "{screen}");
-        assert!(screen.contains("修改已完成，需要重新加载配置后才会生效..."), "{screen}");
+        assert!(
+            screen.contains("修改已完成，需要重新加载配置后才会生效..."),
+            "{screen}"
+        );
 
         let packaged = std::fs::read(root.join(DATA_WELCOME)).unwrap();
         let user = std::fs::read(root.join(format!("{DATA_WELCOME}.user"))).unwrap();
         assert_eq!(packaged, user);
         let text = String::from_utf8_lossy(&packaged).into_owned();
-        assert!(text.contains("HELLO") && text.contains("欢迎回来"), "{text:?}");
+        assert!(
+            text.contains("HELLO") && text.contains("欢迎回来"),
+            "{text:?}"
+        );
 
         // The mode `0640` is what C asks `open` for, and a mode argument only counts on create:
         // the packaged file that was already there keeps the `0600` it was given, and the `.user`
@@ -377,14 +394,16 @@ mod tests {
             std::fs::metadata(root.join(DATA_WELCOME))
                 .unwrap()
                 .permissions()
-                .mode() & 0o777,
+                .mode()
+                & 0o777,
             0o600
         );
         assert_eq!(
             std::fs::metadata(root.join(format!("{DATA_WELCOME}.user")))
                 .unwrap()
                 .permissions()
-                .mode() & 0o007,
+                .mode()
+                & 0o007,
             0
         );
         std::fs::remove_dir_all(&root).unwrap();
@@ -399,18 +418,34 @@ mod tests {
 
         let screen = run(
             &root,
-            &[b"1\r", &[CTRL_W], b"\r", &[ESC], b"E", &[CTRL_W], b"C", b" "],
+            &[
+                b"1\r",
+                &[CTRL_W],
+                b"\r",
+                &[ESC],
+                b"E",
+                &[CTRL_W],
+                b"C",
+                b" ",
+            ],
         )
         .await;
 
         // The previewed prompt is the plain one with `(S)保存, ` in front of it, so of the three
         // times the plain phrase was written only one carried that prefix: the line redrawn after
         // the second editor run is the plain one again.
-        assert_eq!(count(&screen, "(P)预览, (C)取消 or (E)再编辑? [P]: "), 3, "{screen}");
+        assert_eq!(
+            count(&screen, "(P)预览, (C)取消 or (E)再编辑? [P]: "),
+            3,
+            "{screen}"
+        );
         assert_eq!(count(&screen, "(S)保存, (P)预览"), 1, "{screen}");
         assert!(screen.contains("取消更改..."), "{screen}");
         // The cancel still wrote nothing, in either spelling of the path.
-        assert_eq!(std::fs::read(root.join(DATA_WELCOME)).unwrap(), "欢迎回来\n".as_bytes());
+        assert_eq!(
+            std::fs::read(root.join(DATA_WELCOME)).unwrap(),
+            "欢迎回来\n".as_bytes()
+        );
         assert!(!root.join(format!("{DATA_WELCOME}.user")).exists());
         std::fs::remove_dir_all(&root).unwrap();
     }

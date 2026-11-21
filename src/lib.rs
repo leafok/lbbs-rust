@@ -4,13 +4,14 @@
 //! replaces the process-global state (`BBS_*`, shared memory segments, `UTF8_fixed_width`)
 //! with an explicit [`session::Session`] plus [`state::AppState`] shared by tasks.
 
+pub mod batch;
 pub mod bbs;
 pub mod bbsnet;
-pub mod batch;
 pub mod board;
 pub mod browse;
 pub mod bwf;
 pub mod cache;
+pub mod chicken;
 pub mod config;
 pub mod daemon;
 pub mod data_file_mgr;
@@ -22,11 +23,12 @@ pub mod gen_ex_list;
 pub mod gen_section_menu;
 pub mod gen_top;
 pub mod ipmask;
-pub mod loader;
 pub mod lml;
+pub mod loader;
 pub mod log;
 pub mod login;
 pub mod menu;
+pub mod money;
 pub mod net;
 pub mod paths;
 pub mod post;

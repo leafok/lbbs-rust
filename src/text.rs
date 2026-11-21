@@ -37,7 +37,9 @@ pub fn multibyte_width(buf: &[u8], n: usize, fixed: bool) -> usize {
         Ok(s) => match s.chars().next() {
             // `wcwidth` reports -1 for control characters; the C pager treated those as
             // invisible, so clamp to 0 instead of letting the column count go negative.
-            Some(c) => unicode_width::UnicodeWidthChar::width(c).unwrap_or(0).max(0) as usize,
+            Some(c) => unicode_width::UnicodeWidthChar::width(c)
+                .unwrap_or(0)
+                .max(0) as usize,
             None => 0,
         },
         // `mbstowcs` failure fallback in the C code is width 1 in variable mode.
@@ -351,7 +353,10 @@ mod tests {
 
     #[test]
     fn fit_display_pads_to_exact_cells() {
-        assert_eq!(fit_display("中文".as_bytes(), 6, FIX), "中文  ".as_bytes().to_vec());
+        assert_eq!(
+            fit_display("中文".as_bytes(), 6, FIX),
+            "中文  ".as_bytes().to_vec()
+        );
         assert_eq!(fit_display("abc".as_bytes(), 3, FIX), b"abc".to_vec());
     }
 }

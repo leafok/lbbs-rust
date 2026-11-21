@@ -114,8 +114,7 @@ pub async fn bbs_welcome(term: &mut Terminal, session: &mut Session) {
 /// `false` is C's `-1`: the pipe broke or the daemon is stopping, and the session must not
 /// continue into a login prompt nobody will read.
 pub async fn bbs_charset_select(term: &mut Terminal) -> bool {
-    const CHARSET_PROMPT: &str =
-        "\rChoose character set in 5 seconds, (U)UTF-8, (G)GBK [U]: ";
+    const CHARSET_PROMPT: &str = "\rChoose character set in 5 seconds, (U)UTF-8, (G)GBK [U]: ";
     const WIDTH_PROMPT: &str = "\r请在5秒内选择宽字符显示规则, (V)变宽, (F)定宽? [V]: ";
 
     loop {
@@ -330,158 +329,158 @@ pub fn bbs_do_choice<'a>(
     nested: bool,
 ) -> Pin<Box<dyn Future<Output = MenuReturn> + Send + 'a>> {
     Box::pin(async move {
-    match action {
-        Action::ExitBbs => MenuReturn::ExitBbs,
-        // `menu_proc.c:128-140`: EULA and License are read with `eof_exit` 0, so the pager
-        // waits for `q` or Esc at the end instead of taking any key. The two below it are 1.
-        Action::Eula => {
-            session.display_file(term, DATA_EULA, 0).await;
-            MenuReturn::Redraw
-        }
-        Action::License => {
-            session.display_file(term, DATA_LICENSE, 0).await;
-            MenuReturn::Redraw
-        }
-        Action::Copyright => {
-            session.display_file(term, DATA_COPYRIGHT, 1).await;
-            MenuReturn::Redraw
-        }
-        Action::Version => {
-            session.display_file(term, DATA_VERSION, 1).await;
-            MenuReturn::Redraw
-        }
-        Action::ShowTop10Menu => {
-            if nested {
-                return MenuReturn::NoRedraw;
+        match action {
+            Action::ExitBbs => MenuReturn::ExitBbs,
+            // `menu_proc.c:128-140`: EULA and License are read with `eof_exit` 0, so the pager
+            // waits for `q` or Esc at the end instead of taking any key. The two below it are 1.
+            Action::Eula => {
+                session.display_file(term, DATA_EULA, 0).await;
+                MenuReturn::Redraw
             }
-            show_top10_menu(term, session).await;
-            MenuReturn::Redraw
-        }
-        Action::ReloadConf => {
-            // `reload_bbs_conf`'s `kill(getppid(), SIGHUP)`: the daemon owns the reload, so a
-            // session only asks for it.
-            session.state.request_reload();
-            MenuReturn::Redraw
-        }
-        Action::ListSection => {
-            browse::list_section(term, session, param).await;
-            MenuReturn::Redraw
-        }
-        Action::LocateArticle => {
-            // A parameter that is not `sname|aid` is `menu_proc.c:350`'s `NOREDRAW`: the top-ten
-            // entry leaves the screen exactly as the list before it left it.
-            if !browse::locate_article_menu(term, session, param).await {
-                return MenuReturn::NoRedraw;
+            Action::License => {
+                session.display_file(term, DATA_LICENSE, 0).await;
+                MenuReturn::Redraw
             }
-            MenuReturn::Redraw
-        }
-        // `menu_proc.c:259-276`: the parameter is a board name. Only a board the pool does not
-        // have answers `NOREDRAW`; a digest menu that failed to open still redraws.
-        Action::ListExSection => {
-            if !browse::list_ex_section(term, session, param).await {
-                return MenuReturn::NoRedraw;
+            Action::Copyright => {
+                session.display_file(term, DATA_COPYRIGHT, 1).await;
+                MenuReturn::Redraw
             }
-            MenuReturn::Redraw
-        }
-        // `menu_proc.c:218-257`: an unknown `AID` or a missing cache is `NOREDRAW`, so the digest
-        // menu stays on screen exactly as the item left it.
-        Action::ViewExArticle => {
-            if !browse::view_ex_article(term, session, param).await {
-                return MenuReturn::NoRedraw;
+            Action::Version => {
+                session.display_file(term, DATA_VERSION, 1).await;
+                MenuReturn::Redraw
             }
-            MenuReturn::Redraw
-        }
-        Action::Shutdown => {
-            // `shutdown_bbs` (`menu_proc.c:176-193`): a cleared screen, one character asked for
-            // with a default of `N`, and the order to exit only when what stands in that
-            // character after Enter is a `Y`. Enter alone leaves the `N` there, Esc empties the
-            // answer, and a timeout keeps it — and C ignores `get_data`'s return code, so all
-            // three leave the system running. Nothing is printed for the answer either way:
-            // the `REDRAW` the handler returns repaints the menu over the question.
-            //
-            // The answer cell is already full when the question is drawn (`char buf[2]`, shown
-            // `max_display_len` 1), so `get_data`'s printable arm rings the bell at anything
-            // typed over the default: the way to answer yes is to erase the `N` first, which is
-            // what the confirmation has always looked like from a terminal.
-            screen::clearscr(term);
-            let answer = screen::get_data(
-                term,
-                1,
-                1,
-                "真的要关闭系统吗[y/N]? ",
-                b"N",
-                2,
-                1,
-                MAX_USER_IDLE_TIME,
-            )
-            .await
-            .unwrap_or_default();
+            Action::ShowTop10Menu => {
+                if nested {
+                    return MenuReturn::NoRedraw;
+                }
+                show_top10_menu(term, session).await;
+                MenuReturn::Redraw
+            }
+            Action::ReloadConf => {
+                // `reload_bbs_conf`'s `kill(getppid(), SIGHUP)`: the daemon owns the reload, so a
+                // session only asks for it.
+                session.state.request_reload();
+                MenuReturn::Redraw
+            }
+            Action::ListSection => {
+                browse::list_section(term, session, param).await;
+                MenuReturn::Redraw
+            }
+            Action::LocateArticle => {
+                // A parameter that is not `sname|aid` is `menu_proc.c:350`'s `NOREDRAW`: the top-ten
+                // entry leaves the screen exactly as the list before it left it.
+                if !browse::locate_article_menu(term, session, param).await {
+                    return MenuReturn::NoRedraw;
+                }
+                MenuReturn::Redraw
+            }
+            // `menu_proc.c:259-276`: the parameter is a board name. Only a board the pool does not
+            // have answers `NOREDRAW`; a digest menu that failed to open still redraws.
+            Action::ListExSection => {
+                if !browse::list_ex_section(term, session, param).await {
+                    return MenuReturn::NoRedraw;
+                }
+                MenuReturn::Redraw
+            }
+            // `menu_proc.c:218-257`: an unknown `AID` or a missing cache is `NOREDRAW`, so the digest
+            // menu stays on screen exactly as the item left it.
+            Action::ViewExArticle => {
+                if !browse::view_ex_article(term, session, param).await {
+                    return MenuReturn::NoRedraw;
+                }
+                MenuReturn::Redraw
+            }
+            Action::Shutdown => {
+                // `shutdown_bbs` (`menu_proc.c:176-193`): a cleared screen, one character asked for
+                // with a default of `N`, and the order to exit only when what stands in that
+                // character after Enter is a `Y`. Enter alone leaves the `N` there, Esc empties the
+                // answer, and a timeout keeps it — and C ignores `get_data`'s return code, so all
+                // three leave the system running. Nothing is printed for the answer either way:
+                // the `REDRAW` the handler returns repaints the menu over the question.
+                //
+                // The answer cell is already full when the question is drawn (`char buf[2]`, shown
+                // `max_display_len` 1), so `get_data`'s printable arm rings the bell at anything
+                // typed over the default: the way to answer yes is to erase the `N` first, which is
+                // what the confirmation has always looked like from a terminal.
+                screen::clearscr(term);
+                let answer = screen::get_data(
+                    term,
+                    1,
+                    1,
+                    "真的要关闭系统吗[y/N]? ",
+                    b"N",
+                    2,
+                    1,
+                    MAX_USER_IDLE_TIME,
+                )
+                .await
+                .unwrap_or_default();
 
-            if answer
-                .first()
-                .is_some_and(|c| toupper(u32::from(*c)) == KEY_UPPER_Y)
-            {
-                tracing::info!("Notify main process to exit by [{}]", session.username);
-                // `kill(getppid(), SIGTERM)`: the daemon owns the drain, so a session only
-                // asks for it and then keeps serving until the loop notices.
-                session.state.exit();
+                if answer
+                    .first()
+                    .is_some_and(|c| toupper(u32::from(*c)) == KEY_UPPER_Y)
+                {
+                    tracing::info!("Notify main process to exit by [{}]", session.username);
+                    // `kill(getppid(), SIGTERM)`: the daemon owns the drain, so a session only
+                    // asks for it and then keeps serving until the loop notices.
+                    session.state.exit();
+                }
+                MenuReturn::Redraw
             }
-            MenuReturn::Redraw
-        }
-        // `menu_proc.c:382-400`: the two rosters are the same call with the other flag, and
-        // neither looks at the menu parameter. C turns a negative return into a `log_error`
-        // and still redraws, which [`userlist::user_list_display`] does in place.
-        Action::ListUser => {
-            userlist::user_list_display(term, session, false).await;
-            MenuReturn::Redraw
-        }
-        Action::ListOnlineUser => {
-            userlist::user_list_display(term, session, true).await;
-            MenuReturn::Redraw
-        }
-        // `menu_proc.c:53-121`: the parameter carries the entry name after `@mod:`, so the item
-        // picks its own screen and every answer — including a shuttle that never connected —
-        // redraws the menu it came from.
-        Action::RunMbem => {
-            bbsnet::exec_mbem(term, session, param).await;
-            MenuReturn::Redraw
-        }
-        // `menu_proc.c:372-380`: the menu parameter is ignored, and C's `log_error` of a negative
-        // return is where [`favorlist::article_favor_display`] already reports each failed query
-        // before it gives the list up. Either way the menu comes back.
-        Action::FavorTopic => {
-            favorlist::article_favor_display(term, session).await;
-            MenuReturn::Redraw
-        }
-        // `bbs_cmd.c:28` calls `data_file_mgr.c:55-273`, which ignores its menu parameter and
-        // answers `REDRAW` whichever way it leaves: the number that was not a row, the file that
-        // could not be opened, the key that timed out, the cancel, the shutdown, or the save.
-        Action::DataMgr => {
-            data_file_mgr::data_file_mgr(term, session).await;
-            MenuReturn::Redraw
-        }
-        // `menu_proc.c:402-420`: the two profile editors ignore the menu parameter, answer a
-        // negative return with a `log_error` of their own and redraw the menu either way — the
-        // cancel, the timeout and the failed query all look the same from here.
-        Action::EditIntro => {
-            if user_info_update::user_intro_edit(term, session).await < 0 {
-                tracing::error!("user_intro_edit({}) error", session.privs.uid);
+            // `menu_proc.c:382-400`: the two rosters are the same call with the other flag, and
+            // neither looks at the menu parameter. C turns a negative return into a `log_error`
+            // and still redraws, which [`userlist::user_list_display`] does in place.
+            Action::ListUser => {
+                userlist::user_list_display(term, session, false).await;
+                MenuReturn::Redraw
             }
-            MenuReturn::Redraw
-        }
-        Action::EditSign => {
-            if user_info_update::user_sign_edit(term, session).await < 0 {
-                tracing::error!("user_sign_edit({}) error", session.privs.uid);
+            Action::ListOnlineUser => {
+                userlist::user_list_display(term, session, true).await;
+                MenuReturn::Redraw
             }
-            MenuReturn::Redraw
+            // `menu_proc.c:53-121`: the parameter carries the entry name after `@mod:`, so the item
+            // picks its own screen and every answer — including a shuttle that never connected —
+            // redraws the menu it came from.
+            Action::RunMbem => {
+                bbsnet::exec_mbem(term, session, param).await;
+                MenuReturn::Redraw
+            }
+            // `menu_proc.c:372-380`: the menu parameter is ignored, and C's `log_error` of a negative
+            // return is where [`favorlist::article_favor_display`] already reports each failed query
+            // before it gives the list up. Either way the menu comes back.
+            Action::FavorTopic => {
+                favorlist::article_favor_display(term, session).await;
+                MenuReturn::Redraw
+            }
+            // `bbs_cmd.c:28` calls `data_file_mgr.c:55-273`, which ignores its menu parameter and
+            // answers `REDRAW` whichever way it leaves: the number that was not a row, the file that
+            // could not be opened, the key that timed out, the cancel, the shutdown, or the save.
+            Action::DataMgr => {
+                data_file_mgr::data_file_mgr(term, session).await;
+                MenuReturn::Redraw
+            }
+            // `menu_proc.c:402-420`: the two profile editors ignore the menu parameter, answer a
+            // negative return with a `log_error` of their own and redraw the menu either way — the
+            // cancel, the timeout and the failed query all look the same from here.
+            Action::EditIntro => {
+                if user_info_update::user_intro_edit(term, session).await < 0 {
+                    tracing::error!("user_intro_edit({}) error", session.privs.uid);
+                }
+                MenuReturn::Redraw
+            }
+            Action::EditSign => {
+                if user_info_update::user_sign_edit(term, session).await < 0 {
+                    tracing::error!("user_sign_edit({}) error", session.privs.uid);
+                }
+                MenuReturn::Redraw
+            }
+            // The remaining handlers arrive with their own tasks; until then an item that resolves to
+            // one reports itself instead of looking like a hung key.
+            _ => {
+                tracing::error!("Action {}({param}) is not implemented", action.name());
+                MenuReturn::Redraw
+            }
         }
-        // The remaining handlers arrive with their own tasks; until then an item that resolves to
-        // one reports itself instead of looking like a hung key.
-        _ => {
-            tracing::error!("Action {}({param}) is not implemented", action.name());
-            MenuReturn::Redraw
-        }
-    }
     })
 }
 
@@ -640,7 +639,11 @@ mod tests {
             "`clearscr` comes first: {}",
             screen_of(&painted)
         );
-        assert!(screen_of(&painted).contains(PROMPT), "{}", screen_of(&painted));
+        assert!(
+            screen_of(&painted).contains(PROMPT),
+            "{}",
+            screen_of(&painted)
+        );
         assert!(!exiting, "Enter keeps the default answer, which is `N`");
     }
 
@@ -665,7 +668,11 @@ mod tests {
             );
         }
 
-        for answer in [b"\x7fy\r".as_slice(), b"\x7fY\r".as_slice(), b"\x08y\r".as_slice()] {
+        for answer in [
+            b"\x7fy\r".as_slice(),
+            b"\x7fY\r".as_slice(),
+            b"\x08y\r".as_slice(),
+        ] {
             let (_, exiting, painted) = shutdown(answer).await;
             assert!(
                 exiting,
@@ -683,7 +690,11 @@ mod tests {
         for answer in [b"\x7f\r".as_slice(), b"\x7fn\r".as_slice()] {
             let (ret, exiting, _) = shutdown(answer).await;
             assert_eq!(ret, MenuReturn::Redraw);
-            assert!(!exiting, "{:?} must leave it running", String::from_utf8_lossy(answer));
+            assert!(
+                !exiting,
+                "{:?} must leave it running",
+                String::from_utf8_lossy(answer)
+            );
         }
     }
 
@@ -749,7 +760,8 @@ mod tests {
         let (mut client, server) = Pipe::new();
         let mut term = Terminal::new(ByteIo::Pipe(server));
         let mut session = crate::session::offline_session();
-        session.root = std::env::temp_dir().join(format!("lbbs-datamgr-menu-{}", std::process::id()));
+        session.root =
+            std::env::temp_dir().join(format!("lbbs-datamgr-menu-{}", std::process::id()));
 
         let (ret, ()) = tokio::join!(
             bbs_do_choice(&mut term, &mut session, Action::DataMgr, "", false),
@@ -794,7 +806,10 @@ mod tests {
 
         assert_eq!(ret, MenuReturn::Redraw);
         let screen = String::from_utf8_lossy(&client.take_available()).into_owned();
-        assert!(screen.contains("请输入需要编辑的签名档编号（1-3）: "), "{screen}");
+        assert!(
+            screen.contains("请输入需要编辑的签名档编号（1-3）: "),
+            "{screen}"
+        );
         assert!(!screen.contains("再编辑"), "{screen}");
     }
 
@@ -884,9 +899,11 @@ mod tests {
 
         // A menu still stuck in its read loop never returns: the press it takes is the only one
         // this test offers.
-        let visited =
-            tokio::time::timeout(Duration::from_secs(2), show_top10_menu(&mut term, &mut session))
-                .await;
+        let visited = tokio::time::timeout(
+            Duration::from_secs(2),
+            show_top10_menu(&mut term, &mut session),
+        )
+        .await;
         assert!(visited.is_ok(), "the empty menu must end after one press");
 
         let mut client = keyed.await.unwrap();
@@ -940,7 +957,10 @@ mod tests {
                 }
             }
         );
-        assert!(ran.is_err(), "the session continues into its menu after the greeting");
+        assert!(
+            ran.is_err(),
+            "the session continues into its menu after the greeting"
+        );
 
         let wire = String::from_utf8_lossy(&client.take_available()).into_owned();
         assert!(

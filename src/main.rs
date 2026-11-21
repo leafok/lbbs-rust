@@ -49,7 +49,7 @@ use lbbs::menu::MenuSet;
 use lbbs::net::{self, Front, Gateway};
 use lbbs::paths::{
     CONF_BBSD, CONF_BWF, CONF_MENU, CONF_TOP10_MENU, DATA_EULA, VAR_ARTICLE_CACHE_DIR,
-    VAR_SECTION_AID_LOC_DIR,
+    VAR_CHICKEN_DIR, VAR_SECTION_AID_LOC_DIR,
 };
 use lbbs::ssh;
 use lbbs::state::AppState;
@@ -74,7 +74,11 @@ fn main() -> ExitCode {
             return code(EXIT_OK);
         }
         Args::Version => {
-            daemon::print_stderr(&format!("{}\n{}\n", daemon::app_info(), daemon::COPYRIGHT_INFO));
+            daemon::print_stderr(&format!(
+                "{}\n{}\n",
+                daemon::app_info(),
+                daemon::COPYRIGHT_INFO
+            ));
             return code(EXIT_OK);
         }
         Args::CompileConfig => {
@@ -170,6 +174,12 @@ fn main() -> ExitCode {
         tracing::error!("mkdir({VAR_SECTION_AID_LOC_DIR}) error: {err}");
         return code(EXIT_STARTUP);
     }
+    // The chicken records and the one log they share (`chicken.c:30-31`); without the directory
+    // `create_a_egg` cannot write its egg and `chicken_main` answers its `-2`.
+    if let Err(err) = create_dir(&root.join(VAR_CHICKEN_DIR)) {
+        tracing::error!("mkdir({VAR_CHICKEN_DIR}) error: {err}");
+        return code(EXIT_STARTUP);
+    }
 
     // main.c:350-360 and :363-369 need no database, so they run before the runtime is built;
     // the menus are read from disk by read_menu_file below.
@@ -253,12 +263,9 @@ async fn serve(startup: Startup) -> Result<(), StartupError> {
     // — and a loader that starts a second one from scratch never replays an article change.
     let state = std::sync::Arc::new(state);
     let mut loader = Loader::new(std::sync::Arc::clone(&state), &root);
-    loader
-        .initial_load()
-        .await
-        .map_err(|err| StartupError {
-            message: format!("initial load error: {err}"),
-        })?;
+    loader.initial_load().await.map_err(|err| StartupError {
+        message: format!("initial load error: {err}"),
+    })?;
 
     // main.c:418-448: SIGHUP reloads, SIGTERM exits, SIGUSR1 reopens the logs, SIGPIPE is
     // ignored. The port's `SIGPIPE` equivalent is that a failed write is an `io::Error` the
@@ -366,10 +373,9 @@ async fn reload_configuration(state: &std::sync::Arc<AppState>, root: &Path, sin
 
 /// `load_menu()`: read the file and hand the bytes to the parser, with C's error word.
 fn read_menu_file(root: &Path, path: &str, name: &str) -> Result<MenuSet, StartupError> {
-    let data = std::fs::read(root.join(path))
-        .map_err(|err| StartupError {
-            message: format!("load_menu({name}) error: {err}"),
-        })?;
+    let data = std::fs::read(root.join(path)).map_err(|err| StartupError {
+        message: format!("load_menu({name}) error: {err}"),
+    })?;
     MenuSet::parse(&data).map_err(|err| StartupError {
         message: format!("load_menu({name}) error: {err}"),
     })
@@ -517,8 +523,12 @@ mod tests {
 
     #[test]
     fn a_menu_file_reports_c_read_failure() {
-        let err = read_menu_file(Path::new("/nonexistent"), "var/menu_merged.conf", "bbs_menu")
-            .unwrap_err();
+        let err = read_menu_file(
+            Path::new("/nonexistent"),
+            "var/menu_merged.conf",
+            "bbs_menu",
+        )
+        .unwrap_err();
         assert!(
             err.message.starts_with("load_menu(bbs_menu) error: "),
             "{}",
@@ -529,7 +539,10 @@ mod tests {
     #[test]
     fn the_exit_codes_are_the_ones_main_c_returned() {
         // -1 and -2 as the shell sees them, plus arg_error()'s 1.
-        assert_eq!((EXIT_OK, EXIT_USAGE, EXIT_STARTUP, EXIT_CONFIG), (0, 1, 255, 254));
+        assert_eq!(
+            (EXIT_OK, EXIT_USAGE, EXIT_STARTUP, EXIT_CONFIG),
+            (0, 1, 255, 254)
+        );
         assert_eq!(bbsd_code(-1), EXIT_STARTUP);
         assert_eq!(bbsd_code(-2), EXIT_CONFIG);
         assert_eq!(bbsd_code(0), EXIT_OK);

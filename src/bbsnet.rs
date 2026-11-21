@@ -84,8 +84,8 @@ use crate::paths::{
 use crate::screen::{self, Echo};
 use crate::session::{self, Session};
 use crate::term::key::{
-    self, CR, KEY_DOWN, KEY_END, KEY_ESC, KEY_HOME, KEY_LEFT, KEY_NULL, KEY_PGDN,
-    KEY_PGUP, KEY_RETRY, KEY_RIGHT, KEY_TIMEOUT, KEY_UP,
+    self, CR, KEY_DOWN, KEY_END, KEY_ESC, KEY_HOME, KEY_LEFT, KEY_NULL, KEY_PGDN, KEY_PGUP,
+    KEY_RETRY, KEY_RIGHT, KEY_TIMEOUT, KEY_UP,
 };
 use crate::term::{Charset, RawRead, Terminal};
 
@@ -174,9 +174,13 @@ pub fn load_conf(root: &Path) -> io::Result<Vec<Station>> {
     let mut stations = Vec::new();
 
     for (fin_line, line) in bytes.split(|b| *b == b'\n').enumerate() {
-        let mut tokens = line.split(|b| CONFIG_DELIM.contains(b)).filter(|f| !f.is_empty());
+        let mut tokens = line
+            .split(|b| CONFIG_DELIM.contains(b))
+            .filter(|f| !f.is_empty());
         // `strtok_r` returns NULL for a blank line, which is the same as having no fields at all.
-        let Some(org_name) = tokens.next() else { continue };
+        let Some(org_name) = tokens.next() else {
+            continue;
+        };
         if org_name[0] == b'#' {
             continue;
         }
@@ -218,7 +222,10 @@ pub fn load_conf(root: &Path) -> io::Result<Vec<Station>> {
         // while resolving as seven.
         let (parsed, complete) = strtol_decimal(port.as_bytes());
         if !complete || parsed <= 0 || parsed > 65535 {
-            tracing::error!("Invalid port {parsed} in BBSNET config line {}", fin_line + 1);
+            tracing::error!(
+                "Invalid port {parsed} in BBSNET config line {}",
+                fin_line + 1
+            );
             continue;
         }
         // `strlen(p) != 1` is its own error: the flag is a single letter.
@@ -332,7 +339,11 @@ async fn progress_bar(term: &mut Terminal, percent: i64, len: usize) {
 
     term.moveto(4, 1);
     term.print(&format!("{rule}\r\n"));
-    term.print(&format!("|\x1b[46m{}\x1b[44m{}\x1b[m|\r\n", &bar[..pos], &bar[pos..]));
+    term.print(&format!(
+        "|\x1b[46m{}\x1b[44m{}\x1b[m|\r\n",
+        &bar[..pos],
+        &bar[pos..]
+    ));
     term.print(&format!("{rule}\r\n"));
     let _ = term.flush().await;
 }
@@ -345,7 +356,10 @@ struct Clock {
 
 impl Clock {
     fn start() -> Clock {
-        Clock { begin: Instant::now(), progress_last: 0 }
+        Clock {
+            begin: Instant::now(),
+            progress_last: 0,
+        }
     }
 
     /// `connect_timeout`: repaint when the percentage moves, and answer `true` once the budget
@@ -418,7 +432,9 @@ fn sockaddr_in(addr: SocketAddr) -> io::Result<libc::sockaddr_in> {
         sin_len: std::mem::size_of::<libc::sockaddr_in>() as u8,
         sin_family: libc::AF_INET as libc::sa_family_t,
         sin_port: v4.port().to_be(),
-        sin_addr: libc::in_addr { s_addr: u32::from(*v4.ip()).to_be() },
+        sin_addr: libc::in_addr {
+            s_addr: u32::from(*v4.ip()).to_be(),
+        },
         sin_zero: [0; 8],
     })
 }
@@ -457,7 +473,8 @@ fn bound_socket(local: SocketAddr) -> Result<TcpStream, SocketError> {
     }
     // SAFETY: `fd` is this function's own descriptor, and `F_SETFL` only reads back `F_GETFL`.
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL, 0) };
-    let blocked = flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0;
+    let blocked =
+        flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0;
     if blocked {
         let err = io::Error::last_os_error();
         // SAFETY: `fd` is this function's own descriptor.
@@ -485,7 +502,9 @@ fn connect_now(fd: RawFd, remote: SocketAddr) -> Result<(), i32> {
     {
         return Ok(());
     }
-    Err(io::Error::last_os_error().raw_os_error().unwrap_or(libc::EIO))
+    Err(io::Error::last_os_error()
+        .raw_os_error()
+        .unwrap_or(libc::EIO))
 }
 
 /// `getsockopt(SO_ERROR)` (`:646-653`): what a non-blocking connect answered.
@@ -646,9 +665,10 @@ impl Outbound {
     async fn write(&mut self, data: &[u8]) -> io::Result<()> {
         match self {
             Outbound::Tcp(stream) => stream.write_all(data).await,
-            Outbound::Ssh { write, .. } => {
-                write.data_bytes(data.to_vec()).await.map_err(io::Error::other)
-            }
+            Outbound::Ssh { write, .. } => write
+                .data_bytes(data.to_vec())
+                .await
+                .map_err(io::Error::other),
         }
     }
 
@@ -662,7 +682,7 @@ impl Outbound {
             Outbound::Ssh { handle, write, .. } => {
                 let _ = write.eof().await;
                 let _ = write.close().await;
-                                // `ssh_disconnect(session)` (`:1400`) is libssh's own disconnect, whose reason
+                // `ssh_disconnect(session)` (`:1400`) is libssh's own disconnect, whose reason
                 // text this port does not reproduce: only the code is matched.
                 let _ = handle
                     .disconnect(russh::Disconnect::ByApplication, "", "")
@@ -819,7 +839,10 @@ async fn connect(term: &mut Terminal, session: &mut Session, station: &Station) 
     let (parsed, complete) = strtol_decimal(station.port.as_bytes());
     let remote = match (complete, u16::try_from(parsed)) {
         (true, Ok(port)) => resolve_v4(&station.host_name, port).await,
-        _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "not a port number")),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a port number",
+        )),
     };
     let remote = match remote {
         Ok(addr) => addr,
@@ -845,12 +868,7 @@ async fn connect(term: &mut Terminal, session: &mut Session, station: &Station) 
                 connected = true;
                 break;
             }
-            Err(errno)
-                if matches!(
-                    errno,
-                    libc::EAGAIN | libc::EALREADY | libc::EINPROGRESS
-                ) =>
-            {
+            Err(errno) if matches!(errno, libc::EAGAIN | libc::EALREADY | libc::EINPROGRESS) => {
                 break;
             }
             Err(libc::EINTR) => continue,
@@ -908,7 +926,14 @@ async fn connect(term: &mut Terminal, session: &mut Session, station: &Station) 
 
     let mut outbound = if station.use_ssh {
         match ssh_setup(
-            term, session, &mut clock, stream, station, remote, &remote_user, &remote_pass,
+            term,
+            session,
+            &mut clock,
+            stream,
+            station,
+            remote,
+            &remote_user,
+            &remote_pass,
         )
         .await
         {
@@ -1000,11 +1025,7 @@ async fn ssh_setup(
     let mut handle = match stage(
         term,
         clock,
-        russh::client::connect_stream(
-            Arc::new(russh::client::Config::default()),
-            stream,
-            handler,
-        ),
+        russh::client::connect_stream(Arc::new(russh::client::Config::default()), stream, handler),
     )
     .await
     {
@@ -1045,7 +1066,12 @@ async fn ssh_setup(
         );
     }
 
-    let auth = stage(term, clock, handle.authenticate_password(remote_user, remote_pass)).await;
+    let auth = stage(
+        term,
+        clock,
+        handle.authenticate_password(remote_user, remote_pass),
+    )
+    .await;
     match auth {
         Stage::Done(Ok(result)) if result.success() => {}
         // `SSH_AUTH_DENIED` is C's `else` arm, so any other answer is treated as one.
@@ -1250,7 +1276,11 @@ pub async fn bbs_net(term: &mut Terminal, session: &mut Session) -> i32 {
                 selchange(term, &chosen(nav.cursor())).await;
             }
             KEY_UP | KEY_DOWN => {
-                let step = if ch == KEY_UP { key::KEY_UP } else { key::KEY_DOWN };
+                let step = if ch == KEY_UP {
+                    key::KEY_UP
+                } else {
+                    key::KEY_DOWN
+                };
                 // The grid is four stations wide, so an arrow key walks a whole row.
                 for _ in 0..STATION_PER_LINE {
                     nav.control(term, session, step).await;
@@ -1258,7 +1288,11 @@ pub async fn bbs_net(term: &mut Terminal, session: &mut Session) -> i32 {
                 selchange(term, &chosen(nav.cursor())).await;
             }
             KEY_LEFT | KEY_RIGHT => {
-                let step = if ch == KEY_LEFT { key::KEY_UP } else { key::KEY_DOWN };
+                let step = if ch == KEY_LEFT {
+                    key::KEY_UP
+                } else {
+                    key::KEY_DOWN
+                };
                 nav.control(term, session, step).await;
                 selchange(term, &chosen(nav.cursor())).await;
             }
@@ -1352,8 +1386,14 @@ mod tests {
             db: db.clone(),
         };
         let state = Arc::new(AppState::new(config, crate::db::Db::detached(&db)));
-        let mut session =
-            Session::new(state, root, "lbbs-test".into(), "127.0.0.1".into(), 2323, is_ssh);
+        let mut session = Session::new(
+            state,
+            root,
+            "lbbs-test".into(),
+            "127.0.0.1".into(),
+            2323,
+            is_ssh,
+        );
         session.current_action = ACTION.to_string();
         session.current_action_tm = session::now();
         session
@@ -1361,10 +1401,7 @@ mod tests {
 
     /// A server root holding one `conf/bbsnet.conf`, unique to this process and test name.
     fn root_with_conf(name: &str, body: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "lbbs-bbsnet-{name}-{}",
-            std::process::id()
-        ));
+        let root = std::env::temp_dir().join(format!("lbbs-bbsnet-{name}-{}", std::process::id()));
         std::fs::create_dir_all(root.join("conf")).unwrap();
         std::fs::write(root.join(CONF_BBSNET), body).unwrap();
         root
@@ -1486,15 +1523,25 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
         assert_eq!(first.text, "\x1b[1;36mA.\x1b[m 站名");
 
         // The row only turns over after the fourth station.
-        assert_eq!((station_item(3, &station).row, station_item(3, &station).col), (2, 65));
-        assert_eq!((station_item(4, &station).row, station_item(4, &station).col), (3, 5));
+        assert_eq!(
+            (station_item(3, &station).row, station_item(3, &station).col),
+            (2, 65)
+        );
+        assert_eq!(
+            (station_item(4, &station).row, station_item(4, &station).col),
+            (3, 5)
+        );
         assert_eq!(station_item(25, &station).name, "Z");
         // `'a' + 26 - 13`, the lower-case half of the hot keys.
         assert_eq!(station_item(26, &station).name, "a");
         assert_eq!(station_item(MAX_STATION - 1, &station).name, "z");
-        assert_eq!((station_item(MAX_STATION - 1, &station).row,
-                    station_item(MAX_STATION - 1, &station).col),
-                   (14, 65));
+        assert_eq!(
+            (
+                station_item(MAX_STATION - 1, &station).row,
+                station_item(MAX_STATION - 1, &station).col
+            ),
+            (14, 65)
+        );
     }
 
     #[tokio::test]
@@ -1512,8 +1559,14 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
         assert!(seen.contains("\x1b[2;1H|\x1b[2;80H|"), "{seen}");
         assert!(seen.contains("\x1b[18;1H|\x1b[18;80H|"), "{seen}");
         // Row 19 is the one rule that closes with the border characters instead of spaces.
-        assert!(seen.contains(&format!("\x1b[19;1H|{}|", "-".repeat(78))), "{seen}");
-        assert!(seen.contains("\x1b[23;1H [\x1b[1;32mCtrl+C\x1b[m]退出"), "{seen}");
+        assert!(
+            seen.contains(&format!("\x1b[19;1H|{}|", "-".repeat(78))),
+            "{seen}"
+        );
+        assert!(
+            seen.contains("\x1b[23;1H [\x1b[1;32mCtrl+C\x1b[m]退出"),
+            "{seen}"
+        );
     }
 
     #[tokio::test]
@@ -1538,8 +1591,16 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
             "{seen}"
         );
         // `%-20s` pads the host name out and `%-5s` leaves the four-digit port one short.
-        assert!(seen.contains("连往: \x1b[1;33mbbs.test            \x1b[m  端口: \x1b[1;33m2323 \x1b[m"), "{seen}");
-        assert!(seen.ends_with("编码: \x1b[1;33mGBK\x1b[m\x1b[21;80H|"), "{seen}");
+        assert!(
+            seen.contains(
+                "连往: \x1b[1;33mbbs.test            \x1b[m  端口: \x1b[1;33m2323 \x1b[m"
+            ),
+            "{seen}"
+        );
+        assert!(
+            seen.ends_with("编码: \x1b[1;33mGBK\x1b[m\x1b[21;80H|"),
+            "{seen}"
+        );
     }
 
     #[tokio::test]
@@ -1549,14 +1610,26 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
         let empty = String::from_utf8_lossy(&client.take_available()).into_owned();
         assert!(empty.starts_with("\x1b[4;1H"), "{empty}");
         // `(30 - 4) / 2` of room on either side of `  0%`.
-        assert!(empty.contains(&format!("|\x1b[46m\x1b[44m{:<13}{:>3}%{:<13}\x1b[m|\r\n", "", 0, "")), "{empty}");
+        assert!(
+            empty.contains(&format!(
+                "|\x1b[46m\x1b[44m{:<13}{:>3}%{:<13}\x1b[m|\r\n",
+                "", 0, ""
+            )),
+            "{empty}"
+        );
 
         progress_bar(&mut term, 50, PROGRESS_BAR_LEN).await;
         let half = String::from_utf8_lossy(&client.take_available()).into_owned();
         let buf = format!("{:<13}{:>3}%{:<13}", "", 50, "");
         let (cyan, blue) = buf.split_at(PROGRESS_BAR_LEN / 2);
-        assert!(half.contains(&format!("|\x1b[46m{cyan}\x1b[44m{blue}\x1b[m|\r\n")), "{half}");
-        assert!(half.contains(&format!(" {} \r\n", "-".repeat(PROGRESS_BAR_LEN))), "{half}");
+        assert!(
+            half.contains(&format!("|\x1b[46m{cyan}\x1b[44m{blue}\x1b[m|\r\n")),
+            "{half}"
+        );
+        assert!(
+            half.contains(&format!(" {} \r\n", "-".repeat(PROGRESS_BAR_LEN))),
+            "{half}"
+        );
     }
 
     #[tokio::test]
@@ -1596,8 +1669,14 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
         assert_eq!(code, -1);
         seen.extend(client.take_available());
         let seen = String::from_utf8_lossy(&seen).into_owned();
-        assert!(seen.contains("正在测试往 回声站 (no-such-station.invalid:23) 的Telnet连接"), "{seen}");
-        assert!(seen.contains("\x1b[1;32m连接进行中，按\x1b[1;33mCtrl+C\x1b[1;32m中断。"), "{seen}");
+        assert!(
+            seen.contains("正在测试往 回声站 (no-such-station.invalid:23) 的Telnet连接"),
+            "{seen}"
+        );
+        assert!(
+            seen.contains("\x1b[1;32m连接进行中，按\x1b[1;33mCtrl+C\x1b[1;32m中断。"),
+            "{seen}"
+        );
     }
 
     #[tokio::test]
@@ -1662,7 +1741,8 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
         // The failure comes where C opens its descriptors, after the connect and its message, and
         // C's answer for it is `-1` with nothing more on screen.
         assert_eq!(connect(&mut term, &mut session, &station).await, -1);
-        let seen = String::from_utf8_lossy(&until(&mut client, "连接成功".as_bytes()).await).into_owned();
+        let seen =
+            String::from_utf8_lossy(&until(&mut client, "连接成功".as_bytes()).await).into_owned();
         assert!(!seen.contains("按任意键"), "{seen}");
         accepted.abort();
     }
@@ -1677,13 +1757,25 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
         let key_b = russh::keys::parse_public_key_base64(KEY_B).unwrap();
 
         // An unseen host is recorded and accepted, and the recording is what the log line claims.
-        assert_eq!(decide_key(&path, "bbs.test", 22, &key_a), KeyVerdict::Learned);
+        assert_eq!(
+            decide_key(&path, "bbs.test", 22, &key_a),
+            KeyVerdict::Learned
+        );
         assert!(std::fs::read_to_string(&path).unwrap().contains("bbs.test"));
-        assert_eq!(decide_key(&path, "bbs.test", 22, &key_a), KeyVerdict::Accepted);
+        assert_eq!(
+            decide_key(&path, "bbs.test", 22, &key_a),
+            KeyVerdict::Accepted
+        );
         // A different key for a recorded host is C's `SSH_KNOWN_HOSTS_CHANGED`.
-        assert_eq!(decide_key(&path, "bbs.test", 22, &key_b), KeyVerdict::Changed);
+        assert_eq!(
+            decide_key(&path, "bbs.test", 22, &key_b),
+            KeyVerdict::Changed
+        );
         // The port is part of the identity, so a station on 2322 is still unknown.
-        assert_eq!(decide_key(&path, "bbs.test", 2322, &key_b), KeyVerdict::Learned);
+        assert_eq!(
+            decide_key(&path, "bbs.test", 2322, &key_b),
+            KeyVerdict::Learned
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -1748,7 +1840,10 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
         let start = seen.find("单位甲").unwrap();
         let after_down = seen[start..].find("单位乙").unwrap() + start;
         let after_right = seen[after_down..].find("单位丙").unwrap() + after_down;
-        assert!(seen[after_down..after_right].contains("bbs-b.test"), "{seen}");
+        assert!(
+            seen[after_down..after_right].contains("bbs-b.test"),
+            "{seen}"
+        );
         assert!(seen[after_down..after_right].contains("SSH"), "{seen}");
         assert!(seen[after_down..after_right].contains("GBK"), "{seen}");
         // One more step reaches the third station, and the cursor with it.
@@ -1784,7 +1879,12 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
         // Empty fields, and the padding `%*s` owes a full 20 cells for each of them.
         assert!(seen.contains("\x1b[20;1H\x1b[K|\x1b[1m单位: \x1b[1;33m\x1b[m                      \
                                站名: \x1b[1;33m\x1b[m                      类型: \x1b[1;33mTelnet\x1b[m"), "{seen}");
-        assert!(seen.contains("连往: \x1b[1;33m                    \x1b[m  端口: \x1b[1;33m     \x1b[m"), "{seen}");
+        assert!(
+            seen.contains(
+                "连往: \x1b[1;33m                    \x1b[m  端口: \x1b[1;33m     \x1b[m"
+            ),
+            "{seen}"
+        );
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

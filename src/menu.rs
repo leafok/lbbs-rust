@@ -112,7 +112,10 @@ impl Action {
     /// `get_cmd_handler`. A `use_filter` menu is looked up by *menu* name, which is why
     /// `M_FAVOR_SECTION` serves both as an action name and as a filter.
     pub fn from_name(name: &str) -> Option<Action> {
-        Action::TABLE.iter().find(|(n, _)| *n == name).map(|(_, a)| *a)
+        Action::TABLE
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, a)| *a)
     }
 
     pub fn name(self) -> &'static str {
@@ -193,7 +196,9 @@ impl fmt::Display for MenuError {
             MenuError::Syntax { line, message } => {
                 write!(f, "{message} in menu config line {line}")
             }
-            MenuError::Exhausted(message) | MenuError::Unresolved(message) => write!(f, "{message}"),
+            MenuError::Exhausted(message) | MenuError::Unresolved(message) => {
+                write!(f, "{message}")
+            }
         }
     }
 }
@@ -525,11 +530,7 @@ impl<'a> MenuNav<'a> {
     }
 
     /// `display_menu`: lay the menu out, draw it, and park the cursor.
-    pub async fn draw(
-        &mut self,
-        term: &mut Terminal,
-        view: &(dyn MenuView + Sync),
-    ) -> Draw {
+    pub async fn draw(&mut self, term: &mut Terminal, view: &(dyn MenuView + Sync)) -> Draw {
         let Some(menu) = self.current_menu() else {
             return Draw::Empty;
         };
@@ -753,7 +754,13 @@ impl<'a> MenuNav<'a> {
 
     /// `KEY_UP`/`KEY_DOWN`, and the page keys that fall through to them owing a page change:
     /// keep walking while a page change is still owed or the item under the cursor is hidden.
-    fn step(&mut self, term: &mut Terminal, view: &dyn MenuView, delta: i32, mut page_change: bool) {
+    fn step(
+        &mut self,
+        term: &mut Terminal,
+        view: &dyn MenuView,
+        delta: i32,
+        mut page_change: bool,
+    ) {
         self.draw_cursor(term, false);
         let count = self.item_count() as i32;
         if count <= 0 {
@@ -1391,7 +1398,9 @@ impl Parser {
             }
 
             if self.screen_buf_used + screen::CTRL_SEQ_CLR_LINE.len() > limit {
-                return Err(MenuError::Exhausted("Menu screen buffer depleted".to_string()));
+                return Err(MenuError::Exhausted(
+                    "Menu screen buffer depleted".to_string(),
+                ));
             }
             self.set.screens[screen_id]
                 .buf
@@ -1400,7 +1409,9 @@ impl Parser {
 
             for (i, b) in line.iter().enumerate() {
                 if self.screen_buf_used + 2 > limit {
-                    return Err(MenuError::Exhausted("Menu screen buffer depleted".to_string()));
+                    return Err(MenuError::Exhausted(
+                        "Menu screen buffer depleted".to_string(),
+                    ));
                 }
                 // A bare `\n` is paired up; `i > 0` is C's `p > buffer`, so a file opening with
                 // a newline keeps its bare one.
@@ -1424,10 +1435,9 @@ impl Parser {
     fn resolve(&mut self) -> Result<(), MenuError> {
         let screen_dict = &self.set.screen_dict;
         for menu in self.set.menus.iter_mut() {
-            let id = screen_dict
-                .get(&menu.screen_name)
-                .copied()
-                .ok_or_else(|| MenuError::Unresolved(format!("Undefined menu screen [{}]", menu.screen_name)))?;
+            let id = screen_dict.get(&menu.screen_name).copied().ok_or_else(|| {
+                MenuError::Unresolved(format!("Undefined menu screen [{}]", menu.screen_name))
+            })?;
             menu.screen_id = Some(id);
             if menu.use_filter {
                 menu.filter = Some(Action::from_name(&menu.name).ok_or_else(|| {
@@ -1458,8 +1468,8 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
     use crate::term::{ByteIo, Pipe};
+    use std::time::Duration;
 
     fn pair() -> (Terminal, Pipe) {
         let (client, server) = Pipe::new();
@@ -1594,7 +1604,12 @@ mod tests {
         let inside = one_menu(&[(0, 0, 0, 0, "x")]);
         let mut inside = inside.replace("screen 0, 0, S_ONE\n", "screen 0, 0, S_ONE\nbogus 1, 2\n");
         inside = inside.replace("\"x0\"", "\"x\"");
-        assert_eq!(MenuSet::parse(inside.as_bytes()).unwrap().menus[0].items.len(), 1);
+        assert_eq!(
+            MenuSet::parse(inside.as_bytes()).unwrap().menus[0]
+                .items
+                .len(),
+            1
+        );
 
         let outside = "%S_ONE\n%\nbogus 1, 2\n";
         let err = MenuSet::parse(outside.as_bytes()).unwrap_err();
@@ -1614,16 +1629,22 @@ mod tests {
     #[test]
     fn an_unknown_name_of_any_kind_fails_the_load() {
         let action = "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@NOPE 0, 0, 0, 0, \"x\", \"y\"\n%\n";
-        assert!(format!("{:?}", MenuSet::parse(action.as_bytes()).unwrap_err())
-            .contains("Undefined menu action cmd handler [NOPE]"));
+        assert!(
+            format!("{:?}", MenuSet::parse(action.as_bytes()).unwrap_err())
+                .contains("Undefined menu action cmd handler [NOPE]")
+        );
 
         let submenu = "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n!NOPE 0, 0, 0, 0, \"x\", \"y\"\n%\n";
-        assert!(format!("{:?}", MenuSet::parse(submenu.as_bytes()).unwrap_err())
-            .contains("Undefined sub menu id [NOPE]"));
+        assert!(
+            format!("{:?}", MenuSet::parse(submenu.as_bytes()).unwrap_err())
+                .contains("Undefined sub menu id [NOPE]")
+        );
 
         let filter = "%S_ONE\n%\n%menu NOPE\nuse_filter\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"x\", \"y\"\n%\n";
-        assert!(format!("{:?}", MenuSet::parse(filter.as_bytes()).unwrap_err())
-            .contains("Undefined menu filter handler [NOPE]"));
+        assert!(
+            format!("{:?}", MenuSet::parse(filter.as_bytes()).unwrap_err())
+                .contains("Undefined menu filter handler [NOPE]")
+        );
     }
 
     #[test]
@@ -1647,19 +1668,27 @@ mod tests {
             "%S_ONE\n%\n%menu {}\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"x\", \"y\"\n%\n",
             "M".repeat(MAX_MENU_NAME_LENGTH)
         );
-        assert!(format!("{}", MenuSet::parse(long.as_bytes()).unwrap_err())
-            .starts_with("Too longer menu name in menu config line 3"));
+        assert!(
+            format!("{}", MenuSet::parse(long.as_bytes()).unwrap_err())
+                .starts_with("Too longer menu name in menu config line 3")
+        );
 
         // The C locale rejects a byte at or above 0x80, so a Chinese menu name is a parse error.
-        let wide = "%S_ONE\n%\n%menu 菜单\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"x\", \"y\"\n%\n";
-        assert!(format!("{}", MenuSet::parse(wide.as_bytes()).unwrap_err())
-            .starts_with("Error menu name in menu config line 3"));
+        let wide =
+            "%S_ONE\n%\n%menu 菜单\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"x\", \"y\"\n%\n";
+        assert!(
+            format!("{}", MenuSet::parse(wide.as_bytes()).unwrap_err())
+                .starts_with("Error menu name in menu config line 3")
+        );
 
         // An action gets the same charset, which does allow `-` and `_` but nothing else, and
         // `..` is exempt from the test entirely.
-        let bad_action = "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXIT.BBS 0, 0, 0, 0, \"x\", \"y\"\n%\n";
-        assert!(format!("{}", MenuSet::parse(bad_action.as_bytes()).unwrap_err())
-            .starts_with("Error menu item action in menu config line 5"));
+        let bad_action =
+            "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXIT.BBS 0, 0, 0, 0, \"x\", \"y\"\n%\n";
+        assert!(
+            format!("{}", MenuSet::parse(bad_action.as_bytes()).unwrap_err())
+                .starts_with("Error menu item action in menu config line 5")
+        );
 
         let ok_action = "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@LIST_ONLINE_USER 0, 0, 0, 0, \"x\", \"y\"\n%\n";
         assert!(MenuSet::parse(ok_action.as_bytes()).is_ok());
@@ -1668,16 +1697,25 @@ mod tests {
     #[test]
     fn quoted_names_escape_with_a_backslash_and_hold_no_space() {
         let escaped = "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"a\\\"b\", \"text\"\n%\n";
-        assert_eq!(MenuSet::parse(escaped.as_bytes()).unwrap().items[0].name, "a\"b");
+        assert_eq!(
+            MenuSet::parse(escaped.as_bytes()).unwrap().items[0].name,
+            "a\"b"
+        );
 
-        let spaced = "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"a b\", \"text\"\n%\n";
-        assert!(format!("{}", MenuSet::parse(spaced.as_bytes()).unwrap_err())
-            .starts_with("Error menu item name in menu config line 5"));
+        let spaced =
+            "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"a b\", \"text\"\n%\n";
+        assert!(
+            format!("{}", MenuSet::parse(spaced.as_bytes()).unwrap_err())
+                .starts_with("Error menu item name in menu config line 5")
+        );
 
         // An unterminated name is the same failure.
-        let unterminated = "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"abc, \"text\"\n%\n";
-        assert!(format!("{}", MenuSet::parse(unterminated.as_bytes()).unwrap_err())
-            .starts_with("Error menu item name in menu config line 5"));
+        let unterminated =
+            "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"abc, \"text\"\n%\n";
+        assert!(
+            format!("{}", MenuSet::parse(unterminated.as_bytes()).unwrap_err())
+                .starts_with("Error menu item name in menu config line 5")
+        );
     }
 
     #[test]
@@ -1692,23 +1730,33 @@ mod tests {
         // swallowed — and junk after the text is the fatal extra content.
         let between = "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"x\" junk, \"text\"\n%\n";
         let set = MenuSet::parse(between.as_bytes()).unwrap();
-        assert_eq!((set.items[0].name.as_str(), set.items[0].text.as_str()), ("x", "text"));
+        assert_eq!(
+            (set.items[0].name.as_str(), set.items[0].text.as_str()),
+            ("x", "text")
+        );
 
         let after = "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"x\", \"text\" tail\n%\n";
-        assert!(format!("{}", MenuSet::parse(after.as_bytes()).unwrap_err())
-            .starts_with("Unknown extra content in menu config line 5"));
+        assert!(
+            format!("{}", MenuSet::parse(after.as_bytes()).unwrap_err())
+                .starts_with("Unknown extra content in menu config line 5")
+        );
     }
 
     #[test]
     fn item_fields_are_digits_only() {
-        let data = "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXITBBS 4x, 0, 0, 0, \"x\", \"text\"\n%\n";
-        assert!(format!("{}", MenuSet::parse(data.as_bytes()).unwrap_err())
-            .starts_with("Error menu item row in menu config line 5"));
+        let data =
+            "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXITBBS 4x, 0, 0, 0, \"x\", \"text\"\n%\n";
+        assert!(
+            format!("{}", MenuSet::parse(data.as_bytes()).unwrap_err())
+                .starts_with("Error menu item row in menu config line 5")
+        );
 
         // A missing field is the same message, which is how C reports a short line.
         let short = "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXITBBS 4, 0, 0\n%\n";
-        assert!(format!("{}", MenuSet::parse(short.as_bytes()).unwrap_err())
-            .starts_with("Error menu item level in menu config line 5"));
+        assert!(
+            format!("{}", MenuSet::parse(short.as_bytes()).unwrap_err())
+                .starts_with("Error menu item level in menu config line 5")
+        );
     }
 
     #[test]
@@ -1717,22 +1765,28 @@ mod tests {
             "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"{}\", \"text\"\n%\n",
             "n".repeat(MAX_MENUITEM_NAME_LENGTH)
         );
-        assert!(format!("{}", MenuSet::parse(name.as_bytes()).unwrap_err())
-            .starts_with("Too longer menu name in menu config line 5"));
+        assert!(
+            format!("{}", MenuSet::parse(name.as_bytes()).unwrap_err())
+                .starts_with("Too longer menu name in menu config line 5")
+        );
 
         let text = format!(
             "%S_ONE\n%\n%menu M\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"x\", \"{}\"\n%\n",
             "t".repeat(MAX_MENUITEM_TEXT_LENGTH)
         );
-        assert!(format!("{}", MenuSet::parse(text.as_bytes()).unwrap_err())
-            .starts_with("Too longer menu item text in menu config line 5"));
+        assert!(
+            format!("{}", MenuSet::parse(text.as_bytes()).unwrap_err())
+                .starts_with("Too longer menu item text in menu config line 5")
+        );
 
         let title = format!(
             "%S_ONE\n%\n%menu M\ntitle 0, 0, \"{}\"\nscreen 0, 0, S_ONE\n@EXITBBS 0, 0, 0, 0, \"x\", \"t\"\n%\n",
             "a".repeat(MAX_MENUTITLE_TEXT_LENGTH)
         );
-        assert!(format!("{}", MenuSet::parse(title.as_bytes()).unwrap_err())
-            .starts_with("Too longer menu title text in menu config line 4"));
+        assert!(
+            format!("{}", MenuSet::parse(title.as_bytes()).unwrap_err())
+                .starts_with("Too longer menu title text in menu config line 4")
+        );
     }
 
     #[test]
@@ -1759,8 +1813,10 @@ mod tests {
             data.push('\n');
         }
         data.push_str("%\n");
-        assert!(format!("{}", MenuSet::parse(data.as_bytes()).unwrap_err())
-            .contains("Menu screen buffer depleted"));
+        assert!(
+            format!("{}", MenuSet::parse(data.as_bytes()).unwrap_err())
+                .contains("Menu screen buffer depleted")
+        );
     }
 
     #[test]
@@ -1819,7 +1875,10 @@ mod tests {
         assert!(nav.layout(set.menu(0).unwrap(), &Levels::default()));
         assert!(!nav.display_at(0));
         assert!(nav.display_at(1));
-        assert_eq!(nav.r_row[1], 4, "the hidden item leaves the pen where it was");
+        assert_eq!(
+            nav.r_row[1], 4,
+            "the hidden item leaves the pen where it was"
+        );
         assert_eq!(nav.cursor(), 1, "the cursor goes to the first visible item");
 
         let admin = Levels {
@@ -1909,14 +1968,22 @@ mod tests {
         let mut nav = MenuNav::new(&set);
         nav.set_cursor(1);
         assert!(nav.layout(set.menu(0).unwrap(), &Levels::default()));
-        assert_eq!(nav.cursor(), 1, "the layout redraws but does not move the cursor");
+        assert_eq!(
+            nav.cursor(),
+            1,
+            "the layout redraws but does not move the cursor"
+        );
     }
 
     #[test]
     fn a_cursor_that_can_no_longer_be_shown_moves_to_the_first_visible_item() {
         // The second item asks for a privilege the user does not have, so a cursor parked on it
         // has nowhere to stay and the scan hands it the first item the menu will show.
-        let data = one_menu(&[(4, 1, 0, 0, "a"), (0, 0, 128, 0, "admin"), (0, 0, 0, 0, "c")]);
+        let data = one_menu(&[
+            (4, 1, 0, 0, "a"),
+            (0, 0, 128, 0, "admin"),
+            (0, 0, 0, 0, "c"),
+        ]);
         let set = MenuSet::parse(data.as_bytes()).unwrap();
         let mut nav = MenuNav::new(&set);
         nav.set_cursor(1);
@@ -2039,7 +2106,11 @@ mod tests {
         nav.control(&mut term, &Levels::default(), KEY_UP).await;
         assert_eq!(nav.cursor(), 0);
         nav.control(&mut term, &Levels::default(), KEY_UP).await;
-        assert_eq!(nav.cursor(), 2, "the walk wraps past the top, onto the last page");
+        assert_eq!(
+            nav.cursor(),
+            2,
+            "the walk wraps past the top, onto the last page"
+        );
     }
 
     #[tokio::test]
@@ -2063,7 +2134,11 @@ mod tests {
         nav.control(&mut term, &Levels::default(), KEY_DOWN).await;
         assert_eq!(nav.cursor(), 2, "the hidden item at 3 is skipped");
         nav.control(&mut term, &Levels::default(), KEY_DOWN).await;
-        assert_eq!(nav.cursor(), 1, "wrapping only offers the other visible item");
+        assert_eq!(
+            nav.cursor(),
+            1,
+            "wrapping only offers the other visible item"
+        );
     }
 
     #[tokio::test]
@@ -2074,10 +2149,16 @@ mod tests {
         let mut nav = MenuNav::new(&set);
         nav.draw(&mut term, &Levels::default()).await;
 
-        nav.control(&mut term, &Levels::default(), u32::from(b'a')).await;
+        nav.control(&mut term, &Levels::default(), u32::from(b'a'))
+            .await;
         assert_eq!(nav.cursor(), 1, "the match is case insensitive");
-        nav.control(&mut term, &Levels::default(), u32::from(b'z')).await;
-        assert_eq!(nav.cursor(), 1, "an unmatched letter leaves the cursor alone");
+        nav.control(&mut term, &Levels::default(), u32::from(b'z'))
+            .await;
+        assert_eq!(
+            nav.cursor(),
+            1,
+            "an unmatched letter leaves the cursor alone"
+        );
 
         // A name opening with a multibyte character has no ASCII initial to match, as in C.
         let wide = one_menu(&[(4, 1, 0, 0, "好")]);
@@ -2085,7 +2166,8 @@ mod tests {
         let (mut term, _client) = pair();
         let mut nav = MenuNav::new(&set);
         nav.draw(&mut term, &Levels::default()).await;
-        nav.control(&mut term, &Levels::default(), u32::from(b'h')).await;
+        nav.control(&mut term, &Levels::default(), u32::from(b'h'))
+            .await;
         assert_eq!(nav.cursor(), 0, "the wide name was not matched");
     }
 
@@ -2164,7 +2246,11 @@ mod tests {
     #[test]
     fn the_action_names_are_the_bbs_cmd_table() {
         assert_eq!(Action::from_name("RunMBEM"), Some(Action::RunMbem));
-        assert_eq!(Action::from_name("runmbem"), None, "the trie is case sensitive");
+        assert_eq!(
+            Action::from_name("runmbem"),
+            None,
+            "the trie is case sensitive"
+        );
         assert_eq!(Action::ListSection.name(), "LIST_SECTION");
         for (name, action) in Action::TABLE {
             assert_eq!(Action::from_name(name), Some(action));
@@ -2188,10 +2274,7 @@ mod tests {
         for depth in 0..=MAX_MENU_DEPTH {
             data.push_str(&format!("%menu M{depth}\nscreen 0, 0, S_ONE\n"));
             if depth < MAX_MENU_DEPTH {
-                data.push_str(&format!(
-                    "!M{} 0, 0, 0, 0, \"n\", \"(n)\"\n",
-                    depth + 1
-                ));
+                data.push_str(&format!("!M{} 0, 0, 0, 0, \"n\", \"(n)\"\n", depth + 1));
             }
             data.push_str("@EXITBBS 0, 0, 0, 0, \"x\", \"(x)\"\n%\n");
         }
@@ -2224,7 +2307,10 @@ mod tests {
         nav.control(&mut term, &Levels::default(), KEY_DOWN).await;
         term.flush().await.unwrap();
         let within_page = String::from_utf8_lossy(&client.take_available()).into_owned();
-        assert!(within_page.contains('>') && !within_page.contains("(i0)"), "{within_page}");
+        assert!(
+            within_page.contains('>') && !within_page.contains("(i0)"),
+            "{within_page}"
+        );
 
         nav.control(&mut term, &Levels::default(), KEY_DOWN).await;
         term.flush().await.unwrap();
@@ -2237,7 +2323,8 @@ mod tests {
     #[test]
     #[ignore = "needs the C tree's generated menu config"]
     fn parses_the_reference_menu_conf() {
-        let path = std::env::var("LBBS_REF_MENU").expect("set LBBS_REF_MENU to var/menu_merged.conf");
+        let path =
+            std::env::var("LBBS_REF_MENU").expect("set LBBS_REF_MENU to var/menu_merged.conf");
         let data = std::fs::read(&path).unwrap();
         let set = MenuSet::parse(&data).expect("the real menu config must parse");
 
@@ -2286,7 +2373,8 @@ mod tests {
     #[tokio::test]
     #[ignore = "needs the C tree's generated top-ten menu config"]
     async fn parses_the_reference_top10_menu_conf() {
-        let path = std::env::var("LBBS_REF_TOP10").expect("set LBBS_REF_TOP10 to var/bbs_top_menu.conf");
+        let path =
+            std::env::var("LBBS_REF_TOP10").expect("set LBBS_REF_TOP10 to var/bbs_top_menu.conf");
         let set = MenuSet::parse(&std::fs::read(&path).unwrap())
             .expect("the real top-ten menu config must parse");
         assert_eq!(set.menus.len(), 1);
@@ -2312,7 +2400,8 @@ mod tests {
     #[tokio::test]
     #[ignore = "needs the C tree's generated menu config"]
     async fn walks_the_reference_menu_graph() {
-        let path = std::env::var("LBBS_REF_MENU").expect("set LBBS_REF_MENU to var/menu_merged.conf");
+        let path =
+            std::env::var("LBBS_REF_MENU").expect("set LBBS_REF_MENU to var/menu_merged.conf");
         let set = MenuSet::parse(&std::fs::read(&path).unwrap()).unwrap();
         let (mut term, _client) = pair();
         let mut nav = MenuNav::new(&set);

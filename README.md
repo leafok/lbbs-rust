@@ -157,51 +157,53 @@ differently from C, read the deviations section first — the reason is written 
 
 | Rust file | Lines | Original C | Responsibility | Status |
 | --- | ---:| --- | --- | --- |
-| [src/paths.rs](src/paths.rs) | 116 | `include/bbs.h` etc. | screen size, field lengths, path names | done |
-| [src/daemon.rs](src/daemon.rs) | 415 | `src/main.c`, `src/daemon.c` | command line, `--help`/`--version`, `fork` into background | done |
-| [src/config.rs](src/config.rs) | 384 | `src/init.c` | reads `conf/bbsd.conf` | done |
-| [src/log.rs](src/log.rs) | 497 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
-| [src/text.rs](src/text.rs) | 357 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
-| [src/term/mod.rs](src/term/mod.rs) | 803 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
+| [src/paths.rs](src/paths.rs) | 118 | `include/bbs.h` etc. | screen size, field lengths, path names | done |
+| [src/daemon.rs](src/daemon.rs) | 427 | `src/main.c`, `src/daemon.c` | command line, `--help`/`--version`, `fork` into background | done |
+| [src/config.rs](src/config.rs) | 394 | `src/init.c` | reads `conf/bbsd.conf` | done |
+| [src/log.rs](src/log.rs) | 513 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
+| [src/text.rs](src/text.rs) | 362 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
+| [src/term/mod.rs](src/term/mod.rs) | 812 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
 | [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | turns ESC sequences into key codes | done |
-| [src/screen.rs](src/screen.rs) | 1116 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
-| [src/db.rs](src/db.rs) | 1466 | `src/database.c` etc. | MySQL queries through sqlx | done |
-| [src/board.rs](src/board.rs) | 1474 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
-| [src/browse.rs](src/browse.rs) | 3298 | `src/section_list_display.c`, `src/section_list_loader.c`, `src/menu_proc.c` (the two digest items) | the article list, its keys, reading a post, the saved reading position, and a board's digest tree | done |
-| [src/editor.rs](src/editor.rs) | 1812 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
-| [src/post.rs](src/post.rs) | 1530 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, the article's web link, and the transaction each write runs in | done |
-| [src/viewlog.rs](src/viewlog.rs) | 366 | `src/article_view_log.c` | which posts this user has read | done |
-| [src/favorlog.rs](src/favorlog.rs) | 446 | `src/article_favor.c` | which posts this user starred | done |
-| [src/favorlist.rs](src/favorlist.rs) | 768 | `src/article_favor_display.c`, `src/article_favor.c` (the page query), `src/menu_proc.c` (the `FAVOR_TOPIC` item) | the 我收藏的主题 list: two name columns, the star removed in place, and the board each row opens | done |
-| [src/roster.rs](src/roster.rs) | 661 | `src/user_list_loader.c` | the online-user roster and the article counters | done |
-| [src/userinfo.rs](src/userinfo.rs) | 923 | `src/user_info_display.c`, `src/user_list_display.c` (the search), `src/bbs.c` (the level and sign tables) | one user's profile page, and the name search that reaches it | done |
-| [src/user_info_update.rs](src/user_info_update.rs) | 618 | `src/user_info_update.c`, `src/menu_proc.c` (the two profile items) | the 说明档 and 签名档 editors: one `user_pubinfo` column through the editor, masked, counted and written back | done |
-| [src/userlist.rs](src/userlist.rs) | 1024 | `src/user_list_display.c`, `src/menu_proc.c` (the two roster items) | the 线上使用者 and 已注册用户 pages: titles, columns, paging, and the keys between them | done |
-| [src/loader.rs](src/loader.rs) | 1529 | `src/section_list_loader.c` | the incremental refresh task, the article cache files it writes, and each board's digest menu | done |
-| [src/state.rs](src/state.rs) | 407 | the shared-memory segments | what the loader publishes and a session reads | done |
-| [src/cache.rs](src/cache.rs) | 554 | `src/article_cache.c` | render and load `var/articles/<CID>` with its line index | done |
-| [src/data_file_mgr.rs](src/data_file_mgr.rs) | 417 | `src/data_file_mgr.c`, `src/bbs_cmd.c` (the `DATAMGR` entry) | the `@DATAMGR` list: pick one of the eight site texts by number, edit it, preview it, and write the result to both the packaged file and its `.user` copy | done |
-| [src/menu.rs](src/menu.rs) | 2351 | `src/menu.c` | `menu.conf` parsing and navigation | parsing/navigation done, feature bodies not |
-| [src/lml.rs](src/lml.rs) | 689 | `src/lml.c` | LML markup rendering | done |
-| [src/bwf.rs](src/bwf.rs) | 241 | `src/trie_dict.c` etc. | badword matching and masking | done |
+| [src/screen.rs](src/screen.rs) | 1151 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
+| [src/db.rs](src/db.rs) | 1580 | `src/database.c` etc. | MySQL queries through sqlx | done |
+| [src/board.rs](src/board.rs) | 1553 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
+| [src/browse.rs](src/browse.rs) | 3371 | `src/section_list_display.c`, `src/section_list_loader.c`, `src/menu_proc.c` (the two digest items) | the article list, its keys, reading a post, the saved reading position, and a board's digest tree | done |
+| [src/editor.rs](src/editor.rs) | 1853 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
+| [src/post.rs](src/post.rs) | 1617 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, the article's web link, and the transaction each write runs in | done |
+| [src/viewlog.rs](src/viewlog.rs) | 369 | `src/article_view_log.c` | which posts this user has read | done |
+| [src/favorlog.rs](src/favorlog.rs) | 452 | `src/article_favor.c` | which posts this user starred | done |
+| [src/favorlist.rs](src/favorlist.rs) | 785 | `src/article_favor_display.c`, `src/article_favor.c` (the page query), `src/menu_proc.c` (the `FAVOR_TOPIC` item) | the 我收藏的主题 list: two name columns, the star removed in place, and the board each row opens | done |
+| [src/roster.rs](src/roster.rs) | 705 | `src/user_list_loader.c` | the online-user roster and the article counters | done |
+| [src/userinfo.rs](src/userinfo.rs) | 954 | `src/user_info_display.c`, `src/user_list_display.c` (the search), `src/bbs.c` (the level and sign tables) | one user's profile page, and the name search that reaches it | done |
+| [src/user_info_update.rs](src/user_info_update.rs) | 642 | `src/user_info_update.c`, `src/menu_proc.c` (the two profile items) | the 说明档 and 签名档 editors: one `user_pubinfo` column through the editor, masked, counted and written back | done |
+| [src/userlist.rs](src/userlist.rs) | 1053 | `src/user_list_display.c`, `src/menu_proc.c` (the two roster items) | the 线上使用者 and 已注册用户 pages: titles, columns, paging, and the keys between them | done |
+| [src/loader.rs](src/loader.rs) | 1603 | `src/section_list_loader.c` | the incremental refresh task, the article cache files it writes, and each board's digest menu | done |
+| [src/state.rs](src/state.rs) | 410 | the shared-memory segments | what the loader publishes and a session reads | done |
+| [src/cache.rs](src/cache.rs) | 650 | `src/article_cache.c` | render and load `var/articles/<CID>` with its line index | done |
+| [src/data_file_mgr.rs](src/data_file_mgr.rs) | 452 | `src/data_file_mgr.c`, `src/bbs_cmd.c` (the `DATAMGR` entry) | the `@DATAMGR` list: pick one of the eight site texts by number, edit it, preview it, and write the result to both the packaged file and its `.user` copy | done |
+| [src/menu.rs](src/menu.rs) | 2440 | `src/menu.c` | `menu.conf` parsing and navigation | parsing/navigation done, feature bodies not |
+| [src/lml.rs](src/lml.rs) | 720 | `src/lml.c` | LML markup rendering | done |
+| [src/bwf.rs](src/bwf.rs) | 242 | `src/trie_dict.c` etc. | badword matching and masking | done |
 | [src/ipmask.rs](src/ipmask.rs) | 109 | `src/ip_mask.c` | address masking (`202.38.64.x`) | done |
-| [src/privilege.rs](src/privilege.rs) | 469 | `src/user_priv.c` | privilege words and levels | done |
-| [src/session.rs](src/session.rs) | 613 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
-| [src/login.rs](src/login.rs) | 580 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
-| [src/bbsnet.rs](src/bbsnet.rs) | 1767 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
-| [src/bbs.rs](src/bbs.rs) | 953 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | menu loop done, and every action `conf/menu.conf` binds has a handler (the favourites filter is a menu filter, not an action) |
-| [src/net.rs](src/net.rs) | 360 | `src/net_server.c` | accept, connection limits, graceful drain | done |
+| [src/privilege.rs](src/privilege.rs) | 487 | `src/user_priv.c` | privilege words and levels | done |
+| [src/session.rs](src/session.rs) | 619 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
+| [src/login.rs](src/login.rs) | 569 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
+| [src/bbsnet.rs](src/bbsnet.rs) | 1890 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
+| [src/chicken.rs](src/chicken.rs) | 2289 | `utils/game/chicken.c` | 电子小鸡: one line of fourteen numbers and a name, the naming prompt, the nine things you do with a chicken, and the death that hatches the next egg | done |
+| [src/money.rs](src/money.rs) | 243 | `utils/game/money.c` | 糖糖: the balance a session caches, the deposit that stops at the cap, and the withdrawal that is all or nothing | done |
+| [src/bbs.rs](src/bbs.rs) | 973 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | menu loop done, and every action `conf/menu.conf` binds has a handler (the favourites filter is a menu filter, not an action) |
+| [src/net.rs](src/net.rs) | 358 | `src/net_server.c` | accept, connection limits, graceful drain | done |
 | [src/ssh.rs](src/ssh.rs) | 504 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
-| [src/main.rs](src/main.rs) | 542 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
-| [src/batch.rs](src/batch.rs) | 374 | `utils/lib/db_open.inc.php` + the lines the three scripts repeat | one generator's life: arguments, server root, `conf/bbsd.conf`, database, the PHP's own stdout text and exit bytes | done |
+| [src/main.rs](src/main.rs) | 555 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
+| [src/batch.rs](src/batch.rs) | 383 | `utils/lib/db_open.inc.php` + the lines the three scripts repeat | one generator's life: arguments, server root, `conf/bbsd.conf`, database, the PHP's own stdout text and exit bytes | done |
 | [src/section_list.rs](src/section_list.rs) | 149 | `utils/lib/section_list.inc.php` | the class/board hierarchy the generators walk, with the caller's per-board values | done |
-| [src/gen_top.rs](src/gen_top.rs) | 305 | `utils/bin/gen_top.php` | `var/bbs_top.txt` and `var/bbs_top_menu.conf`: the ten hottest posts of the week | done |
-| [src/gen_section_menu.rs](src/gen_section_menu.rs) | 681 | `utils/bin/gen_section_menu.php` | `var/menu_merged.conf`: `conf/menu.conf` plus the six generated menu blocks | done |
-| [src/gen_ex_list.rs](src/gen_ex_list.rs) | 394 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
+| [src/gen_top.rs](src/gen_top.rs) | 306 | `utils/bin/gen_top.php` | `var/bbs_top.txt` and `var/bbs_top_menu.conf`: the ten hottest posts of the week | done |
+| [src/gen_section_menu.rs](src/gen_section_menu.rs) | 691 | `utils/bin/gen_section_menu.php` | `var/menu_merged.conf`: `conf/menu.conf` plus the six generated menu blocks | done |
+| [src/gen_ex_list.rs](src/gen_ex_list.rs) | 424 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-32 641 lines in total, the tests included (they live in the modules they test). There are 487 tests: 481 in the
-library and 6 in the binary. 473 of them need nothing but the checked-out tree; the other 14 are ignored because
+36 358 lines in total, the tests included (they live in the modules they test). There are 524 tests: 518 in the
+library and 6 in the binary. 510 of them need nothing but the checked-out tree; the other 14 are ignored because
 they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
@@ -366,6 +368,20 @@ that does not run is described as if it did.
    been an action: C asks its handler whether each row of the favourites submenu is visible
    (`menu.c:1141-1143`, `menu_proc.c:196-201`), which is what
    [`Session::filter_allows`](src/session.rs) already does.
+29. **电子小鸡** — `chicken_main` ([`chicken::chicken_main`](src/chicken.rs)) behind the top menu's
+   `【 电子小鸡 】` item (`conf/menu.conf:238`), reached the same way C reaches it — `@RunMBEM` with
+   `C@mod:game/so/libgame.so#chicken_main`, the entry name after the `#` — and spending 糖糖 through
+   [`money`](src/money.rs), the other half of the same `libgame.so`. The whole game lives in one line per user in
+   `var/chicken/<UID>`: fourteen numbers and a name, written without truncation and read back with the age rebuilt
+   from the birth day and month rather than stored. The screen is C's: the picture `age` picks, the `生日` month and
+   day beside a `糖糖` balance padded to eight columns, the two help rows, and the nine actions that answer one key at
+   a time — 吃饭, 吃零食, 清理鸡舍, 猜拳, 目前战绩, 买饲料, 买零食, 吃大补丸, 卖鸡 — plus `c` 改名字, `k` 杀鸡,
+   `t` 休息 and `q` 退出. Every
+   number moves the way C moves it, including the ones nobody would choose: the rest screen paints over a tired
+   chicken and then runs the action anyway, `tiredstrong` only clears for a player who can pay fifty 糖糖, a deposit
+   the database refuses leaves the chicken unsold with `无法存钱，放弃交易！`, and two hundred and one grams dies.
+   Death is `呜...小鸡挂了....`, a line in `var/chicken/log`, the record unlinked and a new egg hatched in the middle
+   of the action that asked for the kill — named from the same prompt that starts out holding `宝宝`.
 
 ### 6.2 Verified against the live board database
 
@@ -438,19 +454,21 @@ wired and unit-tested". The first account that really posts should do it against
 ```bash
 cd lbbs-rust
 cargo build            # compile the library and the binary
-cargo test             # 438 tests that need no database (14 more are opt-in, see 7.2)
+cargo test             # 510 tests that need no database (14 more are opt-in, see 7.2)
+cargo fmt              # the tree is rustfmt-clean; run it before you commit
 ```
 
 A healthy run looks like this:
 
 ```
-test result: ok. 432 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
+test result: ok. 504 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
-> **This project is developed without `cargo fmt` installed.** Formatting (4-space indent, naming) is done by
-> hand, so read your own diff instead of relying on a tool to tidy it.
+> **Formatting is `cargo fmt`'s job, not yours.** The tree passes `cargo fmt --check`, so run it before committing
+> and the diff you read contains only what you actually changed. Four-space indent and the naming below stay as
+> they are.
 
 ### 7.2 The tests that use the real database and real files
 
@@ -591,6 +609,7 @@ lbbs-rust/                      ← the server root (§7.3)
 │   ├── bbs_top_menu.conf      ← the top-ten menu as generated
 │   ├── bbs_top.txt            ← the screen shown just after login
 │   ├── gen_ex/<SID>           ← one board's digest tree, rewritten by gen_ex_list
+│   ├── chicken/<UID>          ← one user's 电子小鸡 record, with chicken/log beside it; made at startup
 │   ├── articles/<CID>         ← article bodies — data, not configuration, not in git; see below
 │   └── section_aid_loc/<UID>  ← "last read article" state, written as people browse
 └── log/                       ← bbsd.log and error.log
@@ -707,6 +726,8 @@ The cells that are still ⬜ are the screens behind those keys — see §6.3.
 | `setenv("TZ", ...)` + `tzset()` | stored in `Session::user_tz` | mutating the process environment would leak into other sessions |
 | pool refresh via `SIGUSR1` | `Loader::run` refreshes periodically | a task replaces the signal |
 | `editor.c` re-splits only the data line an edit touched, then slides the display-pointer array | the same, per line ([`EditorData::recount_line`](src/editor.rs)) | the first port re-wrapped the **whole document** after every character, so a pasted article cost quadratically more work and pinned one CPU core while C stayed nearly idle |
+| `srand((unsigned) time(NULL))` then `rand() % 3` inside every game of 猜拳 (`chicken.c:697-698`) | [`chicken::opponent`](src/chicken.rs) mixes the same one-second seed | glibc's additive-feedback generator is a property of libc, not of this game, and a port that replayed it would be a second libm to keep in step. The seed still changes once per second and still has three answers, so two guesses inside one second are still the same hand — which is the part the player sees. |
+| The chicken record is read with `fscanf` of fourteen `%d` and one `%s` (`chicken.c:111-112`) | [`Chicken::parse`](src/chicken.rs) splits the line and reads each field with [`c_atoi`](src/config.rs) | the count C tested against `15` is the count reported here, and a field C leaves unread reads as `0` — the two agree on every line `save_chicken` and `create_a_egg` wrote |
 | An edit into a document that already fills the [`MAX_EDITOR_DATA_LINES`](src/paths.rs) rows loses whatever needs a row the array has not got: the touched line is cut short with a `'\n'` glued to its last kept row (`:366-387`) and, for an edit further up, the row at the very end of the array is trimmed to one cell short (`:447-458`) | same, at the cap | the first port refused the edit instead, so a full article accepted nothing more; a real edit there now silently truncates the tail exactly as C does. One case is not reproduced: deleting the last row of a full array leaves C counting one row more than the document has — a tail entry it no longer maintains, which paints blank where the port paints the row that is really there. The saved bytes agree either way. |
 
 ### 10.2 C quirks we reproduced on purpose
@@ -726,6 +747,11 @@ app disagrees with us. These behaviours are therefore reproduced verbatim and pi
 | A station that **refuses** the connection is only reported when the ten-second budget runs out, and then as `连接超时！` | [`bbsnet::connect`](src/bbsnet.rs) | C's wait loop keeps spinning on a socket that is writable but unconnected, and the keys pressed while the bar runs are spent on the connect; failing fast would change both the screen and what reaches the station |
 | The profile editors have **no `SYS_server_exit` guard** in front of their `UPDATE`, where `data_file_mgr.c:201` has one: an edit the shutdown interrupts between two rounds still writes, with the text the last save left behind — the one the line count had just rejected — or with nothing at all | [`user_info_update.rs`](src/user_info_update.rs) | the column belongs to the web application as much as to the board; a port that quietly skipped the write would leave the two servers recording different things about the same shutdown |
 | The editors' **ten-line limit admits nine**: `split_data_lines` is a do/while, so the newline that closes the tenth line is counted as an eleventh line of its own | [`user_info_update.rs`](src/user_info_update.rs), [`text::split_data_lines`](src/text.rs) | counting the lines the way a reader does would accept texts C refuses with `长度超过限制 (10行)`, and the same counter decides what the profile page and the board lists fit on their screens |
+| The chicken's **age is a calendar subtraction that can go backwards**: `(tm_mon + 1 + 12 - month) % 12 * 31 + (tm_mday - day)` (`chicken.c:119-120`) forgets the years, so a chicken born on the 28th looked at on the 21st is `−7` — no picture on the screen, a meal worth twelve grams instead of one, and no sale — while a chicken born on this day twelve months ago reads as just hatched | [`chicken::load_chicken`](src/chicken.rs) | the number is recomputed on every open and never stored, so "fixing" the wrap would repaint every coop in the site and change what `[1]` and `[9]` do to a real record |
+| The naming prompt **starts out holding `宝宝`** (`chicken.c:146`) and `get_data` counts that prefill as the beginning of the line (`screen.c:326`), so Enter alone names the chicken 宝宝 and a typed name rides on it: `宝宝` then `新鸡` is accepted as `宝宝新鸡` | [`chicken::create_a_egg`](src/chicken.rs) | the same buffer seeds the 改名字 prompt with the current name, so an editor that cleared the prefill would rename the chicken to something its owner never typed |
+| A rejected name **comes back masked and is then accepted**: `check_badwords(name_tmp, '*')` masks the buffer in place and `:151-166` asks again with it still there, so one more Enter lets `宝宝***蛋` through | [`chicken::create_a_egg`](src/chicken.rs) | refusing and re-prompting with an empty line would be friendlier and would not be C; the log line and the record both keep the masked text |
+| `save_chicken` opens the record `"r+"` and **does not truncate** (`chicken.c:129`), so a chicken renamed shorter keeps the tail of the longer name in the file — visible in the reference tree's own records — and `%s` stops at the first space, so nothing ever reads it back | [`chicken::save_chicken`](src/chicken.rs) | the same open mode is what makes a record the session cannot write count as absent and hatch over |
+| `chictime` is **read and never assigned**: `show_chicken` (`:192-200`) thins and dirties a chicken past 200 of them, and no line in `chicken.c` sets the field, so the starved-and-dirty coop C describes cannot happen | [`chicken::show_chicken`](src/chicken.rs) | it is a documented feature of the game that the code does not deliver; delivering it would be a design change, and the field is kept so the record still parses the same fourteen numbers |
 
 One entry left this table on 2026-11-21, and only because upstream moved first: the privilege list's binary
 search, which lost a stored board whenever the boards arrived out of `sid` order, and which — on an empty list —
@@ -786,7 +812,8 @@ be re-read by hand against `git show 49805a5:src/file_loader.c`. `9dd183a` and `
 
 ## 11. Rules for working on this code
 
-- **Four-space indent.** We do not rely on `cargo fmt` (it is not installed here).
+- **Four-space indent, and `cargo fmt` owns the rest.** Keep the tree passing `cargo fmt --check`; a hand-tidied
+  block just fights the next format run.
 - Every module header must state which C file and line ranges it ports, and carry a `# Deviations from C`
   section. **A port without both gets sent back.**
 - C's constants (`BBS_max_section = 200`, `USERNAME_MAX_LEN = 12`, …) belong in `paths.rs`. No magic numbers.
@@ -873,6 +900,7 @@ next key, and page with space.
 | done | the three `utils/bin` PHP generators as binaries: `gen_top`, `gen_section_menu`, `gen_ex_list` (§7.4) | their files match the PHP's byte for byte against the live database (§6.2) |
 | next | one real post end to end against a **test** database, then the same reply/modify/delete | the web site shows what the Rust server wrote, with the header and cache files C would have produced |
 | done | the menu actions left: the two profile editors (§6.1 item 28), and finding out what `M_FAVOR_SECTION` is — a menu filter, already ported | the top menu has no key that only logs |
+| done | the two `libgame.so` entries `@RunMBEM` names: 电子小鸡 and the 糖糖 it spends (§6.1 item 29) | the chicken page, its nine actions and its death run against a record file, with no database write outside a money transaction |
 | last | a side-by-side comparison with C over the whole phase-1 surface | the same actions produce the same screen |
 
 ---

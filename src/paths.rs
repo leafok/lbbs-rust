@@ -36,6 +36,7 @@ pub const VAR_BBS_TOP: &str = "var/bbs_top.txt";
 pub const VAR_ARTICLE_CACHE_DIR: &str = "var/articles/";
 pub const VAR_GEN_EX_MENU_DIR: &str = "var/gen_ex/";
 pub const VAR_SECTION_AID_LOC_DIR: &str = "var/section_aid_loc/";
+pub const VAR_CHICKEN_DIR: &str = "var/chicken/";
 
 /// Files preloaded into memory at startup, in the C order (`common.c:70-82`).
 pub const DATA_FILES_STARTUP: [&str; 12] = [
@@ -107,7 +108,8 @@ pub const ONTOP_ARTICLE_LIMIT: usize = 10;
 
 /// `BBS_article_limit_per_section / BBS_article_limit_per_page`, the capacity of the
 /// `p_page_first_article` index.
-pub const PAGE_INDEX_CAPACITY: usize = (ARTICLE_LIMIT_PER_SECTION / ARTICLE_LIMIT_PER_PAGE) as usize;
+pub const PAGE_INDEX_CAPACITY: usize =
+    (ARTICLE_LIMIT_PER_SECTION / ARTICLE_LIMIT_PER_PAGE) as usize;
 
 /// `BBS_max_section`, `BBS_max_user_count` and `BBS_max_user_online_count`: the sizes the C
 /// pools are `mmap`ed with.

@@ -234,7 +234,9 @@ pub fn parse(text: &str) -> (Config, ConfigWarnings) {
         if let Some(extra) = fields.get(2)
             && !extra.starts_with('#')
         {
-            warnings.push(format!("Skip config line with extra value {key} = {value} {extra}"));
+            warnings.push(format!(
+                "Skip config line with extra value {key} = {value} {extra}"
+            ));
             continue;
         }
 
@@ -250,7 +252,9 @@ pub fn parse(text: &str) -> (Config, ConfigWarnings) {
             "bbs_max_client" => {
                 let v = c_atoi(value);
                 if v <= 0 || v > MAX_CLIENT_LIMIT as i64 {
-                    warnings.push(format!("Ignore config bbs_max_client with incorrect value {v}"));
+                    warnings.push(format!(
+                        "Ignore config bbs_max_client with incorrect value {v}"
+                    ));
                     cfg.max_client = MAX_CLIENT_LIMIT;
                 } else {
                     cfg.max_client = v as usize;
@@ -355,7 +359,10 @@ mod tests {
     #[test]
     fn extra_uncommented_token_rejects_the_line() {
         let (cfg, warns) = parse("bbs_port 2323 2324\nbbs_sys_id 7\n");
-        assert_eq!(cfg.telnet_port, 23, "line with an extra token must be skipped");
+        assert_eq!(
+            cfg.telnet_port, 23,
+            "line with an extra token must be skipped"
+        );
         assert_eq!(cfg.sys_id, 7);
         assert_eq!(warns.0.len(), 1);
     }
@@ -364,7 +371,10 @@ mod tests {
     fn unknown_keys_are_logged_and_ignored() {
         let (cfg, warns) = parse("bbs_nonsense hi\n");
         assert_eq!(cfg.bbs_id, "Example BBS");
-        assert_eq!(warns.0, vec!["Unknown config bbs_nonsense = hi".to_string()]);
+        assert_eq!(
+            warns.0,
+            vec!["Unknown config bbs_nonsense = hi".to_string()]
+        );
     }
 
     #[test]

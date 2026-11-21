@@ -38,7 +38,8 @@ use std::path::Path;
 use crate::board::{Article, Section};
 use crate::lml;
 use crate::paths::{
-    ARTICLE_TITLE_MAX_LEN, FILE_PATH_LEN, MAX_SPLIT_FILE_LINES, NICKNAME_MAX_LEN, SCREEN_COLS, USERNAME_MAX_LEN,
+    ARTICLE_TITLE_MAX_LEN, FILE_PATH_LEN, MAX_SPLIT_FILE_LINES, NICKNAME_MAX_LEN, SCREEN_COLS,
+    USERNAME_MAX_LEN,
 };
 use crate::text;
 
@@ -165,7 +166,13 @@ pub fn generate(
 
     let mut header = header(article, section, bbs_name, &submission_time(article.sub_dt));
     let mut footer = footer(article, bbs_name, bbs_server, sub_ip);
-    let body = lml::render(content, lml::ARTICLE_CONTENT_MAX_LEN, SCREEN_COLS as i64, false, fixed);
+    let body = lml::render(
+        content,
+        lml::ARTICLE_CONTENT_MAX_LEN,
+        SCREEN_COLS as i64,
+        false,
+        fixed,
+    );
 
     // The offset table is filled the way C fills `cache.line_offsets`: the header split owns
     // indices `0..=header_lines`, the body split is written over it from `header_lines`, and
@@ -176,7 +183,8 @@ pub fn generate(
     // it fills them (`str_process.c:203`), so the port asks for one line fewer than the table
     // has places. A post that long is rare, but it decides how many bytes the body keeps:
     // 65535 lines here, exactly as in a file the C loader wrote.
-    let header_lines = text::split_data_lines(&header, SCREEN_COLS, true, fixed, MAX_SPLIT_FILE_LINES - 1);
+    let header_lines =
+        text::split_data_lines(&header, SCREEN_COLS, true, fixed, MAX_SPLIT_FILE_LINES - 1);
     if let Some(&cut) = header_lines.offsets.get(header_lines.count()) {
         header.truncate(cut as usize);
     }
@@ -193,9 +201,16 @@ pub fn generate(
     // which is what cuts a body that does not fit in the offset table.
     let body_end = header_len + body_lines.offsets[body_lines.count()] as usize;
 
-    let mut line_offsets: Vec<i64> = Vec::with_capacity(header_lines.count() + body_lines.count() + 1);
+    let mut line_offsets: Vec<i64> =
+        Vec::with_capacity(header_lines.count() + body_lines.count() + 1);
     line_offsets.extend(header_lines.offsets.iter().map(|&o| o as i64));
-    line_offsets.extend(body_lines.offsets.iter().skip(1).map(|&o| (header_len + o as usize) as i64));
+    line_offsets.extend(
+        body_lines
+            .offsets
+            .iter()
+            .skip(1)
+            .map(|&o| (header_len + o as usize) as i64),
+    );
     let line_total = header_lines.count() + body_lines.count();
 
     let footer_lines = text::split_data_lines(
@@ -208,7 +223,13 @@ pub fn generate(
     if let Some(&cut) = footer_lines.offsets.get(footer_lines.count()) {
         footer.truncate(cut as usize);
     }
-    line_offsets.extend(footer_lines.offsets.iter().skip(1).map(|&o| (body_end + o as usize) as i64));
+    line_offsets.extend(
+        footer_lines
+            .offsets
+            .iter()
+            .skip(1)
+            .map(|&o| (body_end + o as usize) as i64),
+    );
 
     let line_total = line_total + footer_lines.count();
     let data_len = body_end + footer.len();
@@ -360,7 +381,10 @@ mod tests {
     }
 
     const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/articles/");
-    const CONTENTS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/article_contents/");
+    const CONTENTS: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/article_contents/"
+    );
 
     fn temp_dir(name: &str) -> String {
         let dir = std::env::temp_dir().join(format!("lbbs-cache-{name}"));
@@ -385,7 +409,10 @@ mod tests {
             assert_eq!(cache.data.len(), cache.data_len);
             assert_eq!(cache.line_offsets.len(), cache.line_total + 1);
             assert_eq!(cache.line_offsets[0], 0);
-            assert_eq!(cache.line_offsets[cache.line_total] as usize, cache.data_len);
+            assert_eq!(
+                cache.line_offsets[cache.line_total] as usize,
+                cache.data_len
+            );
             assert!(
                 cache.line_offsets.windows(2).all(|w| w[0] <= w[1]),
                 "cid {cid}: offsets are not monotone"
@@ -419,16 +446,30 @@ mod tests {
         let body: Vec<String> = (0..lines.count())
             .map(|i| String::from_utf8_lossy(lines.line(&cache.data, i)).into_owned())
             .collect();
-        assert!(body.contains(&"A\x1b[4mB\x1b[5mCD\x1b[mE\x1b[m\n".to_string()), "{body:?}");
+        assert!(
+            body.contains(&"A\x1b[4mB\x1b[5mCD\x1b[mE\x1b[m\n".to_string()),
+            "{body:?}"
+        );
         assert!(body.iter().any(|l| l.contains("中文测试")), "{body:?}");
-        assert!(body.iter().any(|l| l.starts_with("\x1b[32m: 引用一行")), "{body:?}");
-        assert!(body.iter().any(|l| l.contains("（图片: https://x.example/a.png）")), "{body:?}");
+        assert!(
+            body.iter().any(|l| l.starts_with("\x1b[32m: 引用一行")),
+            "{body:?}"
+        );
+        assert!(
+            body.iter()
+                .any(|l| l.contains("（图片: https://x.example/a.png）")),
+            "{body:?}"
+        );
     }
 
     #[test]
     fn a_rejected_file_is_reported_instead_of_panicking() {
         let dir = temp_dir("reject");
-        std::fs::write(format!("{dir}7"), b"not a cache file at all, but long enough").unwrap();
+        std::fs::write(
+            format!("{dir}7"),
+            b"not a cache file at all, but long enough",
+        )
+        .unwrap();
         assert_eq!(
             load(&dir, 7).unwrap_err().kind(),
             io::ErrorKind::InvalidData,
@@ -436,7 +477,10 @@ mod tests {
         );
 
         std::fs::write(format!("{dir}8"), b"short").unwrap();
-        assert_eq!(load(&dir, 8).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        assert_eq!(
+            load(&dir, 8).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
         assert!(load(&dir, 9).unwrap().is_none());
     }
 
@@ -444,7 +488,12 @@ mod tests {
     fn generates_the_same_bytes_the_c_generator_does() {
         let dir = temp_dir("generate");
 
-        for (cid, content_file) in [(9001, "c1.txt"), (9002, "c2.txt"), (9003, "c3.txt"), (9004, "c4.txt")] {
+        for (cid, content_file) in [
+            (9001, "c1.txt"),
+            (9002, "c2.txt"),
+            (9003, "c3.txt"),
+            (9004, "c4.txt"),
+        ] {
             let content = std::fs::read(format!("{CONTENTS}{content_file}")).unwrap();
             assert!(
                 generate(
@@ -466,7 +515,11 @@ mod tests {
             let theirs = std::fs::read(format!("{FIXTURES}{cid}")).unwrap();
             assert_eq!(mine.len(), theirs.len(), "cid {cid} length differs");
             if mine != theirs {
-                let at = mine.iter().zip(theirs.iter()).position(|(a, b)| a != b).unwrap();
+                let at = mine
+                    .iter()
+                    .zip(theirs.iter())
+                    .position(|(a, b)| a != b)
+                    .unwrap();
                 let window = at.saturating_sub(32);
                 panic!(
                     "cid {cid} differs at byte {at}:\n  ours: {:?}\n  C:    {:?}",
@@ -482,11 +535,48 @@ mod tests {
         let dir = temp_dir("keep");
         let article = article(4242, 1);
 
-        generate(&dir, "枫林在线", "www.bbs.test", &article, &section(), b"first", "10.0.0.1", true, true).unwrap();
+        generate(
+            &dir,
+            "枫林在线",
+            "www.bbs.test",
+            &article,
+            &section(),
+            b"first",
+            "10.0.0.1",
+            true,
+            true,
+        )
+        .unwrap();
         let before = std::fs::read(format!("{dir}4242")).unwrap();
-        assert!(!generate(&dir, "枫林在线", "www.bbs.test", &article, &section(), b"second", "10.0.0.1", false, true).unwrap());
+        assert!(
+            !generate(
+                &dir,
+                "枫林在线",
+                "www.bbs.test",
+                &article,
+                &section(),
+                b"second",
+                "10.0.0.1",
+                false,
+                true
+            )
+            .unwrap()
+        );
         assert_eq!(std::fs::read(format!("{dir}4242")).unwrap(), before);
-        assert!(generate(&dir, "枫林在线", "www.bbs.test", &article, &section(), b"second", "10.0.0.1", true, true).unwrap());
+        assert!(
+            generate(
+                &dir,
+                "枫林在线",
+                "www.bbs.test",
+                &article,
+                &section(),
+                b"second",
+                "10.0.0.1",
+                true,
+                true
+            )
+            .unwrap()
+        );
         assert_ne!(std::fs::read(format!("{dir}4242")).unwrap(), before);
 
         let cache = load(&dir, 4242).unwrap().unwrap();
@@ -548,7 +638,13 @@ mod tests {
             MAX_SPLIT_FILE_LINES - 1,
             "C fills the offset table to one line short of its slots"
         );
-        assert_eq!(cache.line_offsets[cache.line_total] as usize, cache.data_len);
-        assert_eq!(cache.mmap_len, std::fs::metadata(format!("{dir}6000")).unwrap().len() as usize);
+        assert_eq!(
+            cache.line_offsets[cache.line_total] as usize,
+            cache.data_len
+        );
+        assert_eq!(
+            cache.mmap_len,
+            std::fs::metadata(format!("{dir}6000")).unwrap().len() as usize
+        );
     }
 }

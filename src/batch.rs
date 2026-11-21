@@ -130,7 +130,10 @@ where
         }
     };
 
-    let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
         Ok(runtime) => runtime,
         Err(error) => {
             println!("{error}");
@@ -291,7 +294,13 @@ mod tests {
         // Five cells take two characters and leave the third out, six take all three.
         assert_eq!(first_line("测试测试测试", 5), "测试");
         assert_eq!(first_line("测试测试测试", 6), "测试测");
-        assert_eq!(str_length(&first_line("第一行很长很长很长的标题内容需要截断掉一部分才行呢", 12)), 12);
+        assert_eq!(
+            str_length(&first_line(
+                "第一行很长很长很长的标题内容需要截断掉一部分才行呢",
+                12
+            )),
+            12
+        );
     }
 
     #[test]

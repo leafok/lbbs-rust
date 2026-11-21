@@ -258,10 +258,7 @@ pub async fn display_data<H: PagerHooks + ?Sized>(
             // message already fills it, exactly as in the original.
             let raw = format!(
                 "\x1b[1;44;33m第\x1b[32m{}\x1b[33m-\x1b[32m{}\x1b[33m行 (\x1b[32m{}%\x1b[33m) {}",
-                ctx.line_top,
-                ctx.line_bottom,
-                percentile,
-                ctx.msg
+                ctx.line_top, ctx.line_bottom, percentile, ctx.msg
             );
             let mut buffer: Vec<u8> = raw.as_bytes().to_vec();
             buffer.truncate(LINE_BUFFER_LEN - 1);
@@ -675,7 +672,15 @@ pub async fn get_data(
                 len = bytes.len();
                 display_len = display_len.saturating_sub(1);
                 col_cur -= 1;
-                redraw(term, row, col_cur, &bytes, cursor, display_len, max_display_len);
+                redraw(
+                    term,
+                    row,
+                    col_cur,
+                    &bytes,
+                    cursor,
+                    display_len,
+                    max_display_len,
+                );
             }
             KEY_DEL if cursor < len => {
                 let mut str_len = 1usize;
@@ -686,7 +691,15 @@ pub async fn get_data(
                 bytes.drain(cursor..cursor + str_len);
                 len = bytes.len();
                 display_len = display_len.saturating_sub(1);
-                redraw(term, row, col_cur, &bytes, cursor, display_len, max_display_len);
+                redraw(
+                    term,
+                    row,
+                    col_cur,
+                    &bytes,
+                    cursor,
+                    display_len,
+                    max_display_len,
+                );
             }
             KEY_LEFT if cursor > 0 => {
                 cursor -= 1;
@@ -877,9 +890,17 @@ mod tests {
         show_bottom(&mut term, "看板", "tester", now - 3720);
         term.flush().await.unwrap();
         let out = String::from_utf8(client.take_available()).unwrap();
-        assert!(out.starts_with("\x1b[24;0H\x1b[K\x1b[1;44;33m时间[\x1b[36m"), "{out}");
+        assert!(
+            out.starts_with("\x1b[24;0H\x1b[K\x1b[1;44;33m时间[\x1b[36m"),
+            "{out}"
+        );
         assert!(out.contains("\x1b[33m]看板"), "{out}");
-        assert!(out.contains("用户[\x1b[36mtester\x1b[33m][\x1b[36m1\x1b[33m:\x1b[36m02\x1b[33m]\x1b[m"), "{out}");
+        assert!(
+            out.contains(
+                "用户[\x1b[36mtester\x1b[33m][\x1b[36m1\x1b[33m:\x1b[36m02\x1b[33m]\x1b[m"
+            ),
+            "{out}"
+        );
     }
 
     #[tokio::test]
@@ -890,7 +911,12 @@ mod tests {
         client.push(b"q");
         assert_eq!(task.await.unwrap(), b'q' as u32);
         let out = String::from_utf8(client.take_available()).unwrap();
-        assert!(out.ends_with("\x1b[24;0H\x1b[K                           \x1b[1;33m按任意键继续...\x1b[m"), "{out}");
+        assert!(
+            out.ends_with(
+                "\x1b[24;0H\x1b[K                           \x1b[1;33m按任意键继续...\x1b[m"
+            ),
+            "{out}"
+        );
     }
 
     #[tokio::test]
@@ -911,10 +937,16 @@ mod tests {
         assert_eq!(task.await.unwrap(), KEY_LEFT);
 
         let out = client.take_available();
-        assert!(out.starts_with(b"\x1b[1;0H\x1b[K\x1b[2;0H\x1b[K"), "page starts with a clear");
+        assert!(
+            out.starts_with(b"\x1b[1;0H\x1b[K\x1b[2;0H\x1b[K"),
+            "page starts with a clear"
+        );
         assert!(sent(&out, b"\x1b[2;0H\x1b[Kline 2\n"));
         assert!(sent(&out, b"\x1b[23;0H\x1b[Kline 23\n"));
-        assert!(!sent(&out, b"\x1b[24;0H\x1b[Kline 24\n"), "row 24 is the status row");
+        assert!(
+            !sent(&out, b"\x1b[24;0H\x1b[Kline 24\n"),
+            "row 24 is the status row"
+        );
 
         // 第23行 of 30 is 76%, and the row is padded out to the full 80 cells.
         assert!(
@@ -1016,9 +1048,8 @@ mod tests {
     #[tokio::test]
     async fn str_input_echoes_and_backspaces() {
         let (mut term, mut client) = pair();
-        let task = tokio::spawn(async move {
-            str_input_ex(&mut term, b"ab", 8, Echo::On, 5).await
-        });
+        let task =
+            tokio::spawn(async move { str_input_ex(&mut term, b"ab", 8, Echo::On, 5).await });
         tokio::time::sleep(AFTER_RESET).await;
         client.push(b"cd\x08e\r");
         assert_eq!(task.await.unwrap().unwrap(), b"abce".to_vec());
@@ -1036,7 +1067,10 @@ mod tests {
         tokio::time::sleep(AFTER_RESET).await;
         client.push(b"abcd\r");
         assert_eq!(task.await.unwrap().unwrap(), b"abc".to_vec());
-        assert_eq!(String::from_utf8(client.take_available()).unwrap(), "abc\x07\r\n");
+        assert_eq!(
+            String::from_utf8(client.take_available()).unwrap(),
+            "abc\x07\r\n"
+        );
     }
 
     #[tokio::test]
@@ -1075,9 +1109,10 @@ mod tests {
     #[tokio::test]
     async fn get_data_inserts_at_the_cursor() {
         let (mut term, mut client) = pair();
-        let task = tokio::spawn(async move {
-            get_data(&mut term, 5, 2, "名称: ", b"ac", 16, 10, 5).await
-        });
+        let task =
+            tokio::spawn(
+                async move { get_data(&mut term, 5, 2, "名称: ", b"ac", 16, 10, 5).await },
+            );
         tokio::time::sleep(AFTER_RESET).await;
         client.push(b"\x1b[Dx\r");
         assert_eq!(task.await.unwrap().unwrap(), b"axc".to_vec());

@@ -40,11 +40,7 @@ pub const OPTIONS: [(&str, &str, &str); 6] = [
     ("-h", "--help", "Display help message"),
     ("-v", "--version", "Display version information"),
     ("", "--display-log", "Display standard log information"),
-    (
-        "",
-        "--display-error-log",
-        "Display error log information",
-    ),
+    ("", "--display-error-log", "Display error log information"),
     ("-C", "--compile-config", "Display compile configuration"),
 ];
 
@@ -156,11 +152,18 @@ pub fn compile_config() -> String {
         ("--enable-shared", "no"),
         // sd_notify() is not wired up; SIGTERM is the shutdown signal.
         ("--enable-systemd", "no"),
-        ("--with-debug", if cfg!(debug_assertions) { "yes" } else { "no" }),
+        (
+            "--with-debug",
+            if cfg!(debug_assertions) { "yes" } else { "no" },
+        ),
         // tokio's IO driver is epoll(7) on Linux.
         (
             "--with-epoll",
-            if cfg!(target_os = "linux") { "yes" } else { "no" },
+            if cfg!(target_os = "linux") {
+                "yes"
+            } else {
+                "no"
+            },
         ),
         // sqlx speaks the MySQL protocol directly, no client library.
         ("--with-mariadb", "no"),
@@ -212,7 +215,8 @@ pub fn enter_server_root(argv0: &str) -> Result<PathBuf, RootError> {
     };
 
     let exec_dir_str = exec_dir.to_string_lossy().to_string();
-    std::env::set_current_dir(&exec_dir).map_err(|err| RootError::ExecDir(exec_dir_str, errno(&err)))?;
+    std::env::set_current_dir(&exec_dir)
+        .map_err(|err| RootError::ExecDir(exec_dir_str, errno(&err)))?;
     std::env::set_current_dir("..").map_err(|err| RootError::Parent(errno(&err)))?;
 
     let root = std::env::current_dir().map_err(|err| RootError::Getcwd(errno(&err)))?;
@@ -327,7 +331,12 @@ mod tests {
                 display_error_log: false,
             })
         );
-        assert!(parse(&args(&["bbsd", "--display-error-log"])).into_flags().unwrap().display_error_log);
+        assert!(
+            parse(&args(&["bbsd", "--display-error-log"]))
+                .into_flags()
+                .unwrap()
+                .display_error_log
+        );
     }
 
     #[test]
@@ -398,7 +407,10 @@ mod tests {
             Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
             _ => PathBuf::from("."),
         };
-        assert_eq!(exec_dir("/srv/lbbs/bin/bbsd"), PathBuf::from("/srv/lbbs/bin"));
+        assert_eq!(
+            exec_dir("/srv/lbbs/bin/bbsd"),
+            PathBuf::from("/srv/lbbs/bin")
+        );
         assert_eq!(exec_dir("bbsd"), PathBuf::from("."));
         assert_eq!(exec_dir("./bbsd"), PathBuf::from("."));
     }

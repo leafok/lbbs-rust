@@ -50,8 +50,8 @@ use crate::loader::USER_LIST_INTERVAL;
 use crate::paths::{MAX_USER_IDLE_TIME, SCREEN_COLS, USER_INTRO_MAX_LEN, USER_INTRO_MAX_LINE};
 use crate::screen;
 use crate::session::Session;
-use crate::term::key::{to_upper, KEY_NULL, KEY_TIMEOUT};
 use crate::term::Terminal;
+use crate::term::key::{KEY_NULL, KEY_TIMEOUT, to_upper};
 use crate::{db, lml, text};
 
 /// `BBS_user_sign_max_len` and `BBS_user_sign_max_line` (`:33-34`). The introduction's two live
@@ -125,7 +125,10 @@ pub async fn user_intro_edit(term: &mut Terminal, session: &mut Session) -> i32 
 
     notice(
         term,
-        &format!("说明档修改完成，会在{}秒内生效", USER_LIST_INTERVAL.as_secs()),
+        &format!(
+            "说明档修改完成，会在{}秒内生效",
+            USER_LIST_INTERVAL.as_secs()
+        ),
     )
     .await;
     1
@@ -185,8 +188,13 @@ pub async fn user_sign_edit(term: &mut Terminal, session: &mut Session) -> i32 {
         Outcome::Cleanup(ret) => return ret,
     };
 
-    if let Err(err) =
-        db::update_signature(&session.state.db, uid, slot, &String::from_utf8_lossy(&saved)).await
+    if let Err(err) = db::update_signature(
+        &session.state.db,
+        uid,
+        slot,
+        &String::from_utf8_lossy(&saved),
+    )
+    .await
     {
         tracing::error!("Update user_pubinfo error: {err}");
         return -2;
@@ -255,7 +263,11 @@ async fn edit_round(
                 .count()
                     > max_lines
                 {
-                    notice(term, &format!("{noun}长度超过限制 ({max_lines}行)，请返回修改")).await;
+                    notice(
+                        term,
+                        &format!("{noun}长度超过限制 ({max_lines}行)，请返回修改"),
+                    )
+                    .await;
                     ch = KEY_E;
                     continue;
                 }
@@ -308,33 +320,33 @@ mod tests {
         let mut session = crate::session::offline_session();
         let mut data = EditorData::load(initial, term.fixed_width());
 
-        let outcome = tokio::time::timeout(
-            Duration::from_secs(15),
-            async {
-                tokio::join!(
-                    edit_round(
-                        &mut term,
-                        &mut session,
-                        &mut data,
-                        USER_INTRO_MAX_LEN,
-                        USER_INTRO_MAX_LINE,
-                        "说明档"
-                    ),
-                    async {
-                        for step in script {
-                            tokio::time::sleep(Duration::from_millis(250)).await;
-                            client.push(step);
-                        }
+        let outcome = tokio::time::timeout(Duration::from_secs(15), async {
+            tokio::join!(
+                edit_round(
+                    &mut term,
+                    &mut session,
+                    &mut data,
+                    USER_INTRO_MAX_LEN,
+                    USER_INTRO_MAX_LINE,
+                    "说明档"
+                ),
+                async {
+                    for step in script {
+                        tokio::time::sleep(Duration::from_millis(250)).await;
+                        client.push(step);
                     }
-                )
-            },
-        )
+                }
+            )
+        })
         .await
         .expect("the loop ends on its keys")
-         .0;
+        .0;
 
         let _ = term.flush().await;
-        (outcome, String::from_utf8_lossy(&client.take_available()).into_owned())
+        (
+            outcome,
+            String::from_utf8_lossy(&client.take_available()).into_owned(),
+        )
     }
 
     fn count(screen: &str, needle: &str) -> usize {
@@ -355,7 +367,10 @@ mod tests {
         let (outcome, screen) = round("欢迎回来\n".as_bytes(), &[&[CTRL_W], b"C", b" "]).await;
 
         assert_eq!(outcome, Outcome::Cleanup(0));
-        assert!(screen.contains("(S)保存, (C)取消 or (E)再编辑? [S]: "), "{screen}");
+        assert!(
+            screen.contains("(S)保存, (C)取消 or (E)再编辑? [S]: "),
+            "{screen}"
+        );
         assert!(screen.contains("取消更改..."), "{screen}");
     }
 
@@ -382,7 +397,11 @@ mod tests {
 
         assert_eq!(outcome, Outcome::Cleanup(0));
         // Once for the round that left the editor, once for the invalid key, once after `(E)`.
-        assert_eq!(count(&screen, "(S)保存, (C)取消 or (E)再编辑? [S]: "), 3, "{screen}");
+        assert_eq!(
+            count(&screen, "(S)保存, (C)取消 or (E)再编辑? [S]: "),
+            3,
+            "{screen}"
+        );
     }
 
     /// Eleven display lines are one more than the ten the screen allows, and the `ch = 'E'` of
@@ -397,7 +416,10 @@ mod tests {
         .await;
 
         assert_eq!(outcome, Outcome::Cleanup(0));
-        assert!(screen.contains("说明档长度超过限制 (10行)，请返回修改"), "{screen}");
+        assert!(
+            screen.contains("说明档长度超过限制 (10行)，请返回修改"),
+            "{screen}"
+        );
         // The rejected round still asked the question twice: the loop went back through the
         // editor instead of breaking out of it.
         assert_eq!(count(&screen, "再编辑? [S]: "), 2, "{screen}");
@@ -427,7 +449,10 @@ mod tests {
         .await;
 
         assert_eq!(outcome, Outcome::Cleanup(0));
-        assert!(screen.contains("说明档长度超过限制 (10行)，请返回修改"), "{screen}");
+        assert!(
+            screen.contains("说明档长度超过限制 (10行)，请返回修改"),
+            "{screen}"
+        );
     }
 
     /// `data_file_mgr.c:201` has a `if (SYS_server_exit) goto cleanup;` before its writes and
@@ -442,33 +467,30 @@ mod tests {
         let state = session.state.clone();
         let mut data = EditorData::load(ten.as_bytes(), term.fixed_width());
 
-        let outcome = tokio::time::timeout(
-            Duration::from_secs(15),
-            async {
-                tokio::join!(
-                    edit_round(
-                        &mut term,
-                        &mut session,
-                        &mut data,
-                        USER_INTRO_MAX_LEN,
-                        USER_INTRO_MAX_LINE,
-                        "说明档"
-                    ),
-                    async {
-                        // Asked for before the first round ends, and the loop only looks at it
-                        // again when a `continue` takes it back to the top.
-                        state.exit();
-                        for step in [&[CTRL_W][..], &b"S"[..], &b" "[..]] {
-                            tokio::time::sleep(Duration::from_millis(250)).await;
-                            client.push(step);
-                        }
+        let outcome = tokio::time::timeout(Duration::from_secs(15), async {
+            tokio::join!(
+                edit_round(
+                    &mut term,
+                    &mut session,
+                    &mut data,
+                    USER_INTRO_MAX_LEN,
+                    USER_INTRO_MAX_LINE,
+                    "说明档"
+                ),
+                async {
+                    // Asked for before the first round ends, and the loop only looks at it
+                    // again when a `continue` takes it back to the top.
+                    state.exit();
+                    for step in [&[CTRL_W][..], &b"S"[..], &b" "[..]] {
+                        tokio::time::sleep(Duration::from_millis(250)).await;
+                        client.push(step);
                     }
-                )
-            },
-        )
+                }
+            )
+        })
         .await
         .expect("the loop ends on its keys")
-         .0;
+        .0;
 
         assert_eq!(outcome, Outcome::Update(ten.as_bytes().to_vec()));
     }
@@ -519,33 +541,32 @@ mod tests {
         let (client, server) = Pipe::new();
         let mut term = Terminal::new(ByteIo::Pipe(server));
         let mut session = crate::session::offline_session();
-        session.state.publish_badwords(Badwords::load(&dict).unwrap());
+        session
+            .state
+            .publish_badwords(Badwords::load(&dict).unwrap());
         let mut data = EditorData::load("这里有敏感词\n".as_bytes(), term.fixed_width());
 
-        let outcome = tokio::time::timeout(
-            Duration::from_secs(15),
-            async {
-                tokio::join!(
-                    edit_round(
-                        &mut term,
-                        &mut session,
-                        &mut data,
-                        USER_INTRO_MAX_LEN,
-                        USER_INTRO_MAX_LINE,
-                        "说明档"
-                    ),
-                    async {
-                        for step in [&[CTRL_W][..], &b"S"[..]] {
-                            tokio::time::sleep(Duration::from_millis(250)).await;
-                            client.push(step);
-                        }
+        let outcome = tokio::time::timeout(Duration::from_secs(15), async {
+            tokio::join!(
+                edit_round(
+                    &mut term,
+                    &mut session,
+                    &mut data,
+                    USER_INTRO_MAX_LEN,
+                    USER_INTRO_MAX_LINE,
+                    "说明档"
+                ),
+                async {
+                    for step in [&[CTRL_W][..], &b"S"[..]] {
+                        tokio::time::sleep(Duration::from_millis(250)).await;
+                        client.push(step);
                     }
-                )
-            },
-        )
+                }
+            )
+        })
         .await
         .expect("the loop ends on its keys")
-         .0;
+        .0;
 
         assert_eq!(text(&outcome), "这里有******词\n".as_bytes());
         std::fs::remove_file(&dict).unwrap();
@@ -556,30 +577,33 @@ mod tests {
     /// the number, `-2` the query.
     #[tokio::test]
     async fn a_number_and_a_slot_leave_the_screen_by_different_doors() {
-        for (typed, expected) in [("0\r", -1), ("4\r", -1), ("\x1b", -1), ("2\r", -2), ("3\r", -2)] {
+        for (typed, expected) in [
+            ("0\r", -1),
+            ("4\r", -1),
+            ("\x1b", -1),
+            ("2\r", -2),
+            ("3\r", -2),
+        ] {
             let (mut client, server) = Pipe::new();
             let mut term = Terminal::new(ByteIo::Pipe(server));
             let mut session = crate::session::offline_session();
 
-            let ret = tokio::time::timeout(
-                Duration::from_secs(15),
-                async {
-                    tokio::join!(
-                        user_sign_edit(&mut term, &mut session),
-                        async {
-                            tokio::time::sleep(Duration::from_millis(250)).await;
-                            client.push(typed.as_bytes());
-                        }
-                    )
-                },
-            )
+            let ret = tokio::time::timeout(Duration::from_secs(15), async {
+                tokio::join!(user_sign_edit(&mut term, &mut session), async {
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    client.push(typed.as_bytes());
+                })
+            })
             .await
             .expect("the prompt ends on its answer")
-             .0;
+            .0;
 
             assert_eq!(ret, expected, "{typed:?}");
             let screen = String::from_utf8_lossy(&client.take_available()).into_owned();
-            assert!(screen.contains("请输入需要编辑的签名档编号（1-3）: "), "{screen}");
+            assert!(
+                screen.contains("请输入需要编辑的签名档编号（1-3）: "),
+                "{screen}"
+            );
             assert!(!screen.contains("再编辑"), "{screen}");
         }
     }

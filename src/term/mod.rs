@@ -5,12 +5,12 @@ pub mod key;
 
 use encoding_rs::{Decoder, DecoderResult, GBK};
 use std::io;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{Notify, mpsc};
 
 use crate::paths::LINE_BUFFER_LEN;
 use crate::text;
@@ -248,7 +248,13 @@ impl Terminal {
         skip_ctrl_seq: bool,
         max_lines: usize,
     ) -> text::Wrapped {
-        text::split_data_lines(buf, max_display_len, skip_ctrl_seq, self.fixed_width, max_lines)
+        text::split_data_lines(
+            buf,
+            max_display_len,
+            skip_ctrl_seq,
+            self.fixed_width,
+            max_lines,
+        )
     }
 
     /// `prints`: queue UTF-8 text. `igetch` flushes before reading, which is what keeps
@@ -640,10 +646,7 @@ mod tests {
         let (mut term, client) = session();
         client.push(b"\x1b[");
         client.push(b"Ax");
-        assert_eq!(
-            term.read_key(Duration::from_millis(50)).await,
-            key::KEY_ESC
-        );
+        assert_eq!(term.read_key(Duration::from_millis(50)).await, key::KEY_ESC);
         assert_eq!(term.read_key(Duration::from_millis(50)).await, b'A' as u32);
         assert_eq!(term.read_key(Duration::from_millis(50)).await, b'x' as u32);
     }
@@ -657,7 +660,10 @@ mod tests {
         let mut buf = vec![0u8; 64];
         let n = client.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], [0xd6, 0xd0, 0xce, 0xc4]);
-        assert_eq!(GBK.decode_without_bom_handling(&buf[..n]).0.as_ref(), "中文");
+        assert_eq!(
+            GBK.decode_without_bom_handling(&buf[..n]).0.as_ref(),
+            "中文"
+        );
     }
 
     #[tokio::test]
@@ -681,7 +687,7 @@ mod tests {
     fn incomplete_utf8_is_detected() {
         assert_eq!(incomplete_utf8_len(b"abc"), 0);
         assert_eq!(incomplete_utf8_len("中".as_bytes()), 0);
-        assert_eq!(incomplete_utf8_len(&["中".as_bytes()[0]], ), 1);
+        assert_eq!(incomplete_utf8_len(&["中".as_bytes()[0]],), 1);
         let two = vec!["中".as_bytes()[0], 'a' as u8];
         assert_eq!(incomplete_utf8_len(&two), 0);
         let partial = vec!["文".as_bytes()[0], "文".as_bytes()[1]];
@@ -753,7 +759,10 @@ mod tests {
             term.set_charset(charset);
             client.push(&[0xff, 0xfb, 0x01, b'a', b'b']);
             let first = term.read_key(Duration::from_millis(200)).await;
-            assert!(first > 255, "{charset:?}: {first:#x} is a wide code, not text");
+            assert!(
+                first > 255,
+                "{charset:?}: {first:#x} is a wide code, not text"
+            );
             assert_eq!(
                 term.read_key(Duration::from_millis(200)).await,
                 b'a' as u32,

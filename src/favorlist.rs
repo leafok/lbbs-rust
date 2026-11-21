@@ -44,11 +44,11 @@ use crate::paths::{
 };
 use crate::screen;
 use crate::session::{self, Session};
+use crate::term::Terminal;
 use crate::term::key::{
     CR, KEY_DOWN, KEY_END, KEY_ESC, KEY_HOME, KEY_LEFT, KEY_NULL, KEY_PGDN, KEY_PGUP, KEY_RIGHT,
     KEY_TIMEOUT, KEY_UP,
 };
-use crate::term::Terminal;
 use crate::text;
 use crate::viewlog::ViewLog;
 
@@ -76,8 +76,7 @@ const KEY_LINE: &str = "返回[\x1b[1;32m←\x1b[0;37m,\x1b[1;32mESC\x1b[0;37m] 
 
 /// Row 3, the two column titles (`:49` and `:53`), both padded to the same width.
 const SNAME_TITLE: &str = "\x1b[44;37m  \x1b[1;37m 编  号   版块名称             日  期  文章标题                               \x1b[m";
-const USERNAME_TITLE: &str =
-    "\x1b[44;37m  \x1b[1;37m 编  号   发 布 者     日  期  文章标题                                       \x1b[m";
+const USERNAME_TITLE: &str = "\x1b[44;37m  \x1b[1;37m 编  号   发 布 者     日  期  文章标题                                       \x1b[m";
 
 /// `select_cmd_t` (`:27-35`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,7 +125,9 @@ impl View {
     /// `-` and `Enter` arms read.
     fn selected_row(&self) -> Option<(&str, i32)> {
         let index = usize::try_from(self.selected).ok()?;
-        self.rows.get(index).map(|row| (row.sname.as_str(), row.article.aid))
+        self.rows
+            .get(index)
+            .map(|row| (row.sname.as_str(), row.article.aid))
     }
 
     /// `query_favor_articles` (`article_favor.c:450`): flush what the `-` key queued, fold it
@@ -140,8 +141,7 @@ impl View {
         session.favor.merge_inc();
         let aids = session.favor.favor_aids();
 
-        self.total_page =
-            (aids.len() as i32 + ARTICLE_LIMIT_PER_PAGE - 1) / ARTICLE_LIMIT_PER_PAGE;
+        self.total_page = (aids.len() as i32 + ARTICLE_LIMIT_PER_PAGE - 1) / ARTICLE_LIMIT_PER_PAGE;
         self.rows.clear();
 
         if aids.is_empty() {
@@ -414,7 +414,11 @@ fn row_line(
     let flag = browse::article_flag(article, uid, view_log);
     let time = browse::row_time(article.sub_dt, now);
 
-    format!("  {:>7} {flag} {name}{} {time} {title}", article.aid, " ".repeat(pad))
+    format!(
+        "  {:>7} {flag} {name}{} {time} {title}",
+        article.aid,
+        " ".repeat(pad)
+    )
 }
 
 /// `article_favor_display` (`:296`), reached as `favor_topic` (`menu_proc.c:372-380`), which
@@ -520,12 +524,16 @@ mod tests {
     /// 20-cell one is exactly as wide as its field.
     fn pool(articles: &[Article]) -> Board {
         let mut board = Board::default();
-        assert!(board
-            .create_section(1, "test", "测试板", "master")
-            .is_some());
-        assert!(board
-            .create_section(2, "long-board-name-here", "长板", "master")
-            .is_some());
+        assert!(
+            board
+                .create_section(1, "test", "测试板", "master")
+                .is_some()
+        );
+        assert!(
+            board
+                .create_section(2, "long-board-name-here", "长板", "master")
+                .is_some()
+        );
         for article in articles {
             board.append_article(article).expect("append");
         }
@@ -579,9 +587,12 @@ mod tests {
         let (mut term, mut client) = pair();
         client.push(keys);
 
-        tokio::time::timeout(Duration::from_secs(10), article_favor_display(&mut term, session))
-            .await
-            .expect("the page ends on its keys");
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            article_favor_display(&mut term, session),
+        )
+        .await
+        .expect("the page ends on its keys");
         let _ = term.flush().await;
 
         String::from_utf8_lossy(&client.take_available()).into_owned()
@@ -647,7 +658,10 @@ mod tests {
         let seen = ViewLog::from_base(2, vec![12345]);
         let plain = post(12345, 1, "t");
         // The reader's own post counts as read whatever the view log says (`:80-83`).
-        let mine = Article { uid: 2, ..plain.clone() };
+        let mine = Article {
+            uid: 2,
+            ..plain.clone()
+        };
 
         let mut digest = plain.clone();
         digest.excerption = true;
@@ -742,7 +756,10 @@ mod tests {
 
         assert_eq!(count(&screen, &row_marker(1)), 1, "the first page is drawn");
         assert_eq!(count(&screen, &row_marker(21)), 1, "and so is the tail");
-        assert!(!session.favor.is_favor(21), "the removal still reached the list");
+        assert!(
+            !session.favor.is_favor(21),
+            "the removal still reached the list"
+        );
     }
 
     #[tokio::test]

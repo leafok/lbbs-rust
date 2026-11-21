@@ -148,7 +148,9 @@ impl Stream {
                 let _ = file.write_all(line).and_then(|()| file.flush());
             }
             Target::Console => {
-                let _ = io::stderr().write_all(line).and_then(|()| io::stderr().flush());
+                let _ = io::stderr()
+                    .write_all(line)
+                    .and_then(|()| io::stderr().flush());
             }
             #[cfg(test)]
             Target::Buffered(lines) => locked(lines).extend_from_slice(line),
@@ -301,7 +303,12 @@ pub fn console() -> LogSink {
 ///
 /// The C overflow branch keeps the head and the beginning of the message, forces the byte before
 /// the limit to `\n`, and returns -2 to say the line was cut.
-pub(crate) fn format_line(level: &Level, module_path: &str, line_no: u32, message: &str) -> Vec<u8> {
+pub(crate) fn format_line(
+    level: &Level,
+    module_path: &str,
+    line_no: u32,
+    message: &str,
+) -> Vec<u8> {
     // log_head() adds the file and line only for the two error-stream levels, and INFO is its
     // first branch; DEBUG is the catch-all.
     let (tag, location) = match *level {
@@ -312,15 +319,18 @@ pub(crate) fn format_line(level: &Level, module_path: &str, line_no: u32, messag
                 Level::WARN => "WARN",
                 _ => "DEBUG",
             };
-            (
-                tag,
-                format!(" [{}:{}]", module_path, line_no),
-            )
+            (tag, format!(" [{}:{}]", module_path, line_no))
         }
     };
 
     let stamp = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-    let head = format!("[{}] [{}] [{}]{} ", stamp, std::process::id(), tag, location);
+    let head = format!(
+        "[{}] [{}] [{}]{} ",
+        stamp,
+        std::process::id(),
+        tag,
+        location
+    );
 
     let mut out = Vec::with_capacity(head.len() + message.len() + 1);
     out.extend_from_slice(head.as_bytes());
@@ -448,7 +458,10 @@ mod tests {
 
         // The C flags make log_restart() a no-op once redirected, so the files stay untouched.
         assert_eq!(sink.restart(), 0);
-        assert_eq!(std::fs::read_to_string(dir.join(LOG_FILE_INFO)).unwrap(), "");
+        assert_eq!(
+            std::fs::read_to_string(dir.join(LOG_FILE_INFO)).unwrap(),
+            ""
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -466,7 +479,10 @@ mod tests {
         std::fs::write(&common, "external\n").unwrap();
         assert_eq!(sink.restart(), 0);
         sink.common.write_line(b"second\n");
-        assert_eq!(std::fs::read_to_string(&common).unwrap(), "external\nsecond\n");
+        assert_eq!(
+            std::fs::read_to_string(&common).unwrap(),
+            "external\nsecond\n"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

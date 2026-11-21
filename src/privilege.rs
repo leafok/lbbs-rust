@@ -204,7 +204,11 @@ impl UserPriv {
     /// list, in which case [`UserPriv::getpriv`] reports the global word instead.
     pub fn section(&self, sid: i16) -> Option<SectionPriv> {
         let (offset, found) = self.search(sid);
-        if found { self.sections.get(offset).copied() } else { None }
+        if found {
+            self.sections.get(offset).copied()
+        } else {
+            None
+        }
     }
 }
 
@@ -405,7 +409,10 @@ mod tests {
         // `P_GUEST` is "no requirement", not "bit 0".
         assert!(privs.checklevel(P_GUEST));
         assert!(UserPriv::new(0).checklevel(P_GUEST));
-        assert!(!UserPriv::new(0).checklevel2(P_USER), "a guest is below P_USER");
+        assert!(
+            !UserPriv::new(0).checklevel2(P_USER),
+            "a guest is below P_USER"
+        );
     }
 
     #[test]
@@ -422,7 +429,14 @@ mod tests {
         let sids: Vec<i16> = privs.section_privs().iter().map(|e| e.sid).collect();
         assert_eq!(sids, vec![5, 7, 10, 20]);
         assert_eq!(privs.getpriv(10), (S_POST, false));
-        assert_eq!(privs.section(10), Some(SectionPriv { sid: 10, s_priv: S_POST, is_favor: false }));
+        assert_eq!(
+            privs.section(10),
+            Some(SectionPriv {
+                sid: 10,
+                s_priv: S_POST,
+                is_favor: false
+            })
+        );
         assert_eq!(privs.getpriv(5), (S_LIST, false));
         assert_eq!(privs.getpriv(7), (S_MSG, false));
         assert_eq!(privs.getpriv(20), (S_GETEXP, false));
@@ -442,7 +456,11 @@ mod tests {
 
             let mut last = 0;
             for entry in privs.section_privs() {
-                assert!(entry.sid > last, "step {step}: list not sorted at {}", entry.sid);
+                assert!(
+                    entry.sid > last,
+                    "step {step}: list not sorted at {}",
+                    entry.sid
+                );
                 last = entry.sid;
             }
 

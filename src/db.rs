@@ -107,7 +107,10 @@ impl Db {
     }
 
     pub async fn ping(&self) -> Result<(), sqlx::Error> {
-        sqlx::query("SELECT 1").execute(&self.pool).await.map(|_| ())
+        sqlx::query("SELECT 1")
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
     }
 }
 
@@ -261,7 +264,11 @@ impl Db {
     }
 
     /// Keyset pagination over `AID`, which is sparse (`:216`).
-    pub async fn articles_from(&self, from_aid: i32, limit: i32) -> Result<Vec<ArticleRow>, sqlx::Error> {
+    pub async fn articles_from(
+        &self,
+        from_aid: i32,
+        limit: i32,
+    ) -> Result<Vec<ArticleRow>, sqlx::Error> {
         sqlx::query_as(
             "SELECT bbs.AID, TID, SID, bbs.CID, UID, visible, excerption, ontop, `lock`, transship,
                     username, nickname, title, UNIX_TIMESTAMP(sub_dt) AS sub_dt, sub_ip, bbs_content.content
@@ -694,7 +701,11 @@ impl Db {
             .bind(uid)
             .fetch_all(&self.pool)
             .await
-            .map(|rows| rows.into_iter().filter_map(|r| r.try_get("SID").ok()).collect())
+            .map(|rows| {
+                rows.into_iter()
+                    .filter_map(|r| r.try_get("SID").ok())
+                    .collect()
+            })
     }
 
     /// `article_view_log_load` (`article_view_log.c:56-59`): every thread this reader has
@@ -705,7 +716,11 @@ impl Db {
             .bind(uid)
             .fetch_all(&self.pool)
             .await
-            .map(|rows| rows.into_iter().filter_map(|r| r.try_get("AID").ok()).collect())
+            .map(|rows| {
+                rows.into_iter()
+                    .filter_map(|r| r.try_get("AID").ok())
+                    .collect()
+            })
     }
 
     /// `article_view_log_save_inc` (`article_view_log.c:144-171`): the aids this session read,
@@ -738,7 +753,11 @@ impl Db {
             .bind(uid)
             .fetch_all(&self.pool)
             .await
-            .map(|rows| rows.into_iter().filter_map(|r| r.try_get("AID").ok()).collect())
+            .map(|rows| {
+                rows.into_iter()
+                    .filter_map(|r| r.try_get("AID").ok())
+                    .collect()
+            })
     }
 
     /// `article_favor_save_inc` (`article_favor.c:143-215`): the stars added this session as
@@ -813,6 +832,58 @@ impl Db {
     ) -> Result<Option<Option<String>>, sqlx::Error> {
         one_text(slot.query(), uid, &self.pool).await
     }
+
+    /// `SELECT game_money FROM user_pubinfo WHERE UID = %d FOR UPDATE` as `money_refresh`
+    /// (`money.c:216-218`) runs it on a connection of its own, outside any transaction.
+    pub async fn game_money(&self, uid: i32) -> Result<Option<i32>, sqlx::Error> {
+        one_game_money(GAME_MONEY_FOR_UPDATE, uid, &self.pool).await
+    }
+}
+
+/// The two statements `utils/game/money.c` writes out three times each: the `SELECT … FOR UPDATE`
+/// of `:60-62`, `:150-152` and `:216-218`, and the `UPDATE` of `:96-98` and `:181-183`.
+const GAME_MONEY_FOR_UPDATE: &str = "SELECT game_money FROM user_pubinfo WHERE UID = ? FOR UPDATE";
+const UPDATE_GAME_MONEY: &str = "UPDATE user_pubinfo SET game_money = ? WHERE UID = ?";
+
+/// The [`Db::game_money`] statement asked inside the transaction that
+/// [`money_deposit`](crate::money::money_deposit) and
+/// [`money_withdraw`](crate::money::money_withdraw) open, which is where C locks the row too.
+pub async fn lock_game_money(
+    tx: &mut Transaction<'_, MySql>,
+    uid: i32,
+) -> Result<Option<i32>, sqlx::Error> {
+    let row = sqlx::query(GAME_MONEY_FOR_UPDATE)
+        .bind(uid)
+        .fetch_optional(&mut **tx)
+        .await?;
+    Ok(row.map(|r| r.try_get::<i32, _>(0)).transpose()?)
+}
+
+/// `UPDATE user_pubinfo SET game_money = %d WHERE UID = %d`, in the same transaction.
+pub async fn update_game_money(
+    tx: &mut Transaction<'_, MySql>,
+    uid: i32,
+    money: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(UPDATE_GAME_MONEY)
+        .bind(money)
+        .bind(uid)
+        .execute(&mut **tx)
+        .await
+        .map(|_| ())
+}
+
+/// The `atoi(row[0])` of the three money readers. The `Option` is C's `mysql_fetch_row` test:
+/// no row leaves `BBS_user_money` at its previous value (`:74-77`, `:164-167`, `:230-233`),
+/// which is the case `:69-73`, `:159-163` and `:225-229` label `Get user money failed` when the
+/// result set itself is missing. A NULL column is the one thing C would crash on at `atoi`.
+async fn one_game_money(
+    sql: &'static str,
+    uid: i32,
+    pool: &MySqlPool,
+) -> Result<Option<i32>, sqlx::Error> {
+    let row = sqlx::query(sql).bind(uid).fetch_optional(pool).await?;
+    Ok(row.map(|r| r.try_get::<i32, _>(0)).transpose()?)
 }
 
 /// The one-column `SELECT` behind the two profile editors: the outer `Option` is C's
@@ -825,7 +896,8 @@ async fn one_text(
     pool: &MySqlPool,
 ) -> Result<Option<Option<String>>, sqlx::Error> {
     let rows = sqlx::query(sql).bind(uid).fetch_optional(pool).await?;
-    rows.map(|row| row.try_get::<Option<String>, _>(0)).transpose()
+    rows.map(|row| row.try_get::<Option<String>, _>(0))
+        .transpose()
 }
 
 /// The signature columns of `user_pubinfo`, addressed by index as in the original.
@@ -1026,7 +1098,11 @@ pub async fn reassign_attachments(
 /// `UPDATE user_pubinfo SET exp = exp + %d WHERE UID = %d`, the one statement the post,
 /// reply and delete paths all share. The delta is negative on a delete, and the C arithmetic
 /// is signed `int` either way.
-pub async fn add_exp(tx: &mut Transaction<'_, MySql>, uid: i32, delta: i32) -> Result<(), sqlx::Error> {
+pub async fn add_exp(
+    tx: &mut Transaction<'_, MySql>,
+    uid: i32,
+    delta: i32,
+) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE user_pubinfo SET exp = exp + ? WHERE UID = ?")
         .bind(delta)
         .bind(uid)
@@ -1047,14 +1123,16 @@ pub async fn log_article_op(
     kind: char,
     ip: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("INSERT INTO bbs_article_op(AID, UID, type, op_dt, op_ip) VALUES(?, ?, ?, NOW(), ?)")
-        .bind(aid)
-        .bind(uid)
-        .bind(kind.to_string())
-        .bind(ip)
-        .execute(&mut **tx)
-        .await
-        .map(|_| ())
+    sqlx::query(
+        "INSERT INTO bbs_article_op(AID, UID, type, op_dt, op_ip) VALUES(?, ?, ?, NOW(), ?)",
+    )
+    .bind(aid)
+    .bind(uid)
+    .bind(kind.to_string())
+    .bind(ip)
+    .execute(&mut **tx)
+    .await
+    .map(|_| ())
 }
 
 /// `INSERT INTO bbs_content(AID, content) values(%d, '%s')` and the `mysql_insert_id` that
@@ -1165,7 +1243,11 @@ pub async fn topic_lock(db: &Db, aid: i32) -> Result<bool, sqlx::Error> {
         .bind(aid)
         .fetch_optional(&db.pool)
         .await
-        .map(|row| row.and_then(|r| r.try_get::<i8, _>("lock").ok()).unwrap_or(0) != 0)
+        .map(|row| {
+            row.and_then(|r| r.try_get::<i8, _>("lock").ok())
+                .unwrap_or(0)
+                != 0
+        })
 }
 
 /// The joined content row both `article_modify` (`:483-487`) and `article_reply`
@@ -1179,7 +1261,11 @@ pub struct EditableContent {
 
 /// The body of a stored article. `article_reply` reads it through the transaction-free
 /// connection the C code closes before it starts quoting, so this takes a [`Db`].
-pub async fn editable_content(db: &Db, aid: i32, with_reply_note: bool) -> Result<Option<EditableContent>, sqlx::Error> {
+pub async fn editable_content(
+    db: &Db,
+    aid: i32,
+    with_reply_note: bool,
+) -> Result<Option<EditableContent>, sqlx::Error> {
     let sql = if with_reply_note {
         "SELECT bbs_content.CID, bbs_content.content, reply_note \
          FROM bbs INNER JOIN bbs_content ON bbs.CID = bbs_content.CID WHERE bbs.AID = ?"
@@ -1194,18 +1280,18 @@ pub async fn editable_content(db: &Db, aid: i32, with_reply_note: bool) -> Resul
     Ok(Some(EditableContent {
         cid: row.try_get("CID")?,
         content: row.try_get("content").ok(),
-        reply_note: if with_reply_note { row.try_get("reply_note").ok() } else { None },
+        reply_note: if with_reply_note {
+            row.try_get("reply_note").ok()
+        } else {
+            None
+        },
     }))
 }
 
 /// `UPDATE user_pubinfo SET introduction = '%s' WHERE UID = %d` (`user_info_update.c:166-168`).
 /// C opens its own connection for this one statement, so the [`Db`] is the pool rather than a
 /// transaction.
-pub async fn update_introduction(
-    db: &Db,
-    uid: i32,
-    text: &str,
-) -> Result<(), sqlx::Error> {
+pub async fn update_introduction(db: &Db, uid: i32, text: &str) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE user_pubinfo SET introduction = ? WHERE UID = ?")
         .bind(text)
         .bind(uid)
@@ -1280,14 +1366,16 @@ pub async fn insert_message(
     content: &str,
     ip: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("INSERT INTO bbs_msg(fromUID, toUID, content, send_dt, send_ip) VALUES(?, ?, ?, NOW(), ?)")
-        .bind(from_uid)
-        .bind(to_uid)
-        .bind(content)
-        .bind(ip)
-        .execute(&mut **tx)
-        .await
-        .map(|_| ())
+    sqlx::query(
+        "INSERT INTO bbs_msg(fromUID, toUID, content, send_dt, send_ip) VALUES(?, ?, ?, NOW(), ?)",
+    )
+    .bind(from_uid)
+    .bind(to_uid)
+    .bind(content)
+    .bind(ip)
+    .execute(&mut **tx)
+    .await
+    .map(|_| ())
 }
 
 #[cfg(test)]
@@ -1315,10 +1403,7 @@ mod tests {
         // for the charset applies; sqlx has to be kept off its utf8mb4 default to match.
         assert_eq!(options.get_charset(), WIRE_CHARSET);
         assert_eq!(options.get_collation(), None);
-        assert!(matches!(
-            options.get_ssl_mode(),
-            MySqlSslMode::VerifyCa
-        ));
+        assert!(matches!(options.get_ssl_mode(), MySqlSslMode::VerifyCa));
 
         // No `conf/ca_cert.pem` is `SSL_MODE_PREFERRED`, which the C client falls back to.
         let options = Db::options(&db_config(), &manifest.join("no-such-ca.pem"));
@@ -1328,10 +1413,15 @@ mod tests {
     #[test]
     fn sign_slot_statements_name_their_own_column() {
         for slot in [SignSlot::One, SignSlot::Two, SignSlot::Three] {
-            let expected = format!("SELECT {} AS sign FROM user_pubinfo WHERE UID = ?", slot.column());
+            let expected = format!(
+                "SELECT {} AS sign FROM user_pubinfo WHERE UID = ?",
+                slot.column()
+            );
             assert_eq!(slot.query(), expected);
-            let expected =
-                format!("UPDATE user_pubinfo SET {} = ? WHERE UID = ?", slot.column());
+            let expected = format!(
+                "UPDATE user_pubinfo SET {} = ? WHERE UID = ?",
+                slot.column()
+            );
             assert_eq!(slot.update_query(), expected);
         }
 
@@ -1341,6 +1431,21 @@ mod tests {
         assert_eq!(SignSlot::from_index(4), None);
         assert_eq!(SignSlot::from_index(1), Some(SignSlot::One));
         assert_eq!(SignSlot::from_index(3), Some(SignSlot::Three));
+    }
+
+    #[test]
+    fn the_money_statements_are_the_same_three_times_and_twice() {
+        // `money.c` writes the read out at `:60-62`, `:150-152` and `:216-218` and the write at
+        // `:96-98` and `:181-183`, with the same two columns and the same lock every time. The
+        // third one is what `money_refresh` asks on a connection with no transaction around it.
+        assert_eq!(
+            GAME_MONEY_FOR_UPDATE,
+            "SELECT game_money FROM user_pubinfo WHERE UID = ? FOR UPDATE"
+        );
+        assert_eq!(
+            UPDATE_GAME_MONEY,
+            "UPDATE user_pubinfo SET game_money = ? WHERE UID = ?"
+        );
     }
 
     #[test]
@@ -1417,7 +1522,9 @@ mod tests {
         // default `PIPES_AS_CONCAT,NO_ENGINE_SUBSTITUTION` append is off in `Db::options`.
         let session_mode = row.try_get::<String, _>("session_mode").unwrap();
         assert_eq!(
-            session_mode.strip_prefix("IGNORE_SPACE,").unwrap_or(&session_mode),
+            session_mode
+                .strip_prefix("IGNORE_SPACE,")
+                .unwrap_or(&session_mode),
             row.try_get::<String, _>("global_mode").unwrap()
         );
 
@@ -1439,12 +1546,11 @@ mod tests {
         db.online(900).await.unwrap();
         assert!(db.login_count().await.unwrap().unwrap() > 0);
 
-        let (uid, username): (i32, String) = sqlx::query_as(
-            "SELECT UID, username FROM user_list WHERE enable ORDER BY UID LIMIT 1",
-        )
-        .fetch_one(db.pool())
-        .await
-        .unwrap();
+        let (uid, username): (i32, String) =
+            sqlx::query_as("SELECT UID, username FROM user_list WHERE enable ORDER BY UID LIMIT 1")
+                .fetch_one(db.pool())
+                .await
+                .unwrap();
         db.pub_info(uid).await.unwrap();
         db.user_flags(uid).await.unwrap();
         db.admin_major(uid).await.unwrap();
@@ -1456,11 +1562,19 @@ mod tests {
             db.signature_row(uid, slot).await.unwrap();
         }
         db.introduction(uid).await.unwrap();
+        // `money_refresh` reads the column the same way, on autocommit, which is why the
+        // `FOR UPDATE` here takes and drops its row lock inside one statement.
+        db.game_money(uid).await.unwrap();
 
         let mut tx = db.begin().await.unwrap();
         count_errors_by_ip(&mut tx, 10, "127.0.0%").await.unwrap();
         count_errors_by_user(&mut tx, &username).await.unwrap();
-        assert!(find_account(&mut tx, &username, "wrong-on-purpose").await.unwrap().is_none());
+        assert!(
+            find_account(&mut tx, &username, "wrong-on-purpose")
+                .await
+                .unwrap()
+                .is_none()
+        );
         drop(tx);
     }
 }

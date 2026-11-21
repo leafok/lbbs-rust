@@ -72,7 +72,7 @@ const fn tag(
 pub const TAGS: [TagDef; 38] = [
     tag("plain", None, None, None, Some(Filter::Disable)),
     tag("nolml", Some(""), None, Some(""), None), // deprecated
-    tag("lml", Some(""), None, Some(""), None),    // deprecated
+    tag("lml", Some(""), None, Some(""), None),   // deprecated
     tag("align", Some(""), Some(""), Some(""), None), // N/A
     tag("/align", Some(""), Some(""), Some(""), None), // N/A
     tag("size", Some(""), Some(""), Some(""), None), // N/A
@@ -84,7 +84,7 @@ pub const TAGS: [TagDef; 38] = [
     tag("b", Some("\x1b[1m"), Some(""), Some(""), None),
     tag("/b", Some("\x1b[22m"), None, Some(""), None),
     tag("italic", Some("\x1b[5m"), Some(""), Some(""), None), // use blink instead
-    tag("/italic", Some("\x1b[m"), None, Some(""), None), // \x1b[25m does not work in Fterm
+    tag("/italic", Some("\x1b[m"), None, Some(""), None),     // \x1b[25m does not work in Fterm
     tag("i", Some("\x1b[5m"), Some(""), Some(""), None),
     tag("/i", Some("\x1b[m"), None, Some(""), None),
     tag("underline", Some("\x1b[4m"), Some(""), Some(""), None),
@@ -107,7 +107,13 @@ pub const TAGS: [TagDef; 38] = [
     tag("/article", Some("（文章: %s）"), None, Some(""), None),
     tag("image", Some("（图片: %s）"), Some(""), Some("%s"), None),
     tag("flash", Some("（Flash: %s）"), Some(""), Some(""), None),
-    tag("bwf", Some("\x1b[1;31m****\x1b[m"), Some(""), Some("****"), None),
+    tag(
+        "bwf",
+        Some("\x1b[1;31m****\x1b[m"),
+        Some(""),
+        Some("****"),
+        None,
+    ),
 ];
 
 fn find_tag(name: &[u8]) -> Option<usize> {
@@ -163,7 +169,11 @@ fn expand_tag(
     disabled: &mut bool,
     quote_mode: bool,
 ) -> Vec<u8> {
-    let fmt = if quote_mode { def.quote_output } else { def.output };
+    let fmt = if quote_mode {
+        def.quote_output
+    } else {
+        def.output
+    };
     match (fmt, def.filter) {
         (Some(fmt), _) => expand(fmt, param),
         (None, Some(Filter::Color)) => color_filter(param),
@@ -272,7 +282,8 @@ pub fn render(input: &[u8], buf_len: usize, width: i64, quote_mode: bool, fixed:
             }
 
             if !quote_mode && quote_level > 0 {
-                let color = QUOTE_COLORS[(quote_level.rem_euclid(QUOTE_COLORS.len() as i64)) as usize];
+                let color =
+                    QUOTE_COLORS[(quote_level.rem_euclid(QUOTE_COLORS.len() as i64)) as usize];
                 emit!(color);
             }
 
@@ -389,7 +400,8 @@ pub fn render(input: &[u8], buf_len: usize, width: i64, quote_mode: bool, fixed:
             }
 
             let mut name: Vec<u8> = Vec::with_capacity(TAG_NAME_BUF_LEN);
-            while name.len() < TAG_NAME_BUF_LEN - 1 && name_pos + (name.len() as i64) < tag_end_pos {
+            while name.len() < TAG_NAME_BUF_LEN - 1 && name_pos + (name.len() as i64) < tag_end_pos
+            {
                 let c = byte(name_pos + name.len() as i64);
                 if c == b' ' || c == b']' {
                     break;
@@ -397,7 +409,11 @@ pub fn render(input: &[u8], buf_len: usize, width: i64, quote_mode: bool, fixed:
                 name.push(c.to_ascii_lowercase());
             }
 
-            let found = if name.is_empty() { None } else { find_tag(&name) };
+            let found = if name.is_empty() {
+                None
+            } else {
+                find_tag(&name)
+            };
 
             if let Some(k) = found {
                 let def = &TAGS[k];
@@ -527,13 +543,25 @@ mod tests {
     use crate::paths::SCREEN_COLS;
 
     fn render0(s: &str) -> String {
-        String::from_utf8_lossy(&render(s.as_bytes(), ARTICLE_CONTENT_MAX_LEN, SCREEN_COLS as i64, false, true))
-            .into_owned()
+        String::from_utf8_lossy(&render(
+            s.as_bytes(),
+            ARTICLE_CONTENT_MAX_LEN,
+            SCREEN_COLS as i64,
+            false,
+            true,
+        ))
+        .into_owned()
     }
 
     fn render1(s: &str) -> String {
-        String::from_utf8_lossy(&render(s.as_bytes(), ARTICLE_CONTENT_MAX_LEN, SCREEN_COLS as i64, true, true))
-            .into_owned()
+        String::from_utf8_lossy(&render(
+            s.as_bytes(),
+            ARTICLE_CONTENT_MAX_LEN,
+            SCREEN_COLS as i64,
+            true,
+            true,
+        ))
+        .into_owned()
     }
 
     #[test]
@@ -614,7 +642,10 @@ mod tests {
     #[test]
     fn tabs_and_ansi_passthrough() {
         assert_eq!(render0("a\tb"), "a   b");
-        assert_eq!(render0("\x1b[1;35;42mABC\x1b[0m"), "\x1b[1;35;42mABC\x1b[0m");
+        assert_eq!(
+            render0("\x1b[1;35;42mABC\x1b[0m"),
+            "\x1b[1;35;42mABC\x1b[0m"
+        );
         // A lone escape is dropped outside quote mode.
         assert_eq!(render0("a\x1b[1mb"), "a\x1b[1mb");
     }

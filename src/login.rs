@@ -120,9 +120,10 @@ pub fn username_ok(username: &str) -> bool {
     if bytes.len() < USERNAME_MIN_LEN || bytes.len() > USERNAME_MAX_LEN {
         return false;
     }
-    bytes.iter().enumerate().all(|(i, b)| {
-        b.is_ascii_alphabetic() || (i > 0 && (b.is_ascii_digit() || *b == b'_'))
-    })
+    bytes
+        .iter()
+        .enumerate()
+        .all(|(i, b)| b.is_ascii_alphabetic() || (i > 0 && (b.is_ascii_digit() || *b == b'_')))
 }
 
 /// `login.c:140-150`: alphanumeric only, 5 to 12 bytes — so a modern password with a
@@ -162,13 +163,8 @@ pub async fn login(term: &mut Terminal, session: &mut Session) -> Login {
         term.clrtoeol();
         say(term, PROMPT_USERNAME).await;
 
-        let Some(line) = screen::str_input(
-            term,
-            USERNAME_MAX_LEN + 1,
-            Echo::On,
-            MAX_USER_IDLE_TIME,
-        )
-        .await
+        let Some(line) =
+            screen::str_input(term, USERNAME_MAX_LEN + 1, Echo::On, MAX_USER_IDLE_TIME).await
         else {
             continue;
         };
@@ -192,13 +188,8 @@ pub async fn login(term: &mut Terminal, session: &mut Session) -> Login {
         term.clrtoeol();
         say(term, PROMPT_PASSWORD).await;
 
-        let Some(line) = screen::str_input(
-            term,
-            PASSWORD_MAX_LEN + 1,
-            Echo::Off,
-            MAX_USER_IDLE_TIME,
-        )
-        .await
+        let Some(line) =
+            screen::str_input(term, PASSWORD_MAX_LEN + 1, Echo::Off, MAX_USER_IDLE_TIME).await
         else {
             continue;
         };
@@ -221,9 +212,7 @@ pub async fn login(term: &mut Terminal, session: &mut Session) -> Login {
             tracing::info!("User [{username}] authenticated successfully");
             return Login::In;
         }
-        tracing::info!(
-            "User [{username}] authentication failed ({attempt}/{LOGIN_RETRY_TIMES})"
-        );
+        tracing::info!("User [{username}] authentication failed ({attempt}/{LOGIN_RETRY_TIMES})");
         let _ = term.flush().await;
     }
 
@@ -252,8 +241,8 @@ pub async fn check_user(
 
     let mut tx = db.begin().await?;
 
-    let from_subnet = db::count_errors_by_ip(&mut tx, FAILURES_COUNT_INTERVAL_MINUTES, &subnet)
-        .await?;
+    let from_subnet =
+        db::count_errors_by_ip(&mut tx, FAILURES_COUNT_INTERVAL_MINUTES, &subnet).await?;
     if from_subnet >= ALLOWED_FAILURES_WITHIN_INTERVAL {
         tx.rollback().await?;
         say(

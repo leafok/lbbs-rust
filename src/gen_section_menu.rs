@@ -32,7 +32,7 @@
 use chrono::NaiveDateTime;
 use sqlx::FromRow;
 
-use crate::batch::{self, Batch, Failure, EXIT_DEEP, EXIT_QUERY};
+use crate::batch::{self, Batch, EXIT_DEEP, EXIT_QUERY, Failure};
 use crate::db::Db;
 use crate::paths::{CONF_MENU, CONF_MENU_SRC};
 use crate::section_list::{self, Group};
@@ -90,7 +90,8 @@ pub struct ExCounts {
 }
 
 /// `:39-40`, the visible articles of one board.
-const ARTICLE_COUNT_SQL: &str = "SELECT COUNT(*) AS article_count FROM bbs WHERE SID = ? AND visible";
+const ARTICLE_COUNT_SQL: &str =
+    "SELECT COUNT(*) AS article_count FROM bbs WHERE SID = ? AND visible";
 
 /// `:56-59`: the major master if the board has one, otherwise any master in term.
 const SECTION_MASTER_SQL: &str = concat!(
@@ -101,11 +102,13 @@ const SECTION_MASTER_SQL: &str = concat!(
 );
 
 /// `:164-165`: whether this board has anything in its digest tree at all.
-const HAS_EX_SQL: &str = "SELECT AID AS ex_article_count FROM bbs WHERE SID = ? AND visible AND gen_ex LIMIT 1";
+const HAS_EX_SQL: &str =
+    "SELECT AID AS ex_article_count FROM bbs WHERE SID = ? AND visible AND gen_ex LIMIT 1";
 
 /// `:188` and `:203-204`.
 const EX_MENU_TM_SQL: &str = "SELECT ex_menu_tm FROM section_config WHERE SID = ?";
-const EX_COUNT_SQL: &str = "SELECT COUNT(*) AS ex_article_count FROM bbs WHERE SID = ? AND visible AND gen_ex";
+const EX_COUNT_SQL: &str =
+    "SELECT COUNT(*) AS ex_article_count FROM bbs WHERE SID = ? AND visible AND gen_ex";
 
 #[derive(Debug, FromRow)]
 struct CountRow {
@@ -190,7 +193,11 @@ fn section_title(
         batch::pad(20, name.len() as i64)?,
         batch::addslashes(title),
         batch::pad(22, batch::str_length(title) as i64)?,
-        if tail.is_empty() { "诚征版主中" } else { tail }
+        if tail.is_empty() {
+            "诚征版主中"
+        } else {
+            tail
+        }
     ))
 }
 
@@ -313,7 +320,10 @@ fn flat_menus(groups: &[Group<Counts>], with_sid: bool) -> Result<String, Failur
 }
 
 /// `:89-382`: everything the script appends to the hand-written menus.
-pub fn assemble(groups: &[Group<Counts>], ex_groups: &[Group<ExCounts>]) -> Result<String, Failure> {
+pub fn assemble(
+    groups: &[Group<Counts>],
+    ex_groups: &[Group<ExCounts>],
+) -> Result<String, Failure> {
     let mut buffer = String::new();
     buffer.push_str(EGROUP_HEADER);
     buffer.push_str(&class_items("M__", groups)?);

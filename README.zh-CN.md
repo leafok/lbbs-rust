@@ -148,49 +148,51 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 
 | Rust 文件 | 行数 | 对应 C | 职责 | 状态 |
 | --- | ---:| --- | --- | --- |
-| [src/paths.rs](src/paths.rs) | 116 | `include/bbs.h` 等 | 屏幕尺寸、各字段长度、路径名等常量 | 完成 |
-| [src/config.rs](src/config.rs) | 384 | `src/init.c` | 读取 `conf/bbsd.conf` | 完成 |
-| [src/text.rs](src/text.rs) | 357 | `src/str_process.c` | 显示宽度（全角=2 列）与折行计算 | 完成 |
-| [src/term/mod.rs](src/term/mod.rs) | 803 | `src/io.c` | 字节管道、GBK 转码、`prints`/`iflush`、`igetch` | 完成 |
+| [src/paths.rs](src/paths.rs) | 118 | `include/bbs.h` 等 | 屏幕尺寸、各字段长度、路径名等常量 | 完成 |
+| [src/config.rs](src/config.rs) | 394 | `src/init.c` | 读取 `conf/bbsd.conf` | 完成 |
+| [src/text.rs](src/text.rs) | 362 | `src/str_process.c` | 显示宽度（全角=2 列）与折行计算 | 完成 |
+| [src/term/mod.rs](src/term/mod.rs) | 812 | `src/io.c` | 字节管道、GBK 转码、`prints`/`iflush`、`igetch` | 完成 |
 | [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | 把 ESC 序列翻译成按键码 | 完成 |
-| [src/screen.rs](src/screen.rs) | 1116 | `src/screen.c` | 清屏、回显接管 `set_input_echo`、行输入 `str_input`、分页器 `display_data` | 完成 |
-| [src/db.rs](src/db.rs) | 1466 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
-| [src/board.rs](src/board.rs) | 1474 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
-| [src/browse.rs](src/browse.rs) | 3298 | `src/section_list_display.c`、`src/section_list_loader.c`、`src/menu_proc.c`（两个精华区入口） | 帖子列表、列表按键、阅读帖子、阅读位置文件，以及版块精华区树的浏览与树里读一篇帖子 | 完成 |
-| [src/editor.rs](src/editor.rs) | 1812 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
-| [src/post.rs](src/post.rs) | 1530 | `src/article_post.c`、`src/article_del.c`、`src/article_op.c` | 发帖、回复、修改、删除、精华标记、一篇帖子的网页链接，以及各个写入动作自己的事务 | 完成 |
-| [src/viewlog.rs](src/viewlog.rs) | 366 | `src/article_view_log.c` | 记录该用户读过哪些帖子 | 完成 |
-| [src/favorlog.rs](src/favorlog.rs) | 446 | `src/article_favor.c` | 记录该用户收藏了哪些帖子 | 完成 |
-| [src/favorlist.rs](src/favorlist.rs) | 768 | `src/article_favor_display.c`、`src/article_favor.c`（取页）、`src/menu_proc.c`（`FAVOR_TOPIC` 菜单项） | 我收藏的主题列表：两个名称栏目、就地取消收藏，以及每行通向的看板 | 完成 |
-| [src/roster.rs](src/roster.rs) | 661 | `src/user_list_loader.c` | 在线用户列表与发帖数统计 | 完成 |
-| [src/userinfo.rs](src/userinfo.rs) | 923 | `src/user_info_display.c`、`src/user_list_display.c`（查找）、`src/bbs.c`（等级与星座表） | 一个用户的资料页，以及通向它的用户名查找 | 完成 |
-| [src/user_info_update.rs](src/user_info_update.rs) | 618 | `src/user_info_update.c`、`src/menu_proc.c`（那两个资料条目） | 说明档与签名档两个编辑器：取 `user_pubinfo` 的一列走一遍编辑器，过敏感词、数行数，再写回去 | 完成 |
-| [src/userlist.rs](src/userlist.rs) | 1024 | `src/user_list_display.c`、`src/menu_proc.c`（两个花名册入口） | 线上使用者与已注册用户两页：标题、栏目、翻页，以及在两页之间走动的按键 | 完成 |
-| [src/loader.rs](src/loader.rs) | 1529 | `src/section_list_loader.c` | 增量刷新任务、它顺带写出的文章缓存文件，以及每个版块那棵精华区菜单 | 完成 |
-| [src/cache.rs](src/cache.rs) | 554 | `src/article_cache.c` | 渲染与读取 `var/articles/<CID>` 及其行偏移表 | 完成 |
-| [src/data_file_mgr.rs](src/data_file_mgr.rs) | 417 | `src/data_file_mgr.c`、`src/bbs_cmd.c`（`DATAMGR` 那条） | `@DATAMGR` 列表：按编号选一份站点固定文字，编辑、预览，再把结果同时写回安装的那份和它的 `.user` 副本 | 完成 |
-| [src/menu.rs](src/menu.rs) | 2351 | `src/menu.c` | `menu.conf` 解析与页面跳转 | 解析/跳转完成，功能本体未完成 |
-| [src/lml.rs](src/lml.rs) | 689 | `src/lml.c` | LML 标记渲染 | 完成 |
-| [src/bwf.rs](src/bwf.rs) | 241 | `src/trie_dict.c` 等 | 违禁词匹配与遮蔽 | 完成 |
+| [src/screen.rs](src/screen.rs) | 1151 | `src/screen.c` | 清屏、回显接管 `set_input_echo`、行输入 `str_input`、分页器 `display_data` | 完成 |
+| [src/db.rs](src/db.rs) | 1580 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
+| [src/board.rs](src/board.rs) | 1553 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
+| [src/browse.rs](src/browse.rs) | 3371 | `src/section_list_display.c`、`src/section_list_loader.c`、`src/menu_proc.c`（两个精华区入口） | 帖子列表、列表按键、阅读帖子、阅读位置文件，以及版块精华区树的浏览与树里读一篇帖子 | 完成 |
+| [src/editor.rs](src/editor.rs) | 1853 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
+| [src/post.rs](src/post.rs) | 1617 | `src/article_post.c`、`src/article_del.c`、`src/article_op.c` | 发帖、回复、修改、删除、精华标记、一篇帖子的网页链接，以及各个写入动作自己的事务 | 完成 |
+| [src/viewlog.rs](src/viewlog.rs) | 369 | `src/article_view_log.c` | 记录该用户读过哪些帖子 | 完成 |
+| [src/favorlog.rs](src/favorlog.rs) | 452 | `src/article_favor.c` | 记录该用户收藏了哪些帖子 | 完成 |
+| [src/favorlist.rs](src/favorlist.rs) | 785 | `src/article_favor_display.c`、`src/article_favor.c`（取页）、`src/menu_proc.c`（`FAVOR_TOPIC` 菜单项） | 我收藏的主题列表：两个名称栏目、就地取消收藏，以及每行通向的看板 | 完成 |
+| [src/roster.rs](src/roster.rs) | 705 | `src/user_list_loader.c` | 在线用户列表与发帖数统计 | 完成 |
+| [src/userinfo.rs](src/userinfo.rs) | 954 | `src/user_info_display.c`、`src/user_list_display.c`（查找）、`src/bbs.c`（等级与星座表） | 一个用户的资料页，以及通向它的用户名查找 | 完成 |
+| [src/user_info_update.rs](src/user_info_update.rs) | 642 | `src/user_info_update.c`、`src/menu_proc.c`（那两个资料条目） | 说明档与签名档两个编辑器：取 `user_pubinfo` 的一列走一遍编辑器，过敏感词、数行数，再写回去 | 完成 |
+| [src/userlist.rs](src/userlist.rs) | 1053 | `src/user_list_display.c`、`src/menu_proc.c`（两个花名册入口） | 线上使用者与已注册用户两页：标题、栏目、翻页，以及在两页之间走动的按键 | 完成 |
+| [src/loader.rs](src/loader.rs) | 1603 | `src/section_list_loader.c` | 增量刷新任务、它顺带写出的文章缓存文件，以及每个版块那棵精华区菜单 | 完成 |
+| [src/cache.rs](src/cache.rs) | 650 | `src/article_cache.c` | 渲染与读取 `var/articles/<CID>` 及其行偏移表 | 完成 |
+| [src/data_file_mgr.rs](src/data_file_mgr.rs) | 452 | `src/data_file_mgr.c`、`src/bbs_cmd.c`（`DATAMGR` 那条） | `@DATAMGR` 列表：按编号选一份站点固定文字，编辑、预览，再把结果同时写回安装的那份和它的 `.user` 副本 | 完成 |
+| [src/menu.rs](src/menu.rs) | 2440 | `src/menu.c` | `menu.conf` 解析与页面跳转 | 解析/跳转完成，功能本体未完成 |
+| [src/lml.rs](src/lml.rs) | 720 | `src/lml.c` | LML 标记渲染 | 完成 |
+| [src/bwf.rs](src/bwf.rs) | 242 | `src/trie_dict.c` 等 | 违禁词匹配与遮蔽 | 完成 |
 | [src/ipmask.rs](src/ipmask.rs) | 109 | `src/ip_mask.c` | IP 地址掩码（`202.38.64.x`） | 完成 |
-| [src/privilege.rs](src/privilege.rs) | 469 | `src/user_priv.c` | 权限位与权限等级计算 | 完成 |
-| [src/session.rs](src/session.rs) | 613 | 各 `BBS_*` 全局变量 | 一次会话的状态 + 在线记录 | 完成 |
-| [src/login.rs](src/login.rs) | 580 | `src/login.c` | 登录、认证、用户协议（EULA） | 完成 |
-| [src/bbsnet.rs](src/bbsnet.rs) | 1767 | `src/bbs_net.c`、`src/menu_proc.c`（`@mod:` 分发） | 站点表、穿梭网格、对外连接与双向转发 | 完成 |
-| [src/bbs.rs](src/bbs.rs) | 953 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序（含回显接管）、`bbs_center` | 菜单循环完成，`conf/menu.conf` 绑定的每个动作都有处理函数（收藏目录那个是菜单过滤条件，不是动作） |
-| [src/net.rs](src/net.rs) | 360 | `src/net_server.c` | accept、连接数限制、优雅退出 | 完成 |
+| [src/privilege.rs](src/privilege.rs) | 487 | `src/user_priv.c` | 权限位与权限等级计算 | 完成 |
+| [src/session.rs](src/session.rs) | 619 | 各 `BBS_*` 全局变量 | 一次会话的状态 + 在线记录 | 完成 |
+| [src/login.rs](src/login.rs) | 569 | `src/login.c` | 登录、认证、用户协议（EULA） | 完成 |
+| [src/bbsnet.rs](src/bbsnet.rs) | 1890 | `src/bbs_net.c`、`src/menu_proc.c`（`@mod:` 分发） | 站点表、穿梭网格、对外连接与双向转发 | 完成 |
+| [src/chicken.rs](src/chicken.rs) | 2289 | `utils/game/chicken.c` | 电子小鸡：一行十四个数字加一个名字、取名那一问、对一只小鸡能做的九件事，以及孵出下一颗蛋的那次死亡 | 完成 |
+| [src/money.rs](src/money.rs) | 243 | `utils/game/money.c` | 糖糖：会话缓存的余额、到上限就停住的存钱，以及要么全给要么不给的取钱 | 完成 |
+| [src/bbs.rs](src/bbs.rs) | 973 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序（含回显接管）、`bbs_center` | 菜单循环完成，`conf/menu.conf` 绑定的每个动作都有处理函数（收藏目录那个是菜单过滤条件，不是动作） |
+| [src/net.rs](src/net.rs) | 358 | `src/net_server.c` | accept、连接数限制、优雅退出 | 完成 |
 | [src/ssh.rs](src/ssh.rs) | 504 | `src/net_server.c`（libssh 那一半） | 宿主密钥、密码认证、会话通道 | 完成 |
-| [src/main.rs](src/main.rs) | 542 | `src/main.c`、`src/net_server.c` | 启动顺序、信号处理、`SIGHUP` 重载、退出 | 完成 |
-| [src/batch.rs](src/batch.rs) | 374 | `utils/lib/db_open.inc.php` + 三个脚本里反复出现的那几行 | 一个生成工具的完整一生：参数、服务器根目录、`conf/bbsd.conf`、数据库，以及脚本自己的 stdout 文字与退出码 | 完成 |
+| [src/main.rs](src/main.rs) | 555 | `src/main.c`、`src/net_server.c` | 启动顺序、信号处理、`SIGHUP` 重载、退出 | 完成 |
+| [src/batch.rs](src/batch.rs) | 383 | `utils/lib/db_open.inc.php` + 三个脚本里反复出现的那几行 | 一个生成工具的完整一生：参数、服务器根目录、`conf/bbsd.conf`、数据库，以及脚本自己的 stdout 文字与退出码 | 完成 |
 | [src/section_list.rs](src/section_list.rs) | 149 | `utils/lib/section_list.inc.php` | 生成工具要走的那棵分类/版块树，附带调用方自己的每版数据 | 完成 |
-| [src/gen_top.rs](src/gen_top.rs) | 305 | `utils/bin/gen_top.php` | `var/bbs_top.txt` 与 `var/bbs_top_menu.conf`：本周十篇最热帖子 | 完成 |
-| [src/gen_section_menu.rs](src/gen_section_menu.rs) | 681 | `utils/bin/gen_section_menu.php` | `var/menu_merged.conf`：手写的 `conf/menu.conf` 后面接上六个生成的菜单块 | 完成 |
-| [src/gen_ex_list.rs](src/gen_ex_list.rs) | 394 | `utils/bin/gen_ex_list.php` | 被守护进程标了记的每个版块，各写出一个 `var/gen_ex/<SID>` 精华区树 | 完成 |
+| [src/gen_top.rs](src/gen_top.rs) | 306 | `utils/bin/gen_top.php` | `var/bbs_top.txt` 与 `var/bbs_top_menu.conf`：本周十篇最热帖子 | 完成 |
+| [src/gen_section_menu.rs](src/gen_section_menu.rs) | 691 | `utils/bin/gen_section_menu.php` | `var/menu_merged.conf`：手写的 `conf/menu.conf` 后面接上六个生成的菜单块 | 完成 |
+| [src/gen_ex_list.rs](src/gen_ex_list.rs) | 424 | `utils/bin/gen_ex_list.php` | 被守护进程标了记的每个版块，各写出一个 `var/gen_ex/<SID>` 精华区树 | 完成 |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs)、[gen_section_menu.rs](src/bin/gen_section_menu.rs)、[gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | `php utils/bin/*.php` 那几行 crontab | 三个可执行文件：调用三个生成工具，把脚本的退出码原样交回给 shell | 完成 |
 
-另有 [src/daemon.rs](src/daemon.rs)（415 行，命令行与后台化）、[src/log.rs](src/log.rs)（497 行，两个日志文件）、[src/state.rs](src/state.rs)（407 行，加载器发布、会话读取的共享状态）。
+另有 [src/daemon.rs](src/daemon.rs)（427 行，命令行与后台化）、[src/log.rs](src/log.rs)（513 行，两个日志文件）、[src/state.rs](src/state.rs)（410 行，加载器发布、会话读取的共享状态）。
 
-合计 32,641 行（含测试，测试就写在被测模块里）。共 487 个测试：库 481 个、可执行文件 6 个。其中 473 个只读代码
+合计 36,358 行（含测试，测试就写在被测模块里）。共 524 个测试：库 518 个、可执行文件 6 个。其中 510 个只读代码
 仓库里的东西，另外 14 个默认跳过，因为它们要连真实数据库、读真实生成的文件。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
@@ -325,6 +327,17 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
     60 秒刷新间隔，装不进 4 KB 缓冲的文字就是 C 的 `-3`：记一条日志，然后丢掉。曾和这两个名字并列的第三个
     `M_FAVOR_SECTION` 其实从来不是一个动作：C 是在问它的处理函数收藏夹子菜单的每一行可不可见
     （`menu.c:1141-1143`、`menu_proc.c:196-201`），这件事 [`Session::filter_allows`](src/session.rs) 已经做了。
+29. **电子小鸡**——`chicken_main`（[`chicken::chicken_main`](src/chicken.rs)），入口是上位菜单的
+    `【 电子小鸡 】`（`conf/menu.conf:238`），进入的方式与 C 完全相同：`@RunMBEM` 配
+    `C@mod:game/so/libgame.so#chicken_main`，`#` 后面就是入口名；它花的糖糖走同一个 `libgame.so` 的另一半
+    [`money`](src/money.rs)。整个游戏就是 `var/chicken/<UID>` 里的每个用户一行：十四个数字加一个名字，写的时候不
+    截断，读回来的年龄不在文件里、由出生的月与日现算。屏幕是 C 的屏幕：`age` 挑出来的图案、`生日` 那个月与日、旁边
+    补到八位的 `糖糖` 余额、两行帮助，外加一次只答一个键的九个动作——吃饭、吃零食、清理鸡舍、猜拳、目前战绩、买饲料、
+    买零食、吃大补丸、卖鸡——再加 `c` 改名字、`k` 杀鸡、`t` 休息与 `q` 退出。每个数字都按 C 的方式动，包括那些没人会选的：
+    休息那一屏先把累坏了的小鸡盖掉画出来、然后照旧执行这个动作，`tiredstrong` 只对付得起五十糖糖的人清零，数据库
+    拒收的那笔存款会让鸡卖不掉、留下 `无法存钱，放弃交易！`，两百零一克就死。死了是 `呜...小鸡挂了....`，
+    `var/chicken/log` 里多一行，记录文件被 unlink，然后在要求杀鸡的那个动作中间孵出一颗新蛋——用的还是那个开头写着
+    `宝宝` 的取名提示。
 
 ### 6.2 在真实论坛数据库上验证过
 
@@ -389,19 +402,20 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 ```bash
 cd lbbs-rust
 cargo build            # 编译库和可执行文件
-cargo test             # 438 个不需要数据库的测试（另有 14 个见 7.2）
+cargo test             # 510 个不需要数据库的测试（另有 14 个见 7.2）
+cargo fmt              # 全树已经是 rustfmt 干净的，提交前跑一次
 ```
 
 正常情况长这样：
 
 ```
-test result: ok. 432 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
+test result: ok. 504 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
 
-> **本项目的开发环境里没有装 `cargo fmt`。** 缩进（4 空格）、命名等格式靠手工维持，
-> 所以提交前请自己读一遍 diff，不要指望工具替你排版。
+> **排版交给 `cargo fmt`，不用手工调。** 全树现在都能通过 `cargo fmt --check`，所以提交前先跑一次，
+> 这样 diff 里就只剩下你真正改的东西。缩进仍是 4 个空格，下面的命名规矩不变。
 
 ### 7.2 使用真实数据库、真实配置文件的测试
 
@@ -531,6 +545,7 @@ lbbs-rust/                      ← 服务器根目录（见 7.3）
 │   ├── bbs_top_menu.conf      ← 生成的十大热门菜单
 │   ├── bbs_top.txt            ← 登录成功后立刻显示的画面
 │   ├── gen_ex/<SID>           ← 单个版块的精华区树，由 gen_ex_list 重写
+│   ├── chicken/<UID>          ← 一个用户的电子小鸡记录，旁边还有一份 chicken/log；这个目录启动时创建
 │   ├── articles/<CID>         ← 帖子正文——这是数据不是配置，不进 git，见下文
 │   └── section_aid_loc/<UID>  ← “最后读到哪”的状态，随浏览写入
 └── log/                       ← bbsd.log 与 error.log
@@ -642,6 +657,8 @@ Rust 里这些路径集中放在 [src/paths.rs](src/paths.rs)，
 | `setenv("TZ", ...)` + `tzset()` | 记录在 `Session::user_tz` | 改进程环境会泄漏到其他会话 |
 | 用 `SIGUSR1` 刷新内存池 | `Loader::run` 周期性刷新 | 用任务替代信号 |
 | `editor.c` 每次编辑只重新拆分改动的那条数据行，再挪动显示指针数组 | 同样只重排那一行（[`EditorData::recount_line`](src/editor.rs)） | 最早的移植每敲一个字符就把整个文档重排一遍，黏贴长帖时开销随长度平方增长、把一个 CPU 核跑满，而 C 几乎不耗 CPU |
+| 每一局猜拳里的 `srand((unsigned) time(NULL))` 加 `rand() % 3`（`chicken.c:697-698`） | [`chicken::opponent`](src/chicken.rs) 混的是同一颗以秒为单位的种子 | glibc 的加法反馈发生器是 libc 的性质而不是这个游戏的性质，照搬过来等于多维护一个 libm。种子仍然一秒变一次、仍然只有三个答案，所以一秒之内猜两次碰到的还是同一只手——这才是玩家看得见的那部分。 |
+| 小鸡记录用 `fscanf` 读：十四个 `%d` 加一个 `%s`（`chicken.c:111-112`） | [`Chicken::parse`](src/chicken.rs) 把这一行切开，逐格交给 [`c_atoi`](src/config.rs) | C 拿去和 `15` 比较的格数这里照样报得出来，C 读不到的那一格这里读成 `0`——凡是 `save_chicken` 与 `create_a_egg` 写过的行，两边结果一致 |
 | 显示行数已经占满 [`MAX_EDITOR_DATA_LINES`](src/paths.rs) 之后再编辑，需要新行的那部分内容就地丢掉：被改的那一行截短，并在保留的末行末尾粘一个 `'\n'`（`:366-387`）；若改动在更前面，则把数组最后一行削到少一格（`:447-458`） | 同处在到达上限时 | 最早的移植改成拒绝这次编辑，于是一篇写满的文章再也输不进东西；C 在这里是静默截掉尾部。只有一种情形不复现：在一份占满数组的文档里删除最后一行，C 数出来的行数比文档实际多一行——那是它数组里一条不再维护的残留记录，画出来是空的，而移植画的是真实存在的那一行；两种算法存盘的字节一致。 |
 
 ### 10.2 原样复现的 C 语言“怪癖”
@@ -661,6 +678,11 @@ Rust 里这些路径集中放在 [src/paths.rs](src/paths.rs)，
 | 被对方**拒绝**的连接不会立刻报出来，要等十秒预算走完，然后报 `连接超时！` | [`bbsnet::connect`](src/bbsnet.rs) | C 的等待循环在“可写但没连上”的套接字上继续空转，进度条期间按下的键也被连接吃掉；提前失败会同时改掉屏幕上的字和真正送到站点的按键 |
 | 资料编辑器在 `UPDATE` 前面**没有 `SYS_server_exit` 判断**，而 `data_file_mgr.c:201` 有：退出流程若在两轮之间打断一次编辑，那笔写入照样发生——写的可能是上一轮存下的文字（也就是刚被行数检查拒掉的那一份），也可能什么都没有 | [`user_info_update.rs`](src/user_info_update.rs) | 那一列和论坛本身一样属于网页应用；端口悄悄省掉这次写入，只会让两台服务器在同一次退出里记下不同的东西 |
 | 编辑器的**十行上限其实只容得下九行**：`split_data_lines` 是 do/while，收尾第十行的那个换行自己又算出一行显示行 | [`user_info_update.rs`](src/user_info_update.rs)、[`text::split_data_lines`](src/text.rs) | 按读者的数法数行，就会接受 C 用 `长度超过限制 (10行)` 拒掉的文字；而同一个计数器也决定资料页与版块列表一屏放得下什么 |
+| 小鸡的**年龄是一道会倒退的日历减法**：`(tm_mon + 1 + 12 - month) % 12 * 31 + (tm_mday - day)`（`chicken.c:119-120`）把年份整个忘了，于是 28 号出生的小鸡在 21 号看是 `−7`——屏幕上没有图案、一顿饭长十二克而不是一克、也不许卖；而十二个月的今天出生的读起来刚出壳 | [`chicken::load_chicken`](src/chicken.rs) | 这个数字每次打开都重算、从不存盘，所以“修好”这个回绕等于重画站上每一间鸡舍，并改变 `[1]` 与 `[9]` 对一份真实记录的作用 |
+| 取名的提示**开头本来就带着 `宝宝`**（`chicken.c:146`），而 `get_data` 把这段预填当作行首来计数（`screen.c:326`）：单按回车小鸡就叫 宝宝，敲进来的名字也接在它后面——先 `宝宝` 再敲 `新鸡`，收下的名字是 `宝宝新鸡` | [`chicken::create_a_egg`](src/chicken.rs) | 同一块缓冲也拿现名去预填 `改名字` 那一问，所以一个会清掉预填的编辑器会把小鸡改成主人从没输入过的名字 |
+| 被拒的名字**打码之后回来、然后就被收下**：`check_badwords(name_tmp, '*')` 就地打码，`:151-166` 接着拿还留在缓冲里的这段再问一次，于是再按一次回车 `宝宝***蛋` 就过了 | [`chicken::create_a_egg`](src/chicken.rs) | 拒绝之后拿空行重问会更友好，但那就不是 C 了；`var/chicken/log` 那一行和记录文件里存的也都是打码后的文字 |
+| `save_chicken` 以 `"r+"` 打开记录、**不截断**（`chicken.c:129`），于是改短了名字的小鸡在文件里留着长名字的尾巴——参考端自己的记录里就看得见——而 `%s` 停在第一个空格，所以没有任何东西会把它读回来 | [`chicken::save_chicken`](src/chicken.rs) | 同一种打开方式也正是“会话写不进去的记录算作不存在、并被重新孵掉”的依据 |
+| `chictime` **只读、从不赋值**：`show_chicken`（`:192-200`）在它超过 200 时让小鸡变瘦变脏，而 `chicken.c` 没有任何一行给它赋值，所以 C 描述的那个又饿又脏的鸡舍不会发生 | [`chicken::show_chicken`](src/chicken.rs) | 这是说明里有、代码里没实现的功能；替它补上实现就是改设计，字段留着只是为了记录仍然读得出同样那十四个数字 |
 
 有一条在 2026-11-21 离开了这张表，而且只因为参考端先动：权限列表的折半查找——版块加入的顺序一旦不是 `sid`
 序，已存下的权限就可能再也查不到；列表为空时它还会去看第 0 个槽位（即全局权限位）。这两处本项目都照搬下来并
@@ -716,7 +738,8 @@ hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用�
 
 ## 11. 在本项目里写代码的规矩
 
-- **缩进 4 个空格。** 不依赖 `cargo fmt`（本机没装）。
+- **缩进 4 个空格，其余排版交给 `cargo fmt`。** 全树要保持能通过 `cargo fmt --check`；手工排的版只会在下一次
+  格式化时被推翻。
 - 每个模块头部必须写明移植自哪个 C 文件的哪些行，并带一节 `# Deviations from C`。
   **两者缺一的移植会被退回。**
 - C 的常量（`BBS_max_section = 200`、`USERNAME_MAX_LEN = 12` 等）统一放进 `paths.rs`，不要写裸数字。
@@ -797,6 +820,7 @@ hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用�
 | 已完成 | `utils/bin` 的三个 PHP 生成工具改成可执行文件：`gen_top`、`gen_section_menu`、`gen_ex_list`（见 7.4） | 对着真实库，它们写出的文件与 PHP 逐字节一致（见 6.2） |
 | 下一步 | 在**测试库**上完整走一遍真实发帖，再依次验证回复/修改/删除 | 网页端能看到移植版写出的帖子，头信息与缓存文件和 C 一致 |
 | 已完成 | 剩下的菜单条目：资料编辑那两个编辑器（见 6.1 第 28 条），以及弄清 `M_FAVOR_SECTION` 到底是什么——它是一个菜单过滤条件，早就移植过了 | 上位菜单里不再有“只写日志”的按键 |
+| 已完成 | `@RunMBEM` 点名的 `libgame.so` 两个入口：电子小鸡，和它花的糖糖（见 6.1 第 29 条） | 小鸡那一屏、它的九个动作与它的死亡都对着一个记录文件跑过，除了糖糖事务之外不写数据库 |
 | 最后 | 与 C 版就 Phase 1 的全部界面对比 | 同样操作得到同样的画面 |
 
 ---

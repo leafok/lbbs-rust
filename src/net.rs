@@ -334,12 +334,10 @@ pub async fn listen(gateway: Arc<Gateway>, listener: TcpListener, front: Front) 
 /// Bind one address, which is `net_server.c:600-660`'s `socket()`+`bind()`+`listen()` and the
 /// reason the daemon's exit code is `-1` when it fails.
 pub async fn bind(addr: &str) -> Result<TcpListener, BindError> {
-    let listener = TcpListener::bind(addr)
-        .await
-        .map_err(|err| BindError {
-            addr: addr.to_string(),
-            cause: err.to_string(),
-        })?;
+    let listener = TcpListener::bind(addr).await.map_err(|err| BindError {
+        addr: addr.to_string(),
+        cause: err.to_string(),
+    })?;
     Ok(listener)
 }
 

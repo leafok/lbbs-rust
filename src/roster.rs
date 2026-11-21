@@ -17,11 +17,11 @@
 
 use std::cmp::Ordering;
 
-use crate::board::{trunc_bytes, Article};
+use crate::board::{Article, trunc_bytes};
 use crate::db::{OnlineRow, UserRow};
 use crate::paths::{
     CURRENT_ACTION_MAX_LEN, IP_ADDR_LEN, MAX_USER_COUNT, MAX_USER_ONLINE_COUNT, NICKNAME_MAX_LEN,
-    SESSION_ID_LEN, USERNAME_MAX_LEN, USER_LIMIT_PER_PAGE,
+    SESSION_ID_LEN, USER_LIMIT_PER_PAGE, USERNAME_MAX_LEN,
 };
 
 /// `USER_ACTION_MAP` (`user_list.c:84`): the code a session writes into
@@ -128,7 +128,10 @@ impl Roster {
             .collect();
         let mut index_uid: Vec<UidIndex> = users
             .iter()
-            .map(|u| UidIndex { uid: u.uid, id: u.id })
+            .map(|u| UidIndex {
+                uid: u.uid,
+                id: u.id,
+            })
             .collect();
         index_uid.sort_by(|a, b| a.uid.cmp(&b.uid).then(a.id.cmp(&b.id)));
         Self { users, index_uid }
@@ -423,7 +426,10 @@ impl UserStatMap {
         }
 
         // `last_article_index` starts at -1, meaning "nothing scanned yet".
-        for article in articles.iter().skip((self.last_article_index + 1).max(0) as usize) {
+        for article in articles
+            .iter()
+            .skip((self.last_article_index + 1).max(0) as usize)
+        {
             if !article.visible {
                 continue;
             }
@@ -496,7 +502,12 @@ mod tests {
         assert_eq!(roster.count(), 5);
         assert_eq!(roster.page_count(), 1);
         assert_eq!(
-            roster.page(0).unwrap().iter().map(|u| u.username.as_str()).collect::<Vec<_>>(),
+            roster
+                .page(0)
+                .unwrap()
+                .iter()
+                .map(|u| u.username.as_str())
+                .collect::<Vec<_>>(),
             vec!["amy", "Ann", "anna", "annabelle", "bob"]
         );
         // `id` is the position in that order, `uid` the database key.
@@ -514,7 +525,10 @@ mod tests {
         let roster = roster();
         let found = roster.by_username_prefix("ANN", 10);
         assert_eq!(
-            found.iter().map(|u| u.username.as_str()).collect::<Vec<_>>(),
+            found
+                .iter()
+                .map(|u| u.username.as_str())
+                .collect::<Vec<_>>(),
             vec!["Ann", "anna", "annabelle"]
         );
         assert_eq!(roster.by_username_prefix("ann", 2).len(), 2);
@@ -527,7 +541,9 @@ mod tests {
 
     #[test]
     fn paging_stops_past_the_last_page() {
-        let rows: Vec<UserRow> = (0..21).map(|i| user_row(i, &format!("user{i:03}"))).collect();
+        let rows: Vec<UserRow> = (0..21)
+            .map(|i| user_row(i, &format!("user{i:03}")))
+            .collect();
         let roster = Roster::load(&rows);
         assert_eq!(roster.page_count(), 2);
         assert_eq!(roster.page(0).unwrap().len(), 20);
@@ -551,7 +567,11 @@ mod tests {
         let (users, guests) = online.counts();
         assert_eq!((users, guests), (2, 1));
         assert_eq!(
-            online.users.iter().map(|u| u.session_id.as_str()).collect::<Vec<_>>(),
+            online
+                .users
+                .iter()
+                .map(|u| u.session_id.as_str())
+                .collect::<Vec<_>>(),
             vec!["Telnet_Process_2", "Telnet_Process_4"]
         );
         assert_eq!(online.users[0].user.username, "Ann");
@@ -597,9 +617,27 @@ mod tests {
     #[test]
     fn the_stat_map_counts_visible_articles_of_users_it_loaded() {
         let articles = vec![
-            Article { aid: 100, sid: 1, uid: 1, visible: true, ..Article::default() },
-            Article { aid: 101, sid: 1, uid: 1, visible: false, ..Article::default() },
-            Article { aid: 102, sid: 1, uid: 5, visible: true, ..Article::default() },
+            Article {
+                aid: 100,
+                sid: 1,
+                uid: 1,
+                visible: true,
+                ..Article::default()
+            },
+            Article {
+                aid: 101,
+                sid: 1,
+                uid: 1,
+                visible: false,
+                ..Article::default()
+            },
+            Article {
+                aid: 102,
+                sid: 1,
+                uid: 5,
+                visible: true,
+                ..Article::default()
+            },
         ];
         let first = Roster::load(&[user_row(1, "ann"), user_row(2, "bob"), user_row(3, "cy")]);
         let extended_roster = Roster::load(&[
@@ -620,7 +658,13 @@ mod tests {
         stats.update(&extended_roster, &articles);
         assert_eq!(stats.article_count(5), Some(0));
         let mut extended = articles.clone();
-        extended.push(Article { aid: 103, sid: 1, uid: 5, visible: true, ..Article::default() });
+        extended.push(Article {
+            aid: 103,
+            sid: 1,
+            uid: 5,
+            visible: true,
+            ..Article::default()
+        });
         stats.update(&extended_roster, &extended);
         assert_eq!(stats.article_count(5), Some(1));
         assert_eq!(stats.covered_users(), 4);

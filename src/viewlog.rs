@@ -132,7 +132,10 @@ impl ViewLog {
 
         let affected = db.view_log_insert(self.uid, &self.inc).await?;
 
-        tracing::info!("Saved {affected} view_article_log records for uid={}", self.uid);
+        tracing::info!(
+            "Saved {affected} view_article_log records for uid={}",
+            self.uid
+        );
 
         Ok(affected)
     }

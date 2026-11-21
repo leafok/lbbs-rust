@@ -15,7 +15,10 @@ const MAX_PATTERN_BUF: usize = 65 * 1000;
 pub enum BwfError {
     Unreadable(String),
     /// A source line did not fit the record buffer (`bwf_load` returns -3).
-    Truncated { line: usize, len: usize },
+    Truncated {
+        line: usize,
+        len: usize,
+    },
     Overflow,
     /// The joined pattern failed to compile (`bwf_compile` returns -1).
     Compile(String),
@@ -63,9 +66,8 @@ impl Badwords {
     }
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self, BwfError> {
-        let text = std::fs::read(path.as_ref()).map_err(|e| {
-            BwfError::Unreadable(format!("{}: {e}", path.as_ref().display()))
-        })?;
+        let text = std::fs::read(path.as_ref())
+            .map_err(|e| BwfError::Unreadable(format!("{}: {e}", path.as_ref().display())))?;
 
         let mut joined = String::new();
         let mut count = 0usize;
@@ -128,7 +130,9 @@ impl Badwords {
         let mut start = 0usize;
         let mut hits = 0usize;
         while start < buf.len() {
-            let Some(m) = re.find_at(buf, start) else { break };
+            let Some(m) = re.find_at(buf, start) else {
+                break;
+            };
             let (from, to) = (m.start(), m.end());
             if to == from {
                 // A zero-width match would spin forever; step past it instead.
@@ -198,10 +202,7 @@ mod tests {
     #[test]
     fn posix_space_class_matches_cjk_across_whitespace() {
         // Mirrors `法[[:space:]]*轮` from conf/badwords.conf.
-        let path = write_tmp(
-            "posix",
-            "[^\\n]*法[[:space:]]*轮[^\\n]*\n".as_bytes(),
-        );
+        let path = write_tmp("posix", "[^\\n]*法[[:space:]]*轮[^\\n]*\n".as_bytes());
         let bwf = Badwords::load(&path).unwrap();
         std::fs::remove_file(&path).unwrap();
 

@@ -49,9 +49,7 @@
 
 use std::time::Duration;
 
-use crate::paths::{
-    DATA_EDITOR_HELP, MAX_USER_IDLE_TIME, SCREEN_COLS, SCREEN_ROWS, TAB_SIZE,
-};
+use crate::paths::{DATA_EDITOR_HELP, MAX_USER_IDLE_TIME, SCREEN_COLS, SCREEN_ROWS, TAB_SIZE};
 use crate::screen;
 use crate::session::{self, Session};
 use crate::term::Terminal;
@@ -133,7 +131,8 @@ impl EditorData {
         // lines and only what fits in it is packed into data lines (`:102-150`), so the text
         // past the cap is not merely hidden — it is not in the editor, and a `'\n'` left as the
         // array's last byte is trimmed off it (`:141-148`).
-        let wrapped = text::split_data_lines(data, SCREEN_COLS, false, fixed, MAX_EDITOR_DATA_LINES);
+        let wrapped =
+            text::split_data_lines(data, SCREEN_COLS, false, fixed, MAX_EDITOR_DATA_LINES);
         let rows = wrapped.count();
         let mut end = wrapped.offsets[rows] as usize;
         // C's `:141-148` trims the `'\n'` off the array's last display line, which only bites
@@ -272,8 +271,7 @@ impl EditorData {
 
             // C chooses the side of the break by whether the insert still fits in the line it
             // is typed into (`:289`).
-            let break_before_insert =
-                pos + bytes.len() + 2 >= MAX_EDITOR_DATA_LINE_LENGTH || cr;
+            let break_before_insert = pos + bytes.len() + 2 >= MAX_EDITOR_DATA_LINE_LENGTH || cr;
             let mut head = self.lines[line][..pos].to_vec();
             let tail = if break_before_insert {
                 [&inserted[..], &self.lines[line][pos..]].concat()
@@ -970,12 +968,14 @@ pub async fn editor_display(
                     {
                         tracing::error!("editor_data_insert(str_len={}) error", input.len());
                     } else {
-                        view.output_end_row = (SCREEN_ROWS as i64 - 1)
-                            .min(view.output_current_row + view.last_updated_line - view.line_current);
+                        view.output_end_row = (SCREEN_ROWS as i64 - 1).min(
+                            view.output_current_row + view.last_updated_line - view.line_current,
+                        );
                         view.line_current -= view.output_current_row - view.row_pos;
                         view.output_current_row = view.row_pos;
 
-                        let scroll_rows = (display_line_out - display_line_in
+                        let scroll_rows = (display_line_out
+                            - display_line_in
                             - (view.output_end_row - view.output_current_row))
                             .max(0);
                         if scroll_rows > 0 {
@@ -1134,7 +1134,8 @@ pub async fn editor_display(
                         if view.cursor_line() == data.total() as i64 - 1 {
                             view.col_pos = data.display_line_width(view.cursor_line()) as i64 + 1;
                         } else {
-                            view.col_pos = data.display_line_width(view.cursor_line()).max(1) as i64;
+                            view.col_pos =
+                                data.display_line_width(view.cursor_line()).max(1) as i64;
                         }
                     }
                     KEY_CTRL_T | KEY_CTRL_UP => {
@@ -1171,15 +1172,13 @@ pub async fn editor_display(
                     KEY_END => {
                         if data.total() < SCREEN_ROW_TOTAL as usize {
                             view.row_pos = data.total() as i64;
-                            view.col_pos =
-                                data.display_line_width(view.cursor_line()) as i64 + 1;
+                            view.col_pos = data.display_line_width(view.cursor_line()) as i64 + 1;
                         } else {
                             view.line_current = data.total() as i64 - SCREEN_ROW_TOTAL;
                             view.output_current_row = SCREEN_BEGIN_ROW;
                             view.output_end_row = SCREEN_ROWS as i64 - 1;
                             view.row_pos = SCREEN_ROWS as i64 - 1;
-                            view.col_pos =
-                                data.display_line_width(view.cursor_line()) as i64 + 1;
+                            view.col_pos = data.display_line_width(view.cursor_line()) as i64 + 1;
                             clr_rows(term, view.output_current_row, SCREEN_ROWS as i64);
                         }
                     }
@@ -1250,10 +1249,7 @@ pub async fn editor_display(
         // One display line per row, escapes shown as stars (`:1254-1288`).
         let mut len = data.display_line_length(view.line_current);
         if len >= MAX_EDITOR_DATA_LINE_LENGTH {
-            tracing::error!(
-                "Buffer overflow: len={len} line={} ",
-                view.line_current
-            );
+            tracing::error!("Buffer overflow: len={len} line={} ", view.line_current);
             len = MAX_EDITOR_DATA_LINE_LENGTH - 1;
         }
         let painted = escape_display(&data.display_line(view.line_current)[..len]);
@@ -1267,7 +1263,6 @@ pub async fn editor_display(
 
     ch
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1485,7 +1480,11 @@ mod tests {
     #[test]
     fn a_full_document_loses_its_overflow_when_a_row_grows() {
         const BIG: usize = 4 * MAX_EDITOR_DATA_LINES;
-        let text = format!("{}{}", "a\n".repeat(MAX_EDITOR_DATA_LINES - 1), "b".repeat(80));
+        let text = format!(
+            "{}{}",
+            "a\n".repeat(MAX_EDITOR_DATA_LINES - 1),
+            "b".repeat(80)
+        );
         let mut data = doc(&text);
         assert_eq!(data.total(), MAX_EDITOR_DATA_LINES);
 
@@ -1499,7 +1498,12 @@ mod tests {
         assert_eq!(data.total(), MAX_EDITOR_DATA_LINES);
         assert_eq!(
             data.save(BIG).unwrap(),
-            format!("{}c{}", "a\n".repeat(MAX_EDITOR_DATA_LINES - 1), "b".repeat(78)).into_bytes(),
+            format!(
+                "{}c{}",
+                "a\n".repeat(MAX_EDITOR_DATA_LINES - 1),
+                "b".repeat(78)
+            )
+            .into_bytes(),
             "the row the array had no room for is lost, terminator with it"
         );
     }
@@ -1509,7 +1513,11 @@ mod tests {
     #[test]
     fn a_full_document_loses_the_tail_of_its_last_row() {
         const BIG: usize = 4 * MAX_EDITOR_DATA_LINES;
-        let text = format!("{}{}", "a\n".repeat(MAX_EDITOR_DATA_LINES - 2), "b".repeat(160));
+        let text = format!(
+            "{}{}",
+            "a\n".repeat(MAX_EDITOR_DATA_LINES - 2),
+            "b".repeat(160)
+        );
         let mut data = doc(&text);
         assert_eq!(data.total(), MAX_EDITOR_DATA_LINES);
 
@@ -1526,7 +1534,12 @@ mod tests {
         assert_eq!(data.total(), MAX_EDITOR_DATA_LINES);
         assert_eq!(
             data.save(BIG).unwrap(),
-            format!("c{}{}", "a\n".repeat(MAX_EDITOR_DATA_LINES - 2), "b".repeat(159)).into_bytes()
+            format!(
+                "c{}{}",
+                "a\n".repeat(MAX_EDITOR_DATA_LINES - 2),
+                "b".repeat(159)
+            )
+            .into_bytes()
         );
     }
 
@@ -1536,7 +1549,11 @@ mod tests {
     #[test]
     fn pasting_into_a_full_document_keeps_it_at_the_limit() {
         const BIG: usize = 4 * MAX_EDITOR_DATA_LINES;
-        let text = format!("{}{}", "a\n".repeat(MAX_EDITOR_DATA_LINES - 2), "b".repeat(160));
+        let text = format!(
+            "{}{}",
+            "a\n".repeat(MAX_EDITOR_DATA_LINES - 2),
+            "b".repeat(160)
+        );
 
         let mut data = doc(&text);
         let (mut line, mut offset, mut last_updated) = (0i64, 0i64, 0i64);
@@ -1545,14 +1562,22 @@ mod tests {
             data.insert(&mut line, &mut offset, b"0123456789", &mut last_updated)
                 .unwrap();
         }
-        assert_eq!((line, offset, last_updated, data.total()), (0, 10, 0, MAX_EDITOR_DATA_LINES));
+        assert_eq!(
+            (line, offset, last_updated, data.total()),
+            (0, 10, 0, MAX_EDITOR_DATA_LINES)
+        );
         assert_eq!(data.save(BIG).unwrap().len(), 131_267);
 
         let mut data = doc(&text);
         for _ in 0..2 {
             (line, offset, last_updated) = (MAX_EDITOR_DATA_LINES as i64 - 2, 5, 0);
-            data.insert(&mut line, &mut offset, b"0123456789abcdef", &mut last_updated)
-                .unwrap();
+            data.insert(
+                &mut line,
+                &mut offset,
+                b"0123456789abcdef",
+                &mut last_updated,
+            )
+            .unwrap();
         }
         assert_eq!(
             (line, offset, last_updated, data.total()),
@@ -1588,7 +1613,11 @@ mod tests {
     #[test]
     fn a_deletion_at_the_limit_cuts_the_document_back() {
         const BIG: usize = 4 * MAX_EDITOR_DATA_LINES;
-        let text = format!("{}{}", "a\n".repeat(MAX_EDITOR_DATA_LINES - 2), "b".repeat(160));
+        let text = format!(
+            "{}{}",
+            "a\n".repeat(MAX_EDITOR_DATA_LINES - 2),
+            "b".repeat(160)
+        );
         let mut data = doc(&text);
         assert_eq!(data.total(), MAX_EDITOR_DATA_LINES);
 
@@ -1604,7 +1633,12 @@ mod tests {
         assert_eq!(data.total(), MAX_EDITOR_DATA_LINES - 1);
         assert_eq!(
             data.save(BIG).unwrap(),
-            format!("{}{}", "a\n".repeat(MAX_EDITOR_DATA_LINES - 2), "b".repeat(80)).into_bytes()
+            format!(
+                "{}{}",
+                "a\n".repeat(MAX_EDITOR_DATA_LINES - 2),
+                "b".repeat(80)
+            )
+            .into_bytes()
         );
     }
 
@@ -1660,7 +1694,12 @@ mod tests {
 
         for op in 0..2000u32 {
             if rand(4) == 0 {
-                data.delete(&mut display_line, &mut offset, &mut last_updated, rand(3) == 0);
+                data.delete(
+                    &mut display_line,
+                    &mut offset,
+                    &mut last_updated,
+                    rand(3) == 0,
+                );
             } else {
                 let bytes: &[u8] = match rand(5) {
                     0 => b"x",
@@ -1729,8 +1768,10 @@ mod tests {
         // `[row;col] 第line/total行 [mode]` — the last display line of a newline-terminated
         // document is the empty row the cursor ends on.
         assert!(
-            screen.contains("\x1b[1;44;33m[\x1b[32m3\x1b[33m;\x1b[32m1\x1b[33m] \
-                             第\x1b[32m3\x1b[33m/\x1b[32m3\x1b[33m行 [\x1b[32m插入\x1b[33m]"),
+            screen.contains(
+                "\x1b[1;44;33m[\x1b[32m3\x1b[33m;\x1b[32m1\x1b[33m] \
+                             第\x1b[32m3\x1b[33m/\x1b[32m3\x1b[33m行 [\x1b[32m插入\x1b[33m]"
+            ),
             "{screen}"
         );
     }
