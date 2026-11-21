@@ -17,11 +17,12 @@
 //!
 //! * `configure.ac:76-78` turns `dlopen` on with `--enable-shared`, which is how the reference
 //!   tree is configured (`config.h` answers `_ENABLE_SHARED 1`), so C looks the name after the
-//!   `#` up as a symbol in `lib/libbbs.so` and prints `dlerror`'s text when it is not there. The
-//!   port matches the same names against a table instead; `chicken_main` (item
-//!   `conf/menu.conf:238`) is not part of the port and takes the `#else` branch's `未知入口`
-//!   message. With no `#` in the parameter, C hands a NULL `strstr` never found to `strcasecmp`;
-//!   the port reports the empty entry name instead of crashing.
+//!   `#` up as a symbol in the named `.so` and prints `dlerror`'s text when it is not there, or
+//!   `加载库文件 [...] 失败!!` when the library itself will not load. The port has no dynamic
+//!   loading, so it answers with the table the `#else` branch of `menu_proc.c:97-121` compiles to:
+//!   the two names that branch knows, `bbs_net` here and `chicken_main` in [`crate::chicken`], and
+//!   the `未知入口` line for anything else. With no `#` in the parameter, C hands a NULL `strstr`
+//!   never found to `strcasecmp`; the port reports the empty entry name instead of crashing.
 //! * The relay is one `tokio::select!` over the two reads instead of an `epoll`/`poll` round over
 //!   three descriptors, so `stdout_write_wait` and the `O_NONBLOCK` toggling of `STDIN`/`STDOUT`
 //!   (`:505-524`) have no counterpart: output goes through [`Terminal`], which owns the buffer
@@ -405,6 +406,16 @@ fn sockaddr_in(addr: SocketAddr) -> io::Result<libc::sockaddr_in> {
         return Err(io::Error::new(io::ErrorKind::AddrNotAvailable, "not IPv4"));
     };
     Ok(libc::sockaddr_in {
+        // The BSD length byte, which Linux's `sockaddr_in` has no field for; C leaves it zero
+        // after `bzero`, but this is what the BSD kernels and `std` fill in.
+        #[cfg(any(
+            target_vendor = "apple",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "openbsd",
+            target_os = "netbsd"
+        ))]
+        sin_len: std::mem::size_of::<libc::sockaddr_in>() as u8,
         sin_family: libc::AF_INET as libc::sa_family_t,
         sin_port: v4.port().to_be(),
         sin_addr: libc::in_addr { s_addr: u32::from(*v4.ip()).to_be() },
@@ -497,10 +508,15 @@ fn so_error(fd: RawFd) -> io::Result<i32> {
     Ok(error)
 }
 
+/// `netinet/ip.h`'s low-delay bit of the ToS byte. `libc` re-exports the `IPTOS_*` values only
+/// for the Linux-family targets, so the byte C reads from the header is spelled out here; it is
+/// the same on every platform, and `libc::IP_TOS` (3 on Darwin, 1 on Linux) is not it.
+const IPTOS_LOWDELAY: libc::c_int = 0x10;
+
 /// `setsockopt(IP_TOS, IPTOS_LOWDELAY)` (`:683-688`): a failure is only worth the log line C
 /// writes for it.
 fn set_lowdelay(fd: RawFd) {
-    let tos: libc::c_int = libc::IPTOS_LOWDELAY as libc::c_int;
+    let tos: libc::c_int = IPTOS_LOWDELAY;
     // SAFETY: an int of the size passed, on a descriptor this holds.
     if unsafe {
         libc::setsockopt(
@@ -1265,8 +1281,9 @@ pub async fn bbs_net(term: &mut Terminal, session: &mut Session) -> i32 {
 }
 
 /// `exec_mbem`'s entry table (`menu_proc.c:53-121`), matched statically where C asks `dlsym`: the
-/// parameter is the menu item's name, `N@mod:lib/libbbs.so#bbs_net` for the shuttle, and only the
-/// part after the first `#` is looked at.
+/// parameter is the menu item's name, `N@mod:lib/libbbs.so#bbs_net` for the shuttle (`:129`) and
+/// `C@mod:game/so/libgame.so#chicken_main` for the chicken (`:238`), and only the part after the
+/// first `#` is looked at.
 pub async fn exec_mbem(term: &mut Terminal, session: &mut Session, param: &str) {
     let Some((_, rest)) = param.split_once("@mod:") else {
         return;
@@ -1280,6 +1297,10 @@ pub async fn exec_mbem(term: &mut Terminal, session: &mut Session, param: &str) 
 
     if entry.eq_ignore_ascii_case("bbs_net") {
         bbs_net(term, session).await;
+        return;
+    }
+    if entry.eq_ignore_ascii_case("chicken_main") {
+        crate::chicken::chicken_main(term, session).await;
         return;
     }
 
@@ -1673,13 +1694,15 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
         let (mut term, mut client) = pair();
         let mut session = shuttle_session(&root, false);
 
+        // `money_balance` is a symbol of `libgame.so` (`utils/game/money.c:23`) that C's `dlsym`
+        // branch would find, and that the `#else` table this port mirrors does not know.
         let (_, mut seen) = tokio::join! {
-            exec_mbem(&mut term, &mut session, "C@mod:game/so/libgame.so#chicken_main"),
-            type_after(&mut client, "未知入口 [chicken_main]".as_bytes(), b" ")
+            exec_mbem(&mut term, &mut session, "C@mod:game/so/libgame.so#money_balance"),
+            type_after(&mut client, "未知入口 [money_balance]".as_bytes(), b" ")
         };
         seen.extend(client.take_available());
         let seen = String::from_utf8_lossy(&seen).into_owned();
-        assert!(seen.contains("未知入口 [chicken_main] !!\r\n"), "{seen}");
+        assert!(seen.contains("未知入口 [money_balance] !!\r\n"), "{seen}");
 
         // With no `#` at all C hands a NULL pointer to `strcasecmp`; the port reports the empty
         // entry instead of crashing on it.
