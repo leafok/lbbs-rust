@@ -156,9 +156,9 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/screen.rs](src/screen.rs) | 1116 | `src/screen.c` | 清屏、回显接管 `set_input_echo`、行输入 `str_input`、分页器 `display_data` | 完成 |
 | [src/db.rs](src/db.rs) | 1368 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
 | [src/board.rs](src/board.rs) | 1474 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
-| [src/browse.rs](src/browse.rs) | 3290 | `src/section_list_display.c`、`src/section_list_loader.c`、`src/menu_proc.c`（两个精华区入口） | 帖子列表、列表按键、阅读帖子、阅读位置文件，以及版块精华区树的浏览与树里读一篇帖子 | 完成 |
+| [src/browse.rs](src/browse.rs) | 3298 | `src/section_list_display.c`、`src/section_list_loader.c`、`src/menu_proc.c`（两个精华区入口） | 帖子列表、列表按键、阅读帖子、阅读位置文件，以及版块精华区树的浏览与树里读一篇帖子 | 完成 |
 | [src/editor.rs](src/editor.rs) | 1812 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
-| [src/post.rs](src/post.rs) | 1488 | `src/article_post.c`、`src/article_del.c`、`src/article_op.c` | 发帖、回复、修改、删除、精华标记，以及各自的事务 | 完成 |
+| [src/post.rs](src/post.rs) | 1530 | `src/article_post.c`、`src/article_del.c`、`src/article_op.c` | 发帖、回复、修改、删除、精华标记、一篇帖子的网页链接，以及各个写入动作自己的事务 | 完成 |
 | [src/viewlog.rs](src/viewlog.rs) | 366 | `src/article_view_log.c` | 记录该用户读过哪些帖子 | 完成 |
 | [src/favorlog.rs](src/favorlog.rs) | 446 | `src/article_favor.c` | 记录该用户收藏了哪些帖子 | 完成 |
 | [src/favorlist.rs](src/favorlist.rs) | 768 | `src/article_favor_display.c`、`src/article_favor.c`（取页）、`src/menu_proc.c`（`FAVOR_TOPIC` 菜单项） | 我收藏的主题列表：两个名称栏目、就地取消收藏，以及每行通向的看板 | 完成 |
@@ -188,7 +188,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 
 另有 [src/daemon.rs](src/daemon.rs)（415 行，命令行与后台化）、[src/log.rs](src/log.rs)（497 行，两个日志文件）、[src/state.rs](src/state.rs)（407 行，加载器发布、会话读取的共享状态）。
 
-合计 31,269 行（含测试，测试就写在被测模块里）。共 463 个测试：库 457 个、可执行文件 6 个。其中 449 个只读代码
+合计 31,319 行（含测试，测试就写在被测模块里）。共 464 个测试：库 458 个、可执行文件 6 个。其中 450 个只读代码
 仓库里的东西，另外 14 个默认跳过，因为它们要连真实数据库、读真实生成的文件。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
@@ -241,6 +241,10 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
     经验值按原版主题 50、转帖 20、回复 10 计费，取消时同样数额倒扣，最后写进 `'E'`/`'O'` 那条操作记录，
     提交之前再改共享池里的标记——C 提交失败时会把池子的标记退回去了。它一个字符都不画：行首那个标记就是
     全部的回应；过不了 `S_POST | S_MAN_S` 的用户按下去，列表原样重画，没有提示也没有响铃。
+    同一个文件的另一个函数 `display_article_meta`（`article_op.c:22-32`）是列表上的 `Ctrl-Q`：清屏，第 3 行写下
+    `Web版 文章链接:`，第 4 行写下本站自己的
+    `https://<BBS_server>/bbs/view_article.php?id=<AID>#<AID>`，然后等一个键。C 在它返回负值时才记的那条
+    `log_error` 永远走不到——这个函数只会返回 `0`——移植过去也就没有需要报告的东西。
 19. **全屏编辑器**（`editor.c`）：插入与改写、行与窗口的行列运算、`Ctrl-K`/`Ctrl-Y` 删除、退格合并行、
     宽字符整体删除、`Ctrl-W`/`Ctrl-X` 不重绘直接退出、状态行，以及 `MAX_EDITOR_DATA_LINES` 上限。
 20. **生成文章缓存。** [`cache::generate`](src/cache.rs) 与 C 的
@@ -330,8 +334,8 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 
 ### 6.3 ⬜ 尚未完成
 
-1. **写入路径背后的界面**：用户资料编辑器、统计、`display_article_meta`。
-   这些按键目前会记一条 `... is not implemented`，而不是假装能用。
+1. **写入路径背后的界面**：用户资料编辑器与统计页，各自都是一个菜单条目加一批自己的写入。
+   列表上原本同样只会记日志的 `Ctrl-Q` 已经移植好了（见第 18 条）。
 2. **指向上面这些处理函数的一级菜单条目**：`bbs_do_choice` 只记日志并返回，所以上位菜单仍有只会记日志的键。
    `LIST_ONLINE_USER`、`LIST_USER`、`RunMBEM`、`FAVOR_TOPIC`、`LIST_EX_SECTION` 与 `VIEW_EX_ARTICLE` 已经接上：
    前两个连同它们通向的资料页与用户名查找，后两个连同版块的精华区树与从树里读出的一篇帖子（树在 `src/browse.rs`

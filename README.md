@@ -167,9 +167,9 @@ differently from C, read the deviations section first — the reason is written 
 | [src/screen.rs](src/screen.rs) | 1116 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
 | [src/db.rs](src/db.rs) | 1368 | `src/database.c` etc. | MySQL queries through sqlx | done |
 | [src/board.rs](src/board.rs) | 1474 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
-| [src/browse.rs](src/browse.rs) | 3290 | `src/section_list_display.c`, `src/section_list_loader.c`, `src/menu_proc.c` (the two digest items) | the article list, its keys, reading a post, the saved reading position, and a board's digest tree | done |
+| [src/browse.rs](src/browse.rs) | 3298 | `src/section_list_display.c`, `src/section_list_loader.c`, `src/menu_proc.c` (the two digest items) | the article list, its keys, reading a post, the saved reading position, and a board's digest tree | done |
 | [src/editor.rs](src/editor.rs) | 1812 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
-| [src/post.rs](src/post.rs) | 1488 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, and the transaction each writes in | done |
+| [src/post.rs](src/post.rs) | 1530 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, the article's web link, and the transaction each write runs in | done |
 | [src/viewlog.rs](src/viewlog.rs) | 366 | `src/article_view_log.c` | which posts this user has read | done |
 | [src/favorlog.rs](src/favorlog.rs) | 446 | `src/article_favor.c` | which posts this user starred | done |
 | [src/favorlist.rs](src/favorlist.rs) | 768 | `src/article_favor_display.c`, `src/article_favor.c` (the page query), `src/menu_proc.c` (the `FAVOR_TOPIC` item) | the 我收藏的主题 list: two name columns, the star removed in place, and the board each row opens | done |
@@ -198,8 +198,8 @@ differently from C, read the deviations section first — the reason is written 
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 394 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-31 269 lines in total, the tests included (they live in the modules they test). There are 463 tests: 457 in the
-library and 6 in the binary. 449 of them need nothing but the checked-out tree; the other 14 are ignored because
+31 319 lines in total, the tests included (they live in the modules they test). There are 464 tests: 458 in the
+library and 6 in the binary. 450 of them need nothing but the checked-out tree; the other 14 are ignored because
 they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
@@ -260,6 +260,10 @@ that does not run is described as if it did.
    of it at the same rate backwards — and the `'E'`/`'O'` audit row, then the pool's copy of the flag before the
    commit that C's failed commit gives back. It draws nothing: the row's marker is the whole response, and for a
    user who fails `S_POST | S_MAN_S` the response is the list as it was, without a word or a bell.
+   `Ctrl-Q` is the same file's other function, `display_article_meta` (`article_op.c:22-32`): the cleared screen,
+   the `Web版 文章链接:` label on row 3, the site's own `https://<BBS_server>/bbs/view_article.php?id=<AID>#<AID>`
+   on row 4, then the wait for a key. C's `log_error` on its return cannot fire — the function only ever
+   answers `0` — so the port has nothing to report either.
 19. **The full-screen editor** (`editor.c`): insert and overwrite, the row and window arithmetic, `Ctrl-K` and
    `Ctrl-Y` deletes, backspace joining rows, wide characters deleted whole, `Ctrl-W`/`Ctrl-X` leaving without
    repainting, the status row, and the `MAX_EDITOR_DATA_LINES` limit.
@@ -369,8 +373,9 @@ PHP and in `gen_top`'s `#[ignore]`-marked parity test to the same ten years (2 5
 
 ### 6.3 ⬜ Not done
 
-1. **The screens behind the write path**: the user-profile editor, statistics and `display_article_meta`. Those
-   keys log `... is not implemented` rather than pretending to work.
+1. **The screens behind the write path**: the user-profile editor and the statistics page, each a menu action
+   with writes of its own. The list's `Ctrl-Q` metadata view, which logged the same way until now, is ported
+   (item 18).
 2. **Top-level menu actions** that resolve to one of those handlers: `bbs_do_choice` logs and returns, so the
    top menu still has keys that only log. `LIST_ONLINE_USER`, `LIST_USER`, `RunMBEM`, `FAVOR_TOPIC`,
    `LIST_EX_SECTION` and `VIEW_EX_ARTICLE` are wired — the first two carry the profile page and the name search

@@ -1344,7 +1344,15 @@ impl Listing {
                 Ok(Flow::Redraw)
             }
             SelectCmd::QueryArticle => {
-                tracing::error!("display_article_meta is not implemented");
+                let aid = {
+                    let board = session.state.board();
+                    let Some(article) = self.current().and_then(|art| board.article(art)) else {
+                        tracing::error!("display_article_meta error: the cursor is not on an article");
+                        return Ok(Flow::Redraw);
+                    };
+                    article.aid
+                };
+                post::display_article_meta(term, session, aid).await;
                 Ok(Flow::Redraw)
             }
             SelectCmd::QueryUser => {

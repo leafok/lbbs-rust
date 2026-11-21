@@ -1,5 +1,5 @@
-//! The write path of a board — a port of `src/article_del.c`, `src/article_post.c` and the one
-//! article operation of `src/article_op.c`.
+//! The write path of a board — a port of `src/article_del.c`, `src/article_post.c` and
+//! `src/article_op.c`.
 //!
 //! Both files split the same way: a screen half that asks questions, and a SQL half that runs
 //! one transaction. The transaction stands in for C's `SET autocommit=0` / `BEGIN` / `COMMIT`
@@ -155,6 +155,26 @@ pub fn excerption_cost(row: &db::ExcerptionRow, set: bool) -> i32 {
     };
 
     if set { base } else { -base }
+}
+
+/// `display_article_meta` (`article_op.c:22-32`): the web link of the article the list cursor is
+/// on, which is the whole of the metadata `Ctrl-Q` asks for.
+///
+/// C always returns `0`, so the `log_error` its caller hangs on a negative return cannot be
+/// reached and there is nothing for this to report.
+pub async fn display_article_meta(term: &mut Terminal, session: &Session, aid: i32) {
+    screen::clearscr(term);
+    term.moveto(3, 1);
+    term.print("Web版 文章链接: ");
+    term.moveto(4, 1);
+    term.print(&format!(
+        "https://{}/bbs/view_article.php?id={aid}#{aid}",
+        session.config.bbs_server
+    ));
+    if let Err(err) = term.flush().await {
+        tracing::error!("io_flush() error: {err}");
+    }
+    screen::press_any_key(term).await;
 }
 
 /// `article_excerption_set` (`article_op.c:34-269`): put an article into the 精华 digest, or take
@@ -1255,6 +1275,28 @@ mod tests {
         let screen = screen_text(keyed.await.unwrap());
         assert!(screen.contains("该文章无法被删除，请联系版主。"), "{screen}");
         assert!(!screen.contains("真的要删除文章"), "the gate is behind this branch: {screen}");
+    }
+
+    /// `Ctrl-Q` shows one line and stops for a key: the article's web address, on the row C moves
+    /// to before it prints. The session is the detached one, so this also proves the screen reads
+    /// nothing from the database.
+    #[tokio::test]
+    async fn the_meta_screen_is_the_web_link_of_the_article() {
+        let (client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        let session = detached_session();
+
+        let keyed = answer(client, b" ");
+        display_article_meta(&mut term, &session, 4242).await;
+
+        let screen = screen_text(keyed.await.unwrap());
+        assert!(screen.contains("\x1b[2J"), "the screen is cleared first: {screen}");
+        assert!(screen.contains("\x1b[3;1HWeb版 文章链接: "), "{screen}");
+        assert!(
+            screen.contains("\x1b[4;1Hhttps://www.bbs.test/bbs/view_article.php?id=4242#4242"),
+            "the aid is written twice, into the query and into the fragment: {screen}"
+        );
+        assert!(screen.contains("按任意键继续"), "the screen waits for a key: {screen}");
     }
 
     fn target_article() -> Quoted {
