@@ -24,3 +24,4 @@
 # Written while the server runs.
 /log
 /var
+/data/*.user
