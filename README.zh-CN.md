@@ -407,14 +407,17 @@ cargo test --lib -- --ignored --skip live_flush
 
 ```bash
 cargo build --release
-mkdir -p bin && cp target/release/lbbs bin/
-./bin/lbbs --foreground          # 读取 conf/bbsd.conf，监听 telnet 与 SSH
+mkdir -p bin && cp target/release/bbsd bin/
+./bin/bbsd --foreground          # 读取 conf/bbsd.conf，监听 telnet 与 SSH
 telnet -c localhost 2323            # 用 telnet 连接
 ssh -p 2322 guest@localhost         # 用 SSH 连接
 ```
 
-光用 `cargo run` 是不够的：二进制待在 `target/debug/` 下面时，算出来的根目录是 `target/`，那里没有 `conf/` 可读。
-`--foreground`（C 的 `-f`）让服务留在前台；不加这个参数进程会脱离终端，只剩日志文件。
+Cargo 包叫 `lbbs`，编译出来的守护进程叫 `bbsd`，和 C 服务的名字一样；7.4 里那三个生成工具分别叫
+`gen_top`、`gen_section_menu`、`gen_ex_list`。`cargo run` 默认跑的就是守护进程。
+
+只靠 `cargo run` 还是没法真的对外服务：二进制待在 `target/debug/` 下面时，算出来的根目录是 `target/`，那里
+没有 `conf/` 可读。`--foreground`（C 的 `-f`）让服务留在前台；不加这个参数进程会脱离终端，只剩日志文件。
 
 `--display-log`、`--display-error-log` 会把对应的日志同时打到 stderr；`--help`、`--version`、
 `--compile-config` 名实相符。`SIGHUP` 重载配置，`SIGUSR1` 重开日志文件（配合 logrotate），
@@ -424,8 +427,8 @@ ssh -p 2322 guest@localhost         # 用 SSH 连接
 模板文件里写的还是 C 的 `23` 和 `22`。
 用 telnet 连接时请加 `-c`：服务器会要求客户端停止本地回显，加 `-c` 可以避免协商完成前字符被显示两次。
 
-> **同一个数据库同时只跑一个前端。** `lbbs` 和 `bbsd` 写的是同样的 `user_online`、`visit_log` 行；
-> 一起跑不会损坏数据，但在线列表和计数会重复。
+> **同一个数据库同时只跑一个前端。** 本仓库的 `bin/bbsd` 和 C 版的 `bbsd` 写的是同样的
+> `user_online`、`visit_log` 行；一起跑不会损坏数据，但在线列表和计数会重复。
 
 游客会话能一路走完：两个提示、欢迎页、登录、上位菜单、讨论区组、版块、帖子列表，以及一篇真实帖子。
 [tools/guest_smoke.py](tools/guest_smoke.py)

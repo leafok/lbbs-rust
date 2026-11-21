@@ -448,15 +448,18 @@ repository is such a root, so a development run means putting the binary in `bin
 
 ```bash
 cargo build --release
-mkdir -p bin && cp target/release/lbbs bin/
-./bin/lbbs --foreground           # reads conf/bbsd.conf, listens for telnet and SSH
+mkdir -p bin && cp target/release/bbsd bin/
+./bin/bbsd --foreground           # reads conf/bbsd.conf, listens for telnet and SSH
 telnet -c localhost 2323             # connect over telnet
 ssh -p 2322 guest@localhost          # connect over SSH
 ```
 
-Plain `cargo run` is not enough: with the binary under `target/debug/` the derived root is `target/`, which has
-no `conf/` to read. `--foreground` (C's `-f`) keeps the server attached to the terminal; without it the process
-detaches and leaves only the log files.
+The Cargo package is `lbbs`; the daemon it builds is `bbsd` — the same name as the C server's — and the three
+generators from 7.4 build as `gen_top`, `gen_section_menu` and `gen_ex_list`. `cargo run` picks the daemon.
+
+`cargo run` alone is still not enough to serve: with the binary under `target/debug/` the derived root is
+`target/`, which has no `conf/` to read. `--foreground` (C's `-f`) keeps the server attached to the terminal;
+without it the process detaches and leaves only the log files.
 
 `--display-log` and `--display-error-log` send the two streams to stderr as well, and `--help`, `--version` and
 `--compile-config` print what their names say. `SIGHUP` reloads the configuration, `SIGUSR1` reopens the log
@@ -467,9 +470,9 @@ the same pair the reference C installation uses; the shipped template still has 
 When you connect over telnet, use `telnet -c`: the server tells the client to stop echoing locally, and `-c`
 keeps the client from displaying characters twice before that negotiation lands.
 
-> **Run one front end at a time against a given database.** `lbbs` and `bbsd` write the same
-> `user_online` and `visit_log` rows; they will not corrupt anything, but the online list and the counters
-> double-count while both are up.
+> **Run one front end at a time against a given database.** The Rust `bin/bbsd` and the C `bbsd` write
+> the same `user_online` and `visit_log` rows; they will not corrupt anything, but the online list and
+> the counters double-count while both are up.
 
 A guest session goes all the way through: the two prompts, the welcome page, login, the top menu, a board group,
 a board, the article list, and a real post. [tools/guest_smoke.py](tools/guest_smoke.py)

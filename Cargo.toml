@@ -3,6 +3,26 @@ name = "lbbs"
 version = "0.1.0"
 edition = "2024"
 
+# The daemon is named `bbsd`, the way the C server is, so it installs into the same bin/ path.
+autobins = false
+default-run = "bbsd"
+
+[[bin]]
+name = "bbsd"
+path = "src/main.rs"
+
+[[bin]]
+name = "gen_top"
+path = "src/bin/gen_top.rs"
+
+[[bin]]
+name = "gen_section_menu"
+path = "src/bin/gen_section_menu.rs"
+
+[[bin]]
+name = "gen_ex_list"
+path = "src/bin/gen_ex_list.rs"
+
 [dependencies]
 chrono = "0.4.45"
 encoding_rs = "0.8.44"
