@@ -1,0 +1,9 @@
+A[u]B[italic]CD[/i]E[/u]
+[color red]中文测试[/color]
+: 引用一行
+: : 嵌套引用
+	Tab 开头
+[1;35m带 ANSI 的一行[m
+[url https://www.bbs.test/]链接[/url]
+[image https://x.example/a.png]
+bwf=[bwf]
