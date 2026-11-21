@@ -15,8 +15,8 @@
 | 项目 | 内容 |
 | --- | --- |
 | 名称 | LBBS (Leaflet BBS Daemon) |
-| 版本 | 1.7.12 —— 即 `main` 分支上的 `b7a8b16`（这一版还没打 `v1.7.12` 标签） |
-| 语言 | C（`src/*.c` 加 `include/*.h` 约 29,850 行） |
+| 版本 | 1.7.12 —— 即 `main` 分支上的 `49805a5`（这一版还没打 `v1.7.12` 标签） |
+| 语言 | C（`src/*.c` 加 `include/*.h` 约 30,340 行） |
 | 许可证 | GPL-3.0-or-later |
 | 原作者 | Leaflet &lt;leaflet@leafok.com&gt; |
 | 与本项目同级的参考副本 | `../lbbs` —— 只读；**我们不会修改它** |
@@ -28,9 +28,9 @@ LBBS 是一个**用纯文本终端访问的论坛（BBS）服务器**。用户�
 **MySQL 数据库**里。本站的**网页版论坛**读的是同一个数据库。所以 LBBS 实际上是 *那个网页版论坛的终端前端*，
 这带来一条硬约束：**不能擅自改数据库结构。**
 
-参考端的 1.7.12 是 `v1.7.11..b7a8b16`：十八个提交、19 个文件、+106/−40 行，工作区与 `b7a8b16` 一致。
+参考端的 1.7.12 是 `v1.7.11..49805a5`：二十个提交、23 个文件、+616/−57 行，工作区与 `49805a5` 一致。
 Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订号，也就是说
-`git -C ../lbbs show b7a8b16:src/<文件>` 打印出来的，正是那条注释所描述的内容。
+`git -C ../lbbs show 49805a5:src/<文件>` 打印出来的，正是那条注释所描述的内容。
 [第 10.3 节](#103-1712-这一轮参考端的修改在-rust-版里对应什么)记录 1.7.12 的每个修复在这里落在何处。
 
 ### 1.2 本项目（lbbs-rust）
@@ -171,7 +171,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/lml.rs](src/lml.rs) | 689 | `src/lml.c` | LML 标记渲染 | 完成 |
 | [src/bwf.rs](src/bwf.rs) | 241 | `src/trie_dict.c` 等 | 违禁词匹配与遮蔽 | 完成 |
 | [src/ipmask.rs](src/ipmask.rs) | 109 | `src/ip_mask.c` | IP 地址掩码（`202.38.64.x`） | 完成 |
-| [src/privilege.rs](src/privilege.rs) | 445 | `src/user_priv.c` | 权限位与权限等级计算 | 完成 |
+| [src/privilege.rs](src/privilege.rs) | 469 | `src/user_priv.c` | 权限位与权限等级计算 | 完成 |
 | [src/session.rs](src/session.rs) | 613 | 各 `BBS_*` 全局变量 | 一次会话的状态 + 在线记录 | 完成 |
 | [src/login.rs](src/login.rs) | 580 | `src/login.c` | 登录、认证、用户协议（EULA） | 完成 |
 | [src/bbsnet.rs](src/bbsnet.rs) | 1767 | `src/bbs_net.c`、`src/menu_proc.c`（`@mod:` 分发） | 站点表、穿梭网格、对外连接与双向转发 | 完成 |
@@ -188,7 +188,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 
 另有 [src/daemon.rs](src/daemon.rs)（415 行，命令行与后台化）、[src/log.rs](src/log.rs)（497 行，两个日志文件）、[src/state.rs](src/state.rs)（407 行，加载器发布、会话读取的共享状态）。
 
-合计 31,245 行（含测试，测试就写在被测模块里）。共 462 个测试：库 456 个、可执行文件 6 个。其中 448 个只读代码
+合计 31,269 行（含测试，测试就写在被测模块里）。共 463 个测试：库 457 个、可执行文件 6 个。其中 449 个只读代码
 仓库里的东西，另外 14 个默认跳过，因为它们要连真实数据库、读真实生成的文件。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
@@ -623,8 +623,6 @@ Rust 里这些路径集中放在 [src/paths.rs](src/paths.rs)，
 
 | 原始行为 | 位置 | 为什么不能“顺手修好” |
 | --- | --- | --- |
-| 权限列表的折半查找是坏的：取决于版块加入的先后顺序，已存下的版块权限可能**再也查不到** | [`privilege.rs`](src/privilege.rs) | 一旦“修好”，某些人的权限会凭空改变 |
-| 列表为空时会去检查第 0 个槽位（SID 0，即全局权限位） | 同上 | 同上 |
 | `ip_mask` 会在**第一个被掩码的字节处截断字符串**，所以带第五段的地址尾部会消失 | [`ipmask.rs`](src/ipmask.rs) | 限流用的 `LIKE '202.38.64.%'` 正是依赖这个表达式 |
 | 用户名/密码**格式校验阶段一条 SQL 都不发**，所以格式错误的尝试不会被记录 | [`login.rs`](src/login.rs) | 网页端的解锁功能依赖这些计数 |
 | 账号被停用（`p_login = 0`）时，登录日志**先提交**再拒绝 | 同上 | 否则访问计数会变 |
@@ -634,13 +632,23 @@ Rust 里这些路径集中放在 [src/paths.rs](src/paths.rs)，
 | `S_DEFAULT = 0x3`（可看列表 + 可得经验值），**不含发帖位** | [`privilege.rs`](src/privilege.rs) | 让新账号“更方便”就会与网页端不一致 |
 | 被对方**拒绝**的连接不会立刻报出来，要等十秒预算走完，然后报 `连接超时！` | [`bbsnet::connect`](src/bbsnet.rs) | C 的等待循环在“可写但没连上”的套接字上继续空转，进度条期间按下的键也被连接吃掉；提前失败会同时改掉屏幕上的字和真正送到站点的按键 |
 
+有一条在 2026-11-21 离开了这张表，而且只因为参考端先动：权限列表的折半查找——版块加入的顺序一旦不是 `sid`
+序，已存下的权限就可能再也查不到；列表为空时它还会去看第 0 个槽位（即全局权限位）。这两处本项目都照搬下来并
+钉了测试。`../lbbs` 在 `9dd183a` 里把它们修掉了，还加上 `src/test_user_priv.c` 自证，于是本项目跟着参考端走，
+而不是自己判定 C 有错：[`privilege.rs`](src/privilege.rs) 现在是带 `found` 标志的 `left <= right` 循环，
+`boards_that_arrive_out_of_order_stay_reachable` 与 `every_insertion_order_leaves_the_list_sorted_and_findable`
+钉住列表有序、每个版块都查得到。网页端什么也不会变，因为 C 服务器算出的权限位与此相同——这也正是这张表的
+规矩：条目只能因为参考端先离开而离开，不能因为我们觉得 C 是错的。
+
 真要对上述任何一条做修复，应当与数据、网页端一起作为一次协同变更，绝不能在移植里悄悄改掉。
 
 ### 10.3 1.7.12 这一轮参考端的修改在 Rust 版里对应什么
 
-`v1.7.11..b7a8b16` 一共十八个提交——十七个修复加一个版本号。逐 hunk 对照之后的结论是：**没有一个需要在
-Rust 里做功能改动**。它们泄漏、忘了解锁、少算边界、把用户文本当成 `printf` 格式，而这些代码在本项目里是
-owned buffer、RAII guard 和绑定参数。每个修复*说明*了什么，已经写进对应 C 文件的替代模块，下表只是索引。
+`v1.7.11..49805a5` 一共二十个提交——十九处改动加一个版本号。逐 hunk 对照之后的结论是：**十九处里只有
+`9dd183a` 需要在 Rust 里改功能**（它修的正是 10.2 里那条刻意复现的怪癖），其余都只需要核对。它们泄漏、
+忘了解锁、少算边界、把用户文本当成 `printf` 格式，而这些代码在本项目里是 owned buffer、RAII guard
+和绑定参数；`49805a5` 加的日志本项目也早已有了对应物。每个修复*说明*了什么，已经写进对应 C 文件的替代
+模块，下表只是索引。
 
 | 参考端提交 | C 里的问题 | Rust 版在哪儿交代了 |
 | --- | --- | --- |
@@ -661,13 +669,18 @@ owned buffer、RAII guard 和绑定参数。每个修复*说明*了什么，已�
 | `37b0660` | `log.c:114-117`：`log_printf` 照级别挑一个 `FILE *` 就写，`log_begin()` 之前写日志就是空指针解引用；现在退回 `stderr` | [`log::begin`](src/log.rs#L276) 打开两个流，打不开就终止启动，`main.rs:134` 在任何会话或加载任务之前就把 subscriber 装好——这里没有“还没打开”的状态可退 |
 | `65ce0f7` | trie 字典自测对负的 `int64_t` 做左移（`TEST_VAL << i`），这在 C 里是 UB | Rust 里有定义，而 C 用 trie 存的那几张表在这里是 `HashMap`（[`board.rs`](src/board.rs)、[`roster.rs`](src/roster.rs)）；参考端那个自测没有对应物 |
 | `b7a8b16` | `editor.c:395-414`：三次 `memmove` 直接按 `display_line_total - last_display_line - 1` 平移显示行，计数一脏就变成巨大的 `size_t`，前后两头越界；修复要求 `display_line_total >= last_display_line + 1`，否则把这条意外记进日志 | [`editor.rs`](src/editor.rs) —— `EditorData::insert` 改数据行、`recount()` 重算显示行，没有需要平移的平行数组，那个负长度在这里没有形状 |
+| `9dd183a` | `user_priv.c`：`search_priv` 用 `while (left < right)`，末尾又拿 `sid == s_priv_list[left].sid` 当命中，`setpriv` 再从尾部线性扫一遍定位——插入点一旦落到别处，列表就不再有序，之后的查找会漏掉已存下的版块 | [`privilege.rs`](src/privilege.rs) —— `search` 照新写法带回 `found` 标志、循环改成 `left <= right`，`boards_that_arrive_out_of_order_stay_reachable` 与 `every_insertion_order_leaves_the_list_sorted_and_findable` 钉住；10.2 的表因此少了两行 |
+| `49805a5` | `user_priv.c`：`load_priv` 的四个阶段把超出 `BBS_max_section` 的权限静默丢掉；新增 `count_priv_dropped()`/`log_priv_dropped()`（`:119-138`）后，每阶段各报一条 | [`privilege.rs`](src/privilege.rs) —— `Dropped::default()` 加 `dropped.report(uid, "…")`，正是那段日志的对应物 |
 
-**最后这五个就是上一轮同步时还没提交的那批改动。** 其中两个会挪动引用里的行号：`b7a8b16` 在
+**最后这七个就是上一轮同步时还没提交的那批改动。** 其中两个会挪动引用里的行号：`b7a8b16` 在
 `editor_data_insert` 里加了八行，[`editor.rs`](src/editor.rs) 里那个
 hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用的 `split_data_lines` 之上加了七行，把它从
 `file_loader.c:81` 挪到 `:88`。这些都不是照算术改的：每个新行号都先确认它指着的 C 文本与旧行号一致——正因
 如此 `editor.c:344`、`:348-349` 原地不动，插入的判断之后那些才挪。脚本判不下来的只有 `file_loader.c` 那一行
-（它正落在改动的 hunk 里），按 `git show b7a8b16:src/file_loader.c` 手工重定。
+（它正落在改动的 hunk 里），按 `git show 49805a5:src/file_loader.c` 手工重定。`9dd183a` 与 `49805a5` 同样挪了
+`user_priv.c` 的行号：`search_priv` `:30` 起变成 `:31`，`setpriv` `:60` 变 `:63`，`getpriv` `:99` 变 `:103`，
+`load_priv` `:113` 变 `:141`，四个阶段的 `:130/:151/:173/:198/:233/:255` 也跟着后移到
+`:162/:183/:205/:237/:279/:308`。
 
 ---
 

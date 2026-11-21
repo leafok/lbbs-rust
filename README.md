@@ -15,8 +15,8 @@ The sections build on each other, so reading top to bottom works.
 | Item | Value |
 | --- | --- |
 | Name | LBBS (Leaflet BBS Daemon) |
-| Version | 1.7.12 — revision `b7a8b16` on `main` (the release has no `v1.7.12` tag yet) |
-| Language | C (about 29,850 lines across `src/*.c` and `include/*.h`) |
+| Version | 1.7.12 — revision `49805a5` on `main` (the release has no `v1.7.12` tag yet) |
+| Language | C (about 30,340 lines across `src/*.c` and `include/*.h`) |
 | License | GPL-3.0-or-later |
 | Author | Leaflet &lt;leaflet@leafok.com&gt; |
 | Reference copy, alongside this repo | `../lbbs` — read-only for us; **we never modify it** |
@@ -30,9 +30,9 @@ and the index of users, boards and posts lives in a **MySQL database**. The site
 that same database. So LBBS is really a *terminal front-end to that web board*, and that gives us a
 hard constraint: **we must not change the schema.**
 
-The reference 1.7.12 is `v1.7.11..b7a8b16`: eighteen commits, 19 files, +106/−40 lines, and the working tree
-matches `b7a8b16`. Every `file.c:NNN` citation in the Rust sources is anchored to that one revision, so
-`git -C ../lbbs show b7a8b16:src/<file>` prints exactly the text the comment describes. [Section
+The reference 1.7.12 is `v1.7.11..49805a5`: twenty commits, 23 files, +616/−57 lines, and the working tree
+matches `49805a5`. Every `file.c:NNN` citation in the Rust sources is anchored to that one revision, so
+`git -C ../lbbs show 49805a5:src/<file>` prints exactly the text the comment describes. [Section
 10.3](#103-the-1712-round-what-each-reference-fix-means-here) records how the 1.7.12 fixes are represented here.
 
 ### 1.2 This project (lbbs-rust)
@@ -183,7 +183,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/lml.rs](src/lml.rs) | 689 | `src/lml.c` | LML markup rendering | done |
 | [src/bwf.rs](src/bwf.rs) | 241 | `src/trie_dict.c` etc. | badword matching and masking | done |
 | [src/ipmask.rs](src/ipmask.rs) | 109 | `src/ip_mask.c` | address masking (`202.38.64.x`) | done |
-| [src/privilege.rs](src/privilege.rs) | 445 | `src/user_priv.c` | privilege words and levels | done |
+| [src/privilege.rs](src/privilege.rs) | 469 | `src/user_priv.c` | privilege words and levels | done |
 | [src/session.rs](src/session.rs) | 613 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
 | [src/login.rs](src/login.rs) | 580 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
 | [src/bbsnet.rs](src/bbsnet.rs) | 1767 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
@@ -198,8 +198,8 @@ differently from C, read the deviations section first — the reason is written 
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 394 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-31 245 lines in total, the tests included (they live in the modules they test). There are 462 tests: 456 in the
-library and 6 in the binary. 448 of them need nothing but the checked-out tree; the other 14 are ignored because
+31 269 lines in total, the tests included (they live in the modules they test). There are 463 tests: 457 in the
+library and 6 in the binary. 449 of them need nothing but the checked-out tree; the other 14 are ignored because
 they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
@@ -679,8 +679,6 @@ app disagrees with us. These behaviours are therefore reproduced verbatim and pi
 
 | Original behaviour | Where | Why it must not be "fixed" |
 | --- | --- | --- |
-| The privilege list's binary search is broken: depending on the order boards were added, a stored board can become **unfindable** | [`privilege.rs`](src/privilege.rs) | repairing it silently changes what a person is allowed to do |
-| With an empty list, slot 0 (section id 0 = the global word) is inspected | same file | same reason |
 | `ip_mask` **truncates the string at the first masked octet**, so an address with a fifth octet loses its tail | [`ipmask.rs`](src/ipmask.rs) | the throttle's `LIKE '202.38.64.%'` depends on exactly this expression |
 | The username/password **format check issues no SQL at all**, so a malformed attempt is never logged | [`login.rs`](src/login.rs) | the web unlock feature counts those rows |
 | A disabled account (`p_login = 0`) still has its login row **committed before** the rejection | same | otherwise the visit counters move |
@@ -690,8 +688,60 @@ app disagrees with us. These behaviours are therefore reproduced verbatim and pi
 | `S_DEFAULT = 0x3` (list + experience) and **no post bit** | [`privilege.rs`](src/privilege.rs) | making new accounts "more convenient" would diverge from the web app |
 | A station that **refuses** the connection is only reported when the ten-second budget runs out, and then as `连接超时！` | [`bbsnet::connect`](src/bbsnet.rs) | C's wait loop keeps spinning on a socket that is writable but unconnected, and the keys pressed while the bar runs are spent on the connect; failing fast would change both the screen and what reaches the station |
 
+One entry left this table on 2026-11-21, and only because upstream moved first: the privilege list's binary
+search, which lost a stored board whenever the boards arrived out of `sid` order, and which — on an empty list —
+inspected slot 0, the global word. The port had reproduced both and pinned them. `../lbbs` repaired them in
+`9dd183a`, adding `src/test_user_priv.c` as its own proof, so the port followed the reference instead of deciding
+the C was wrong: [`privilege.rs`](src/privilege.rs) now carries the `left <= right` loop with the `found` flag,
+and `boards_that_arrive_out_of_order_stay_reachable` and `every_insertion_order_leaves_the_list_sorted_and_findable`
+pin the list as sorted and every board as findable. Nothing moved for the web application, because the C server
+computes the same words the Rust server now does. That is the rule this table runs by: an entry leaves it only
+when the reference has already left, never because we decided the C was wrong.
+
 If any of these is ever repaired, it should be a coordinated change with the data and the web application —
 never smuggled into a port.
+
+### 10.3 The 1.7.12 round: what each reference fix means here
+
+`v1.7.11..49805a5` — twenty commits, 23 files, +616/−57 lines. Going through the hunks one by one, the answer
+is that **only `9dd183a` needed a functional change in Rust** — it repaired exactly the quirk §10.2 used to
+reproduce, and upstream moved first — while every other one needed a check, not a change. They leak, forget to
+bound, mis-count, or treat user text as a `printf` format, and this project has owned buffers, RAII guards and
+bound parameters instead; the logging `49805a5` adds already has a counterpart here. What each fix *means* is
+written into the C file's replacement module; this table is only the index.
+
+| Reference commit | The problem in C | Where the port says so |
+| --- | --- | --- |
+| `6012565` | `char tmp[]` accumulated escape sequences with no bound; the fix stops at `sizeof(tmp) - 1` | [`term/mod.rs`](src/term/mod.rs) — the decoder consumes a `Vec<u8>`, so nothing overflows |
+| `de5fa0f` | error paths leaked an `fd` and two mappings | [`cache.rs`](src/cache.rs) — `File` and `Vec` release themselves on every return |
+| `a2f6c10` | `article_post.c:276`, `:1149`: the length added was `snprintf`'s *wanted* length; `article_reply` ignored `lml_render`'s negative return | [`post.rs`](src/post.rs) — footer note |
+| `37dfc47` | `screen.c` walked the screen pool with `sizeof(MENU_ITEM)` and misused `menu_item_count` as the cap | [`menu.rs`](src/menu.rs) — the comment above `set.screens.len() >= MAX_MENUS` |
+| `c996502` | `lml.c:482-486` copied a `LML_TAG_PARAM_BUF_LEN`-long parameter into a buffer of the same length, overwriting the caller's NUL | [`lml.rs`](src/lml.rs) — the clamp at the parameter copy |
+| `a02a212`, `c6444e2` | three failure paths in `db_open` skipped `mysql_close`; `data_file_mgr.c` called `munmap` on `MAP_FAILED` | [`db.rs`](src/db.rs) (a pool has no handle to leak), [`state.rs`](src/state.rs) (there is no mapping at all) |
+| `b2e764c` | `bwf.c` treated a zero-length row as an empty one; `user_list.c` read `row[3][0]` without the NULL check its neighbours have | [`bwf.rs`](src/bwf.rs) — the empty-row skip; [`db.rs`](src/db.rs#L334) — `gender` decodes into a `String` that cannot be NULL, because the column is `char(1) NOT NULL DEFAULT 'M'` |
+| `51b1c7f` | two `prints(buffer)` calls let user text's `%` be read as a format | [`Terminal::print`](src/term/mod.rs) — the Rust `print` takes no format string |
+| `d7f2f5d` | `section_list_loader.c:145-152` left the board loop while still holding the write lock | [`loader.rs`](src/loader.rs) — the `load_section_config` docs; no guard here can outlive a refresh |
+| `0e5224a` | `editor.c` cleared one byte per pointer when clearing `p_display_lines[]`, so a recycled pool node kept 7/8 of a dirty row | [`editor.rs`](src/editor.rs) — `recount()` derives display rows from data rows, so a dirty tail cannot survive an edit |
+| `336b670` | `str_process.c` wrote the width of row `line_offsets_count` before checking the bound, so a file with many lines wrote past the offset array | [`text.rs`](src/text.rs) — `split_data_lines` checks, then truncates, pinned by `wrapped_respects_line_cap` |
+| `038dd6b` | the version number | this section |
+| `4553b19` | `article_favor.c:145`, `:211` wrote the delete prefix but measured it with `sizeof(sql_add)` — a real typo, harmless only because both buffers are `SQL_BUFFER_LEN` | [`db.rs`](src/db.rs#L772) — the `QueryBuilder` builds the prefix directly, so there is no "wrong variable's buffer size" |
+| `ebaa144` | the `long[]` offset table placed after the text in shared memory landed at `data_len + 1`, usually unaligned; the new `shm_offsets_offset()` rounds the length, the writer and the reader alike | the port never builds that layout: [`state.rs`](src/state.rs) stores file bytes and [`screen.rs`](src/screen.rs) wraps per session (those two `file_loader.c:88` citations are the moved line) |
+| `37b0660` | `log.c:114-117`: `log_printf` picked a `FILE *` by level and wrote to it, so logging before `log_begin()` was a NULL dereference; it now falls back to `stderr` | [`log::begin`](src/log.rs#L276) opens both streams and aborts startup if it cannot, and `main.rs:134` installs the subscriber before any session or loader task — there is no "not open yet" state to fall back from |
+| `65ce0f7` | the trie self-test shifted a negative `int64_t` left (`TEST_VAL << i`), which is undefined in C | defined in Rust, and the tables C keeps in tries are `HashMap`s here ([`board.rs`](src/board.rs), [`roster.rs`](src/roster.rs)); the reference self-test has no counterpart |
+| `b7a8b16` | `editor.c:395-414`: three `memmove`s shifted display rows by `display_line_total - last_display_line - 1` directly, so a dirty count became a huge `size_t` and both ends ran off; the fix requires `display_line_total >= last_display_line + 1` and logs the surprise otherwise | [`editor.rs`](src/editor.rs) — `EditorData::insert` changes data rows and `recount()` recomputes display rows, so there is no parallel array to shift and the negative length has no shape here |
+| `9dd183a` | `search_priv` used `while (left < right)` and then decided a hit by comparing `s_priv_list[left]`, while `setpriv` shifted the tail with a linear loop: an insert could land in the wrong place, the list stopped being sorted, and a stored board became unfindable | [`privilege.rs`](src/privilege.rs) — the port had reproduced this on purpose; §10.2 records the repair, and `boards_that_arrive_out_of_order_stay_reachable` and `every_insertion_order_leaves_the_list_sorted_and_findable` pin the sorted, findable list |
+| `49805a5` | `load_priv` dropped privileges once the list was full and said nothing; the new `count_priv_dropped()`/`log_priv_dropped()` (`:119-138`) report each stage | [`privilege.rs`](src/privilege.rs) — `Dropped::default()` plus `dropped.report(uid, "…")` is that logging, already ported |
+
+**The last seven were still uncommitted at the previous sync.** Two of them move citation line numbers:
+`b7a8b16` adds eight lines inside `editor_data_insert`, so every `editor.c` citation after that hunk in
+[`editor.rs`](src/editor.rs) is +8; `ebaa144` adds seven lines above the `split_data_lines` the file pager
+cites, moving it from `file_loader.c:81` to `:88`. None of this was applied by arithmetic: each new line number
+was checked against the C text the old number pointed at, which is why `editor.c:344` and `:348-349` stay put
+while the ones after the inserted check move. Only `file_loader.c:88` — it sits inside the changed hunk — had to
+be re-read by hand against `git show 49805a5:src/file_loader.c`. `9dd183a` and `49805a5` likewise move
+`user_priv.c`: `search_priv` `:30`→`:31`, `setpriv` `:60`→`:63`, `getpriv` `:99`→`:103`, `load_priv`
+`:113`→`:141`, and the stages `:130`/`:151`/`:173`/`:198`/`:233`/`:255` move to `:162`/`:183`/`:205`/`:237`/
+`:279`/`:308`.
 
 ---
 
