@@ -162,7 +162,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/config.rs](src/config.rs) | 384 | `src/init.c` | reads `conf/bbsd.conf` | done |
 | [src/log.rs](src/log.rs) | 497 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
 | [src/text.rs](src/text.rs) | 357 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
-| [src/term/mod.rs](src/term/mod.rs) | 697 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
+| [src/term/mod.rs](src/term/mod.rs) | 803 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
 | [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | turns ESC sequences into key codes | done |
 | [src/screen.rs](src/screen.rs) | 1116 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
 | [src/db.rs](src/db.rs) | 1368 | `src/database.c` etc. | MySQL queries through sqlx | done |
@@ -198,8 +198,8 @@ differently from C, read the deviations section first — the reason is written 
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 394 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-31 319 lines in total, the tests included (they live in the modules they test). There are 464 tests: 458 in the
-library and 6 in the binary. 450 of them need nothing but the checked-out tree; the other 14 are ignored because
+31 425 lines in total, the tests included (they live in the modules they test). There are 467 tests: 461 in the
+library and 6 in the binary. 453 of them need nothing but the checked-out tree; the other 14 are ignored because
 they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
@@ -219,7 +219,11 @@ that does not run is described as if it did.
    the same rules as C's `str_process.c`.
 3. **Key decoding** — `ESC [ A` arrives as "up arrow"; a sequence split across packets is discarded and reported
    as a bare `ESC`, the way `igetch` does it.
-4. **Character sets** — UTF-8 and GBK both work; a GBK character split across packets is rejoined correctly.
+4. **Character sets** — UTF-8 and GBK both work; a GBK character split across packets is rejoined correctly,
+   and so is a `0xff` control escape. `io_buf_conv` (io.c:1142-1176) keeps such an escape and the byte behind
+   it away from the converter, which matters because that is exactly what a telnet client's `IAC` answer to
+   the session's negotiation is: transcoded as text it reached the login line as junk and swallowed the keys
+   typed after it, which is why output looked wrong after `(G)GBK`.
 5. **Line input (`str_input`)** and **pager (`display_data`)** — hidden password entry (a `NOECHO` prompt
    prints C's `*`/`**` mask), `q` to quit, and the rest of C's key behaviour.
 6. **MySQL queries** — credential checks, board and article indexes, online list, experience accrual.

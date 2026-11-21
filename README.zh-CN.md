@@ -151,7 +151,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/paths.rs](src/paths.rs) | 116 | `include/bbs.h` 等 | 屏幕尺寸、各字段长度、路径名等常量 | 完成 |
 | [src/config.rs](src/config.rs) | 384 | `src/init.c` | 读取 `conf/bbsd.conf` | 完成 |
 | [src/text.rs](src/text.rs) | 357 | `src/str_process.c` | 显示宽度（全角=2 列）与折行计算 | 完成 |
-| [src/term/mod.rs](src/term/mod.rs) | 697 | `src/io.c` | 字节管道、GBK 转码、`prints`/`iflush`、`igetch` | 完成 |
+| [src/term/mod.rs](src/term/mod.rs) | 803 | `src/io.c` | 字节管道、GBK 转码、`prints`/`iflush`、`igetch` | 完成 |
 | [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | 把 ESC 序列翻译成按键码 | 完成 |
 | [src/screen.rs](src/screen.rs) | 1116 | `src/screen.c` | 清屏、回显接管 `set_input_echo`、行输入 `str_input`、分页器 `display_data` | 完成 |
 | [src/db.rs](src/db.rs) | 1368 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
@@ -188,7 +188,7 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 
 另有 [src/daemon.rs](src/daemon.rs)（415 行，命令行与后台化）、[src/log.rs](src/log.rs)（497 行，两个日志文件）、[src/state.rs](src/state.rs)（407 行，加载器发布、会话读取的共享状态）。
 
-合计 31,319 行（含测试，测试就写在被测模块里）。共 464 个测试：库 458 个、可执行文件 6 个。其中 450 个只读代码
+合计 31,425 行（含测试，测试就写在被测模块里）。共 467 个测试：库 461 个、可执行文件 6 个。其中 453 个只读代码
 仓库里的东西，另外 14 个默认跳过，因为它们要连真实数据库、读真实生成的文件。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
@@ -204,7 +204,10 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 1. **配置解析**——`conf/bbsd.conf` 的切分方式与 C 完全相同（空格、制表符、CR、LF 为分隔；键名不区分大小写）。
 2. **显示宽度计算**——中日韩全角字符算 2 列，控制序列算 0 列，规则与 C 的 `str_process.c` 一致。
 3. **按键解析**——`ESC [ A` 被识别为“上箭头”；跨包被切断的序列会整段丢弃并报成裸 `ESC`，与 `igetch` 相同。
-4. **字符编码**——UTF-8 与 GBK 都支持；GBK 字符在包边界被切断也能正确拼回。
+4. **字符编码**——UTF-8 与 GBK 都支持；GBK 字符在包边界被切断也能正确拼回，`0xff` 控制转义序列也一样。
+   `io_buf_conv`（io.c:1142-1176）会把 `0xff` 和紧随的那一个字节留给 `igetch`、不送进转码器，而 telnet 客户端
+   应答协商发回的 `IAC` 正是这种字节：以前它们被当成文本转码，在登录行上变成乱码并把后面真正的按键吃掉，
+   这就是选了 `(G)GBK` 之后输出不对的原因。
 5. **行输入（`str_input`）**与**分页器（`display_data`）**——密码不回显（`NOECHO` 提示打印 C 的
    `*`/`**` 掩码）、按 `q` 退出等按键行为与 C 一致。
 6. **MySQL 查询**——凭据校验、版块与帖子索引、在线列表、经验值累计等。

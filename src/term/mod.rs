@@ -3,7 +3,7 @@
 
 pub mod key;
 
-use encoding_rs::{Decoder, GBK};
+use encoding_rs::{Decoder, DecoderResult, GBK};
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -472,19 +472,66 @@ impl Terminal {
                 }
             }
             Charset::Gbk => {
+                // `io_buf_conv` (io.c:1142-1176) keeps a `0xff` and the byte behind it away
+                // from iconv, which is how the `IAC` triples with which a telnet client
+                // answers the session's negotiation reach `igetch` whole - as the wide code
+                // [`key::decode`] reads them. Converted as text they would come out as
+                // replacement characters, whose three UTF-8 bytes the line editor takes for a
+                // truncated Chinese character and completes with the keys typed behind them.
+                let mut held = std::mem::take(&mut self.pending_lead);
+                if !held.is_empty() {
+                    held.extend_from_slice(bytes);
+                }
+                let mut src: &[u8] = if held.is_empty() { bytes } else { &held };
+
                 // Stateful so a character split across packets decodes correctly.
                 let decoder = self
                     .gbk
                     .get_or_insert_with(|| GBK.new_decoder_without_bom_handling());
-                let mut text = String::new();
-                // `decode_to_string` writes into spare capacity and reports OutputFull
-                // when there is none, so the worst case must be reserved up front.
+                // `decode_to_*` writes into spare capacity and reports OutputFull when there
+                // is none, so the worst case for the whole buffer is reserved up front.
                 let room = decoder
-                    .max_utf8_buffer_length(bytes.len())
-                    .unwrap_or(bytes.len() * 3);
-                text.reserve(room);
-                let _ = decoder.decode_to_string(bytes, &mut text, false);
-                self.input.extend_from_slice(text.as_bytes());
+                    .max_utf8_buffer_length(src.len())
+                    .unwrap_or(src.len() * 3);
+                let mut out: Vec<u8> = Vec::with_capacity(room);
+                let mut decoded = String::with_capacity(room);
+
+                while !src.is_empty() {
+                    let cut = src
+                        .iter()
+                        .position(|&b| b == key::KEY_CONTROL as u8)
+                        .unwrap_or(src.len());
+                    let (segment, control) = src.split_at(cut);
+
+                    decoded.clear();
+                    let mut rest = segment;
+                    while !rest.is_empty() {
+                        let (result, read) =
+                            decoder.decode_to_string_without_replacement(rest, &mut decoded, false);
+                        // The `//IGNORE` of io.c:1200-1217: the malformed sequence has been
+                        // consumed by the call above and nothing was written for it, so the
+                        // text the decoder mapped behind it is kept and the scan goes on.
+                        rest = &rest[read..];
+                        if !matches!(result, DecoderResult::Malformed(..)) {
+                            break;
+                        }
+                    }
+                    out.extend_from_slice(decoded.as_bytes());
+
+                    if control.is_empty() {
+                        break;
+                    }
+                    if control.len() == 1 {
+                        // The escape is split across packets. C leaves the unconsumed byte in
+                        // `stdin_buf` to be converted again; the port holds it here.
+                        self.pending_lead = control.to_vec();
+                        break;
+                    }
+                    out.extend_from_slice(&control[..2]);
+                    src = &control[2..];
+                }
+
+                self.input.extend_from_slice(&out);
             }
         }
     }
@@ -693,5 +740,64 @@ mod tests {
         client.push(b"A");
         assert_eq!(term.read_key(Duration::from_secs(1)).await, b'A' as u32);
         assert_eq!(term.read_key(Duration::from_secs(1)).await, KEY_TIMEOUT);
+    }
+
+    /// `io_buf_conv` (io.c:1142-1176) hands a `0xff` and the byte after it to `igetch`
+    /// without converting them, so the `IAC` triple with which a telnet client answers the
+    /// session's negotiation is one unreadable key in either charset - and not, under GBK,
+    /// replacement characters whose bytes the line editor completes with real keystrokes.
+    #[tokio::test]
+    async fn a_control_escape_is_not_converted_as_text() {
+        for charset in [Charset::Utf8, Charset::Gbk] {
+            let (mut term, client) = session();
+            term.set_charset(charset);
+            client.push(&[0xff, 0xfb, 0x01, b'a', b'b']);
+            let first = term.read_key(Duration::from_millis(200)).await;
+            assert!(first > 255, "{charset:?}: {first:#x} is a wide code, not text");
+            assert_eq!(
+                term.read_key(Duration::from_millis(200)).await,
+                b'a' as u32,
+                "{charset:?}"
+            );
+            assert_eq!(
+                term.read_key(Duration::from_millis(200)).await,
+                b'b' as u32,
+                "{charset:?}"
+            );
+        }
+    }
+
+    /// C keeps an unconsumed byte in `stdin_buf` for the next read (`io.c:1185-1191`), so a
+    /// control escape split across packets is still one escape and not a lone `KEY_CONTROL`
+    /// followed by an option byte read as text.
+    #[tokio::test]
+    async fn a_control_escape_split_across_packets_is_kept_whole() {
+        let (mut term, client) = session();
+        term.set_charset(Charset::Gbk);
+        client.push(&[0xff]);
+        // Half an escape is not a key: `igetch` has the byte and returns 0 to be asked again.
+        assert_eq!(term.read_key(Duration::from_millis(50)).await, KEY_RETRY);
+
+        client.push(&[0xfb, 0x01, b'a']);
+        let first = term.read_key(Duration::from_secs(1)).await;
+        assert!(first > 255, "the triple is a wide code again: {first:#x}");
+        assert_eq!(term.read_key(Duration::from_millis(200)).await, b'a' as u32);
+    }
+
+    /// `io_conv_init` opens the input descriptor with `//IGNORE` (io.c:1259-1261) and
+    /// `io_buf_conv` then skips what iconv reports as a malformed sequence (io.c:1200-1217).
+    /// Dropping it is what leaves the keys typed after it intact: a replacement character
+    /// would be three bytes and the line editor would treat them as a truncated character.
+    #[tokio::test]
+    async fn unconvertible_input_bytes_are_dropped() {
+        let (mut term, client) = session();
+        term.set_charset(Charset::Gbk);
+        client.push(&[0xa1, b'!']);
+        assert_eq!(term.read_key(Duration::from_millis(200)).await, b'!' as u32);
+        assert!(
+            term.input.is_empty(),
+            "the malformed byte leaves nothing behind: {:x?}",
+            term.input
+        );
     }
 }
