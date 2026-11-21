@@ -1332,7 +1332,7 @@ mod tests {
         };
         let state = Arc::new(AppState::new(config, crate::db::Db::detached(&db)));
         let mut session =
-            Session::new(state, root, "lbbs-rust-test".into(), "127.0.0.1".into(), 2323, is_ssh);
+            Session::new(state, root, "lbbs-test".into(), "127.0.0.1".into(), 2323, is_ssh);
         session.current_action = ACTION.to_string();
         session.current_action_tm = session::now();
         session
@@ -1341,7 +1341,7 @@ mod tests {
     /// A server root holding one `conf/bbsnet.conf`, unique to this process and test name.
     fn root_with_conf(name: &str, body: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!(
-            "lbbs-rust-bbsnet-{name}-{}",
+            "lbbs-bbsnet-{name}-{}",
             std::process::id()
         ));
         std::fs::create_dir_all(root.join("conf")).unwrap();
@@ -1540,7 +1540,7 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
 
     #[tokio::test]
     async fn an_ssh_station_needs_an_ssh_login() {
-        let root = std::env::temp_dir().join(format!("lbbs-rust-bbsnet-sshgate-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("lbbs-bbsnet-sshgate-{}", std::process::id()));
         let (mut term, mut client) = pair();
         let mut session = shuttle_session(&root, false);
         let station = station("127.0.0.1", 2322, true, "UTF-8");
@@ -1563,7 +1563,7 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
 
     #[tokio::test]
     async fn a_name_that_will_not_resolve_is_reported() {
-        let root = std::env::temp_dir().join(format!("lbbs-rust-bbsnet-dns-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("lbbs-bbsnet-dns-{}", std::process::id()));
         let (mut term, mut client) = pair();
         let mut session = shuttle_session(&root, false);
         let station = station("no-such-station.invalid", 23, false, "UTF-8");
@@ -1581,7 +1581,7 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
 
     #[tokio::test]
     async fn the_relay_carries_both_ways_in_the_station_charset() {
-        let root = std::env::temp_dir().join(format!("lbbs-rust-bbsnet-relay-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("lbbs-bbsnet-relay-{}", std::process::id()));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
 
@@ -1623,7 +1623,7 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
 
     #[tokio::test]
     async fn a_station_charset_the_converter_lacks_is_refused() {
-        let root = std::env::temp_dir().join(format!("lbbs-rust-bbsnet-charset-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("lbbs-bbsnet-charset-{}", std::process::id()));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let accepted = tokio::spawn(async move {
@@ -1648,7 +1648,7 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
 
     #[test]
     fn known_hosts_decides_as_libssh_does() {
-        let dir = std::env::temp_dir().join(format!("lbbs-rust-bbsnet-keys-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lbbs-bbsnet-keys-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("known_hosts");
@@ -1669,7 +1669,7 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
 
     #[tokio::test]
     async fn an_unknown_entry_names_itself() {
-        let root = std::env::temp_dir().join(format!("lbbs-rust-bbsnet-entry-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("lbbs-bbsnet-entry-{}", std::process::id()));
         let (mut term, mut client) = pair();
         let mut session = shuttle_session(&root, false);
 

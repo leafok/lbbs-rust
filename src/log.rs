@@ -407,7 +407,7 @@ mod tests {
             tracing::warn!("slow");
         });
         assert!(common.is_empty(), "{common}");
-        assert!(error.contains("[ERROR] [lbbs_rust::log::tests"), "{error}");
+        assert!(error.contains("[ERROR] [lbbs::log::tests"), "{error}");
         assert!(error.contains("open(var/menu.conf) failed"), "{error}");
         assert!(error.contains("[DEBUG] "), "{error}");
         // WARN has no C counterpart and rides the error stream.
@@ -486,7 +486,7 @@ mod tests {
 
     /// A directory that looks like a server root, with or without its log directory.
     fn temp_server_root(name: &str, with_log_dir: bool) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("lbbs-rust-log-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lbbs-log-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         if with_log_dir {

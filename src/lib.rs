@@ -6,6 +6,7 @@
 
 pub mod bbs;
 pub mod bbsnet;
+pub mod batch;
 pub mod board;
 pub mod browse;
 pub mod bwf;
@@ -16,6 +17,9 @@ pub mod db;
 pub mod editor;
 pub mod favorlist;
 pub mod favorlog;
+pub mod gen_ex_list;
+pub mod gen_section_menu;
+pub mod gen_top;
 pub mod ipmask;
 pub mod loader;
 pub mod lml;
@@ -28,6 +32,7 @@ pub mod post;
 pub mod privilege;
 pub mod roster;
 pub mod screen;
+pub mod section_list;
 pub mod session;
 pub mod ssh;
 pub mod state;

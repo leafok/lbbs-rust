@@ -4,6 +4,9 @@
 
 pub const CONF_BBSD: &str = "conf/bbsd.conf";
 pub const CONF_MENU: &str = "var/menu_merged.conf";
+/// `gen_section_menu.php:12`: the hand-written half of the menu, which that tool copies into
+/// [`CONF_MENU`] before appending the section menus it reads from the database.
+pub const CONF_MENU_SRC: &str = "conf/menu.conf";
 pub const CONF_BBSNET: &str = "conf/bbsnet.conf";
 pub const CONF_BWF: &str = "conf/badwords.conf";
 pub const CONF_TOP10_MENU: &str = "var/bbs_top_menu.conf";

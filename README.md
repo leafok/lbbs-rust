@@ -1,7 +1,7 @@
 # lbbs-rust — a Rust rewrite of LBBS
 
 > English is the default version of this document and the one kept up to date.
-> A Simplified Chinese translation is available in [README.zh-CN.md](file:///home/leaflet/Development/lbbs-rust/README.zh-CN.md).
+> A Simplified Chinese translation is available in [README.zh-CN.md](README.zh-CN.md).
 
 This document explains **what the project is for someone who has never run a BBS and is new to Rust**.
 The sections build on each other, so reading top to bottom works.
@@ -114,8 +114,8 @@ Each one was chosen deliberately, and each has a reason.
 `fork()`, POSIX shared memory and System V semaphores fight Rust's safety model and only add raw `libc` calls.
 Instead the whole server is one process running **Tokio** tasks.
 
-- C's per-process globals → fields of a [`Session`](file:///home/leaflet/Development/lbbs-rust/src/session.rs) struct.
-- C's shared memory → [`Arc<RwLock<...>>`](file:///home/leaflet/Development/lbbs-rust/src/state.rs) inside the process.
+- C's per-process globals → fields of a [`Session`](src/session.rs) struct.
+- C's shared memory → [`Arc<RwLock<...>>`](src/state.rs) inside the process.
 
 > New to async? An `async fn` is a function that has to wait for something. At each `.await` it hands the
 > thread to another task, so a single thread can serve many connections. The trap is that code which does not
@@ -157,44 +157,50 @@ differently from C, read the deviations section first — the reason is written 
 
 | Rust file | Lines | Original C | Responsibility | Status |
 | --- | ---:| --- | --- | --- |
-| [src/paths.rs](file:///home/leaflet/Development/lbbs-rust/src/paths.rs) | 113 | `include/bbs.h` etc. | screen size, field lengths, path names | done |
-| [src/daemon.rs](file:///home/leaflet/Development/lbbs-rust/src/daemon.rs) | 415 | `src/main.c`, `src/daemon.c` | command line, `--help`/`--version`, `fork` into background | done |
-| [src/config.rs](file:///home/leaflet/Development/lbbs-rust/src/config.rs) | 384 | `src/init.c` | reads `conf/bbsd.conf` | done |
-| [src/log.rs](file:///home/leaflet/Development/lbbs-rust/src/log.rs) | 497 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
-| [src/text.rs](file:///home/leaflet/Development/lbbs-rust/src/text.rs) | 357 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
-| [src/term/mod.rs](file:///home/leaflet/Development/lbbs-rust/src/term/mod.rs) | 584 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
-| [src/term/key.rs](file:///home/leaflet/Development/lbbs-rust/src/term/key.rs) | 504 | `src/io.c` | turns ESC sequences into key codes | done |
-| [src/screen.rs](file:///home/leaflet/Development/lbbs-rust/src/screen.rs) | 1116 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
-| [src/db.rs](file:///home/leaflet/Development/lbbs-rust/src/db.rs) | 1368 | `src/database.c` etc. | MySQL queries through sqlx | done |
-| [src/board.rs](file:///home/leaflet/Development/lbbs-rust/src/board.rs) | 1470 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
-| [src/browse.rs](file:///home/leaflet/Development/lbbs-rust/src/browse.rs) | 2890 | `src/section_list_display.c`, `src/section_list_loader.c` | the article list, its keys, reading a post, the saved reading position | done |
-| [src/editor.rs](file:///home/leaflet/Development/lbbs-rust/src/editor.rs) | 1812 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
-| [src/post.rs](file:///home/leaflet/Development/lbbs-rust/src/post.rs) | 1488 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, and the transaction each writes in | done |
-| [src/viewlog.rs](file:///home/leaflet/Development/lbbs-rust/src/viewlog.rs) | 366 | `src/article_view_log.c` | which posts this user has read | done |
-| [src/favorlog.rs](file:///home/leaflet/Development/lbbs-rust/src/favorlog.rs) | 446 | `src/article_favor.c` | which posts this user starred | done |
-| [src/favorlist.rs](file:///home/leaflet/Development/lbbs-rust/src/favorlist.rs) | 768 | `src/article_favor_display.c`, `src/article_favor.c` (the page query), `src/menu_proc.c` (the `FAVOR_TOPIC` item) | the 我收藏的主题 list: two name columns, the star removed in place, and the board each row opens | done |
-| [src/roster.rs](file:///home/leaflet/Development/lbbs-rust/src/roster.rs) | 661 | `src/user_list_loader.c` | the online-user roster and the article counters | done |
-| [src/userinfo.rs](file:///home/leaflet/Development/lbbs-rust/src/userinfo.rs) | 923 | `src/user_info_display.c`, `src/user_list_display.c` (the search), `src/bbs.c` (the level and sign tables) | one user's profile page, and the name search that reaches it | done |
-| [src/userlist.rs](file:///home/leaflet/Development/lbbs-rust/src/userlist.rs) | 1024 | `src/user_list_display.c`, `src/menu_proc.c` (the two roster items) | the 线上使用者 and 已注册用户 pages: titles, columns, paging, and the keys between them | done |
-| [src/loader.rs](file:///home/leaflet/Development/lbbs-rust/src/loader.rs) | 1406 | `src/section_list_loader.c` | the incremental refresh task, and the article cache files it writes | done |
-| [src/state.rs](file:///home/leaflet/Development/lbbs-rust/src/state.rs) | 413 | the shared-memory segments | what the loader publishes and a session reads | done |
-| [src/cache.rs](file:///home/leaflet/Development/lbbs-rust/src/cache.rs) | 554 | `src/article_cache.c` | render and load `var/articles/<CID>` with its line index | done |
-| [src/menu.rs](file:///home/leaflet/Development/lbbs-rust/src/menu.rs) | 2351 | `src/menu.c` | `menu.conf` parsing and navigation | parsing/navigation done, feature bodies not |
-| [src/lml.rs](file:///home/leaflet/Development/lbbs-rust/src/lml.rs) | 689 | `src/lml.c` | LML markup rendering | done |
-| [src/bwf.rs](file:///home/leaflet/Development/lbbs-rust/src/bwf.rs) | 241 | `src/trie_dict.c` etc. | badword matching and masking | done |
-| [src/ipmask.rs](file:///home/leaflet/Development/lbbs-rust/src/ipmask.rs) | 109 | `src/ip_mask.c` | address masking (`202.38.64.x`) | done |
-| [src/privilege.rs](file:///home/leaflet/Development/lbbs-rust/src/privilege.rs) | 385 | `src/user_priv.c` | privilege words and levels | done |
-| [src/session.rs](file:///home/leaflet/Development/lbbs-rust/src/session.rs) | 613 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
-| [src/login.rs](file:///home/leaflet/Development/lbbs-rust/src/login.rs) | 580 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
-| [src/bbsnet.rs](file:///home/leaflet/Development/lbbs-rust/src/bbsnet.rs) | 1767 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
-| [src/bbs.rs](file:///home/leaflet/Development/lbbs-rust/src/bbs.rs) | 761 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | prompts, menu loop and the browse commands done; a few menu actions still log and return |
-| [src/net.rs](file:///home/leaflet/Development/lbbs-rust/src/net.rs) | 359 | `src/net_server.c` | accept, connection limits, graceful drain | done |
-| [src/ssh.rs](file:///home/leaflet/Development/lbbs-rust/src/ssh.rs) | 493 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
-| [src/main.rs](file:///home/leaflet/Development/lbbs-rust/src/main.rs) | 542 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
+| [src/paths.rs](src/paths.rs) | 113 | `include/bbs.h` etc. | screen size, field lengths, path names | done |
+| [src/daemon.rs](src/daemon.rs) | 415 | `src/main.c`, `src/daemon.c` | command line, `--help`/`--version`, `fork` into background | done |
+| [src/config.rs](src/config.rs) | 384 | `src/init.c` | reads `conf/bbsd.conf` | done |
+| [src/log.rs](src/log.rs) | 497 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
+| [src/text.rs](src/text.rs) | 357 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
+| [src/term/mod.rs](src/term/mod.rs) | 584 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
+| [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | turns ESC sequences into key codes | done |
+| [src/screen.rs](src/screen.rs) | 1116 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
+| [src/db.rs](src/db.rs) | 1368 | `src/database.c` etc. | MySQL queries through sqlx | done |
+| [src/board.rs](src/board.rs) | 1470 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
+| [src/browse.rs](src/browse.rs) | 2890 | `src/section_list_display.c`, `src/section_list_loader.c` | the article list, its keys, reading a post, the saved reading position | done |
+| [src/editor.rs](src/editor.rs) | 1812 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
+| [src/post.rs](src/post.rs) | 1488 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, and the transaction each writes in | done |
+| [src/viewlog.rs](src/viewlog.rs) | 366 | `src/article_view_log.c` | which posts this user has read | done |
+| [src/favorlog.rs](src/favorlog.rs) | 446 | `src/article_favor.c` | which posts this user starred | done |
+| [src/favorlist.rs](src/favorlist.rs) | 768 | `src/article_favor_display.c`, `src/article_favor.c` (the page query), `src/menu_proc.c` (the `FAVOR_TOPIC` item) | the 我收藏的主题 list: two name columns, the star removed in place, and the board each row opens | done |
+| [src/roster.rs](src/roster.rs) | 661 | `src/user_list_loader.c` | the online-user roster and the article counters | done |
+| [src/userinfo.rs](src/userinfo.rs) | 923 | `src/user_info_display.c`, `src/user_list_display.c` (the search), `src/bbs.c` (the level and sign tables) | one user's profile page, and the name search that reaches it | done |
+| [src/userlist.rs](src/userlist.rs) | 1024 | `src/user_list_display.c`, `src/menu_proc.c` (the two roster items) | the 线上使用者 and 已注册用户 pages: titles, columns, paging, and the keys between them | done |
+| [src/loader.rs](src/loader.rs) | 1406 | `src/section_list_loader.c` | the incremental refresh task, and the article cache files it writes | done |
+| [src/state.rs](src/state.rs) | 413 | the shared-memory segments | what the loader publishes and a session reads | done |
+| [src/cache.rs](src/cache.rs) | 554 | `src/article_cache.c` | render and load `var/articles/<CID>` with its line index | done |
+| [src/menu.rs](src/menu.rs) | 2351 | `src/menu.c` | `menu.conf` parsing and navigation | parsing/navigation done, feature bodies not |
+| [src/lml.rs](src/lml.rs) | 689 | `src/lml.c` | LML markup rendering | done |
+| [src/bwf.rs](src/bwf.rs) | 241 | `src/trie_dict.c` etc. | badword matching and masking | done |
+| [src/ipmask.rs](src/ipmask.rs) | 109 | `src/ip_mask.c` | address masking (`202.38.64.x`) | done |
+| [src/privilege.rs](src/privilege.rs) | 385 | `src/user_priv.c` | privilege words and levels | done |
+| [src/session.rs](src/session.rs) | 613 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
+| [src/login.rs](src/login.rs) | 580 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
+| [src/bbsnet.rs](src/bbsnet.rs) | 1767 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
+| [src/bbs.rs](src/bbs.rs) | 761 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | prompts, menu loop and the browse commands done; a few menu actions still log and return |
+| [src/net.rs](src/net.rs) | 359 | `src/net_server.c` | accept, connection limits, graceful drain | done |
+| [src/ssh.rs](src/ssh.rs) | 493 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
+| [src/main.rs](src/main.rs) | 542 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
+| [src/batch.rs](src/batch.rs) | 374 | `utils/lib/db_open.inc.php` + the lines the three scripts repeat | one generator's life: arguments, server root, `conf/bbsd.conf`, database, the PHP's own stdout text and exit bytes | done |
+| [src/section_list.rs](src/section_list.rs) | 149 | `utils/lib/section_list.inc.php` | the class/board hierarchy the generators walk, with the caller's per-board values | done |
+| [src/gen_top.rs](src/gen_top.rs) | 305 | `utils/bin/gen_top.php` | `var/bbs_top.txt` and `var/bbs_top_menu.conf`: the ten hottest posts of the week | done |
+| [src/gen_section_menu.rs](src/gen_section_menu.rs) | 681 | `utils/bin/gen_section_menu.php` | `var/menu_merged.conf`: `conf/menu.conf` plus the six generated menu blocks | done |
+| [src/gen_ex_list.rs](src/gen_ex_list.rs) | 394 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
+| [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-28,487 lines in total, the tests included (they live in the modules they test). There are 401 tests: 395 in the
-library and 6 in the binary run without the database; 12 more are ignored because they need the real database and
-files.
+30 428 lines in total, the tests included (they live in the modules they test). There are 452 tests: 446 in the
+library and 6 in the binary. 438 of them need nothing but the checked-out tree; the other 14 are ignored because
+they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
 
@@ -234,7 +240,7 @@ that does not run is described as if it did.
     parent counted its children, with the log lines it logged.
 14. **SSH** through russh on the same host keys: password-only auth, the same three tries, one session channel,
     and the session running the same `bbs_main` as telnet.
-15. **The session's opening**, in C's order: [`screen::set_input_echo`](file:///home/leaflet/Development/lbbs-rust/src/screen.rs)
+15. **The session's opening**, in C's order: [`screen::set_input_echo`](src/screen.rs)
     sending `IAC WILL ECHO, IAC WILL SGA` so the client stops echoing what it types, then the two 5-second
     prompts, `bbs_info`, `data/welcome.txt`, the counts line, `var/bbs_top.txt` and the top menu with its
     ten-second board panel.
@@ -257,17 +263,17 @@ that does not run is described as if it did.
 19. **The full-screen editor** (`editor.c`): insert and overwrite, the row and window arithmetic, `Ctrl-K` and
    `Ctrl-Y` deletes, backspace joining rows, wide characters deleted whole, `Ctrl-W`/`Ctrl-X` leaving without
    repainting, the status row, and the `MAX_EDITOR_DATA_LINES` limit.
-20. **Writing the article cache.** [`cache::generate`](file:///home/leaflet/Development/lbbs-rust/src/cache.rs)
+20. **Writing the article cache.** [`cache::generate`](src/cache.rs)
    is C's `article_cache_generate` down to the byte, and the loader calls it for every post a pass appends and
    every `'M'` a replay applies (`section_list_loader.c:327`, `:542`), so `var/articles/<CID>` appears on its
    own — within a second of the post landing, the same as C.
 21. **The two roster pages and the profile behind them** — `user_list_display(1)` and `user_list_display(0)`
-    ([`userlist::user_list_display`](file:///home/leaflet/Development/lbbs-rust/src/userlist.rs)), reached from the
+    ([`userlist::user_list_display`](src/userlist.rs)), reached from the
     top menu's `线上使用者`/`已注册用户` items and from nothing else. Both are one screen with the other flag: the
     title line, the column headers, 20 rows a page, and the keys `k`/`j`/`p`/`n`/`↑`/`↓`/`Home`/`End`/`PgUp`/`PgDn`
     over them — including C's habit of letting one key do both jobs at once, so `Home` on the last row of a page
     sets page one *and* moves the cursor, and `Enter` on a row opens that user's profile
-    ([`userinfo::user_info_display`](file:///home/leaflet/Development/lbbs-rust/src/userinfo.rs)) before the page
+    ([`userinfo::user_info_display`](src/userinfo.rs)) before the page
     repaints. `s` runs the name search inside the list, `h` shows the reader help, `N` rotates to the tail and `P`
     to the head. The three duration columns are `gmtime` of a raw second count read as a date, which is why an hour
     of idleness prints `0"` and a login a year old prints `1年0天`.
@@ -275,7 +281,7 @@ that does not run is described as if it did.
    character wide and starts out holding the default `N`, so `get_data` refuses what is typed over it with a bell
    and a `Y` only gets in once the `N` is erased; Enter, `Esc` and an idle timeout each leave the system running,
    and the handler returns `REDRAW` either way, so the menu repaints over the question.
-23. **The site shuttle** — `bbs_net` ([`bbsnet::bbs_net`](file:///home/leaflet/Development/lbbs-rust/src/bbsnet.rs))
+23. **The site shuttle** — `bbs_net` ([`bbsnet::bbs_net`](src/bbsnet.rs))
    behind the 特别服务区 menu's `【 网络连线 】` item, reached the way C reaches it: `@RunMBEM` whose parameter
    `N@mod:lib/libbbs.so#bbs_net` carries the entry name after the `#`, and whose `REDRAW` repaints the menu
    whatever the shuttle answered. The station table comes out of `conf/bbsnet.conf` with C's field limits (40, 40,
@@ -299,6 +305,19 @@ that does not run is described as if it did.
    rows 4-23 and the bottom row are redrawn, never the header, so the board the reader came back from leaves its own
    title on the screen. A removal that makes the retained `page_id` unreachable — the last row of the last page —
    ends the list instead of clamping to the new tail, as C's out-of-range check does.
+25. **The three batch generators** — `utils/bin/gen_top.php`, `gen_section_menu.php` and `gen_ex_list.php`, now
+   [`gen_top::run`](src/gen_top.rs),
+   [`gen_section_menu::run`](src/gen_section_menu.rs) and
+   [`gen_ex_list::run`](src/gen_ex_list.rs) behind three binaries in
+   `bin/`, on top of the shared [`batch`](src/batch.rs) and
+   [`section_list`](src/section_list.rs). They read the database the
+   daemon already uses, through the same `conf/bbsd.conf`, and write the same files: the ten-post text and menu,
+   the six generated menu blocks appended to the hand-written `conf/menu.conf`, and one digest tree per board whose
+   `ex_menu_update` flag the daemon set. Where the PHP and a plain Rust reading of it disagreed, the PHP won: a
+   heredoc loses the newline its last body line ends on, so a block is one line per item with no blank line inside
+   it; `str_repeat` of a negative count is a fatal error that leaves the boards after it unwritten; an escaped title
+   keeps the padding it was measured with before the backslash went in; a `NULL` date prints the current time; and
+   `intval(log10($n))` counts the digits of a float, with `0` measured as if it were `1`.
 
 ### 6.2 Verified against the live board database
 
@@ -313,7 +332,7 @@ inside the drain, and every session deleted its own `user_online` row — the ta
 runs. No article, message or flag was written to the production database during verification.
 
 The digest ladder is the part that could only be measured against the live schema, so
-[`the_digest_ladder_rolls_everything_back`](file:///home/leaflet/Development/lbbs-rust/src/post.rs) runs it there
+[`the_digest_ladder_rolls_everything_back`](src/post.rs) runs it there
 in a transaction that is dropped instead of committed: the flag and the author's `exp` are read back while the
 transaction is still open, and again after the rollback took them. A rolled-back `INSERT` does advance
 `bbs_article_op`'s auto-increment counter, which is the only mark any of this left.
@@ -328,6 +347,14 @@ What the idle daemon asks the database for is measurable without writing anythin
 one online-list reload per five, one roster per minute. A loop that starts its own loader replays nothing and
 measures 19; that gap is the whole difference between the two shapes, and it is why the periodic task takes the
 loader from the startup pass instead of building one.
+
+The generators were checked the same way: each PHP script was run from a sandbox copy against the live database —
+read-only, with `gen_ex_list.php`'s `UPDATE` replaced by `SELECT 1` so no flag was cleared — and the Rust binary's
+files compared byte for byte. `var/menu_merged.conf` matched at 36 966 bytes, with every class block, board row,
+favourite row and digest row populated; the digest trees of the two biggest boards matched at 90 087 and 55 959
+bytes; and the top-ten pair matched both in its empty shape (the live board had nothing in the last seven days, so
+102 and 335 bytes of header) and in its populated one, which the sandbox reached by widening the date window in the
+PHP and in `gen_top`'s `#[ignore]`-marked parity test to the same ten years (2 544 and 3 316 bytes).
 
 ### 6.3 ⬜ Not done
 
@@ -361,13 +388,13 @@ wired and unit-tested". The first account that really posts should do it against
 ```bash
 cd lbbs-rust
 cargo build            # compile the library and the binary
-cargo test             # 401 tests that need no database (12 more are opt-in, see 7.2)
+cargo test             # 438 tests that need no database (14 more are opt-in, see 7.2)
 ```
 
 A healthy run looks like this:
 
 ```
-test result: ok. 395 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out
+test result: ok. 432 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
@@ -377,7 +404,7 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 ### 7.2 The tests that use the real database and real files
 
-Twelve tests carry `#[ignore]` because they touch the live database or need the real generated files. The tree
+Fourteen tests carry `#[ignore]` because they touch the live database or need the real generated files. The tree
 ships those files now (§8), so they only need pointing at. `LBBS_REF_CONF` decides the server root the session
 tests read `var/` from, so give it an absolute path:
 
@@ -398,6 +425,10 @@ two tests that write rows:
 cargo test --lib -- --ignored --skip live_flush
 ```
 
+The two generator parity tests belong to this read-only set: `gen_top`'s and `gen_ex_list`'s each run one `SELECT`,
+write their output under `/tmp`, and compare it with the reference PHP's own files if those are present (§7.4).
+`gen_ex_list` never runs the `UPDATE` that would clear a board's `ex_menu_update` flag, because that is a write.
+
 These are the heart of the porting quality gate: they check that Rust interprets the files **C actually
 generated** the same way C did. Four of them go further and drive a session against the live board pool —
 the page tiling and the row text of every board, two guests who each open a real board, one of whom reads
@@ -417,8 +448,8 @@ repository is such a root, so a development run means putting the binary in `bin
 
 ```bash
 cargo build --release
-mkdir -p bin && cp target/release/lbbs_rust bin/
-./bin/lbbs_rust --foreground           # reads conf/bbsd.conf, listens for telnet and SSH
+mkdir -p bin && cp target/release/lbbs bin/
+./bin/lbbs --foreground           # reads conf/bbsd.conf, listens for telnet and SSH
 telnet -c localhost 2323             # connect over telnet
 ssh -p 2322 guest@localhost          # connect over SSH
 ```
@@ -436,14 +467,46 @@ the same pair the reference C installation uses; the shipped template still has 
 When you connect over telnet, use `telnet -c`: the server tells the client to stop echoing locally, and `-c`
 keeps the client from displaying characters twice before that negotiation lands.
 
-> **Run one front end at a time against a given database.** `lbbs_rust` and `bbsd` write the same
+> **Run one front end at a time against a given database.** `lbbs` and `bbsd` write the same
 > `user_online` and `visit_log` rows; they will not corrupt anything, but the online list and the counters
 > double-count while both are up.
 
 A guest session goes all the way through: the two prompts, the welcome page, login, the top menu, a board group,
-a board, the article list, and a real post. [tools/guest_smoke.py](file:///home/leaflet/Development/lbbs-rust/tools/guest_smoke.py)
+a board, the article list, and a real post. [tools/guest_smoke.py](tools/guest_smoke.py)
 drives exactly that walk and stops at the permission gate, so it never writes anything; run it with
 `python3 tools/guest_smoke.py 2323`.
+
+### 7.4 Running the batch generators
+
+The three scripts the web admin used to cron are binaries now. They find their server root the way `bin/bbsd`
+does — two levels up from the executable — so they live beside it:
+
+```bash
+cargo build --release
+ln -s ../target/release/gen_top bin/gen_top                     # as with bin/bbsd
+ln -s ../target/release/gen_section_menu bin/gen_section_menu
+ln -s ../target/release/gen_ex_list bin/gen_ex_list
+./bin/gen_top                    # var/bbs_top.txt, var/bbs_top_menu.conf
+./bin/gen_section_menu           # var/menu_merged.conf: conf/menu.conf plus the database
+./bin/gen_ex_list                # var/gen_ex/<SID> for every board the daemon flagged
+```
+
+None of them takes an argument: one more prints `Invalid usage` and leaves `255`, which is what the script did
+under `php`. Whatever a generator's reason for stopping was goes to **stdout**, because a cron run mails that
+stream rather than the log files. The statuses are PHP's own, seen through the shell's single byte: `255` for a
+fatal step (`-1`), `254` for a failed query or a `conf/menu.conf` that could not be read (`-2`), `253` for the
+failures one level out — a section list, or the `UPDATE` that stamps `ex_menu_tm` and clears a board's
+`ex_menu_update` flag (`-3`). `gen_ex_list` writes into `var/gen_ex/` and, like the C daemon's own copy of that
+directory, expects it to exist.
+
+Those three reads of the database are ordinary `SELECT`s; the only write anywhere in the generators is that one
+`UPDATE` per regenerated board. Against a database the live site is using, run `gen_top` and `gen_section_menu`
+freely and leave `gen_ex_list` to the machine that owns the flag — its parity is checked instead by the
+`#[ignore]`-marked `a_real_digest_tree_is_the_php_bytes`, which generates the tree without clearing anything.
+
+Comparing a generator with the PHP it replaced is mechanical: run a sandbox copy of the script, with its `UPDATE`
+replaced by a `SELECT 1` so no flag is cleared, and the binary over the same database, then `cmp` the two files.
+The figures in §6.2 were measured that way.
 
 ---
 
@@ -472,6 +535,7 @@ lbbs-rust/                      ← the server root (§7.3)
 │   ├── menu_merged.conf       ← the menu set the daemon actually reads
 │   ├── bbs_top_menu.conf      ← the top-ten menu as generated
 │   ├── bbs_top.txt            ← the screen shown just after login
+│   ├── gen_ex/<SID>           ← one board's digest tree, rewritten by gen_ex_list
 │   ├── articles/<CID>         ← article bodies — data, not configuration, not in git; see below
 │   └── section_aid_loc/<UID>  ← "last read article" state, written as people browse
 └── log/                       ← bbsd.log and error.log
@@ -494,12 +558,12 @@ Three of those need a word of explanation:
 - **`var/articles/` is content, and the server generates it.** The `article` table holds the index;
   the body a reader sees comes from `var/articles/<CID>`, and a missing file is a hard error, logged as
   `article_cache_load(aid=…, cid=…) error`, exactly as in C. The loader writes those files as it ingests a post
-  ([`cache::generate`](file:///home/leaflet/Development/lbbs-rust/src/cache.rs) is that renderer), so an empty
+  ([`cache::generate`](src/cache.rs) is that renderer), so an empty
   directory fills itself from the database — the test board's 28 000 files and 130 MB in about two seconds —
   and nothing has to be copied from another tree. It stays out of git, which `.gitignore` already does.
 
-Rust keeps these names in [src/paths.rs](file:///home/leaflet/Development/lbbs-rust/src/paths.rs)
-and resolves them relative to the server root held by [`Session`](file:///home/leaflet/Development/lbbs-rust/src/session.rs).
+Rust keeps these names in [src/paths.rs](src/paths.rs)
+and resolves them relative to the server root held by [`Session`](src/session.rs).
 
 Keys in `conf/bbsd.conf` (identical names, meanings and quirks as C):
 
@@ -552,23 +616,23 @@ What a user sees, in the C version's real order. The right-hand column gives the
 
 | # | What the user sees | In C | In Rust / status |
 | --- | --- | --- | --- |
-| 1 | connects | `net_server.c` accepts, then forks | [`net::listen`](file:///home/leaflet/Development/lbbs-rust/src/net.rs) accepts one task per connection, with C's limit checks and its `Accept ... connection from` log line ✅ |
-| 1a | over SSH | `net_server.c`'s libssh child | [`ssh.rs`](file:///home/leaflet/Development/lbbs-rust/src/ssh.rs): password auth, then the same session; `欢迎使用ssh方式访问` replaces the login prompt ✅ |
-| 2 | asked `(U)UTF-8/(G)GBK? [U]` | `bbs_charset_select`, two 5-second prompts | [`bbs_charset_select`](file:///home/leaflet/Development/lbbs-rust/src/bbs.rs) ✅ |
-| 3 | `(V)变宽/(F)定宽` (width mode) | same prompt set | same call, both answers wired to [`Terminal::set_fixed_width`](file:///home/leaflet/Development/lbbs-rust/src/term/mod.rs) ✅ |
-| 4 | welcome screen | `data/welcome.txt` via `display_file(..., 2)` | [`Session::display_file`](file:///home/leaflet/Development/lbbs-rust/src/session.rs#L217) ✅ |
-| 5 | "please enter your account" | `bbs_login`, up to 3 tries | [`login()`](file:///home/leaflet/Development/lbbs-rust/src/login.rs#L160) ✅ |
+| 1 | connects | `net_server.c` accepts, then forks | [`net::listen`](src/net.rs) accepts one task per connection, with C's limit checks and its `Accept ... connection from` log line ✅ |
+| 1a | over SSH | `net_server.c`'s libssh child | [`ssh.rs`](src/ssh.rs): password auth, then the same session; `欢迎使用ssh方式访问` replaces the login prompt ✅ |
+| 2 | asked `(U)UTF-8/(G)GBK? [U]` | `bbs_charset_select`, two 5-second prompts | [`bbs_charset_select`](src/bbs.rs) ✅ |
+| 3 | `(V)变宽/(F)定宽` (width mode) | same prompt set | same call, both answers wired to [`Terminal::set_fixed_width`](src/term/mod.rs) ✅ |
+| 4 | welcome screen | `data/welcome.txt` via `display_file(..., 2)` | [`Session::display_file`](src/session.rs#L217) ✅ |
+| 5 | "please enter your account" | `bbs_login`, up to 3 tries | [`login()`](src/login.rs#L160) ✅ |
 | 6 | typing `guest` or `new` | trial account / registration notice | ✅ (`new` shows the notice and ends the session) |
-| 7 | "please enter your password" | `check_user` | [`check_user()`](file:///home/leaflet/Development/lbbs-rust/src/login.rs#L235) ✅ |
+| 7 | "please enter your password" | `check_user` | [`check_user()`](src/login.rs#L235) ✅ |
 | 8 | blocked for too many failures | 10 failures per /24 in 10 minutes; 3 per account | ✅ (`ipmask::subnet_pattern` + `db::count_errors_by_*`) |
 | 9 | "您目前无权登陆..." | reproduced, including the log row written first | ✅ |
-| 10 | "the user agreement changed" | `user_update_agreement` | [`update_agreement()`](file:///home/leaflet/Development/lbbs-rust/src/login.rs#L418) ✅, called by both transports |
-| 11 | online entry, visit counters | `user_online_add`, `visit_log` | [`Session::online_add`](file:///home/leaflet/Development/lbbs-rust/src/session.rs#L162) ✅ |
-| 12 | `var/bbs_top.txt` + the top menu | `display_file(VAR_BBS_TOP)` → `bbs_center` | [`bbs_main`](file:///home/leaflet/Development/lbbs-rust/src/bbs.rs) ✅, with the ten-second `data/active_board.txt` panel |
-| 13 | pick a board → pick an article → read it | menu item + `display_file` + `section_list_*` | [`menu`](file:///home/leaflet/Development/lbbs-rust/src/menu.rs) parsing and navigation ✅, [`browse`](file:///home/leaflet/Development/lbbs-rust/src/browse.rs) ✅ — this is the guest path `tools/guest_smoke.py` walks |
-| 14 | post, reply, modify, delete | editor + writes into `var/articles/` + DB updates + badwords | [`editor`](file:///home/leaflet/Development/lbbs-rust/src/editor.rs) ✅, [`post`](file:///home/leaflet/Development/lbbs-rust/src/post.rs) ✅ (one transaction each, badwords on submit); a guest is refused before any SQL runs |
-| 15 | experience accrual and goodbye | `user_online_exp` + `data/goodbye.txt` | [`Session::logout`](file:///home/leaflet/Development/lbbs-rust/src/session.rs#L244) ✅ |
-| 16 | removed from the online list | `user_online_del` | [`Session::cleanup`](file:///home/leaflet/Development/lbbs-rust/src/session.rs#L260) ✅ |
+| 10 | "the user agreement changed" | `user_update_agreement` | [`update_agreement()`](src/login.rs#L418) ✅, called by both transports |
+| 11 | online entry, visit counters | `user_online_add`, `visit_log` | [`Session::online_add`](src/session.rs#L162) ✅ |
+| 12 | `var/bbs_top.txt` + the top menu | `display_file(VAR_BBS_TOP)` → `bbs_center` | [`bbs_main`](src/bbs.rs) ✅, with the ten-second `data/active_board.txt` panel |
+| 13 | pick a board → pick an article → read it | menu item + `display_file` + `section_list_*` | [`menu`](src/menu.rs) parsing and navigation ✅, [`browse`](src/browse.rs) ✅ — this is the guest path `tools/guest_smoke.py` walks |
+| 14 | post, reply, modify, delete | editor + writes into `var/articles/` + DB updates + badwords | [`editor`](src/editor.rs) ✅, [`post`](src/post.rs) ✅ (one transaction each, badwords on submit); a guest is refused before any SQL runs |
+| 15 | experience accrual and goodbye | `user_online_exp` + `data/goodbye.txt` | [`Session::logout`](src/session.rs#L244) ✅ |
+| 16 | removed from the online list | `user_online_del` | [`Session::cleanup`](src/session.rs#L260) ✅ |
 
 The cells that are still ⬜ are the screens behind those keys — see §6.3.
 
@@ -587,8 +651,8 @@ The cells that are still ⬜ are the screens behind those keys — see §6.3.
 | transactions left open until `mysql_close` | explicit `commit` / `rollback` on every path | a pooled connection handed back with an open transaction corrupts the next user |
 | `setenv("TZ", ...)` + `tzset()` | stored in `Session::user_tz` | mutating the process environment would leak into other sessions |
 | pool refresh via `SIGUSR1` | `Loader::run` refreshes periodically | a task replaces the signal |
-| `editor.c` re-splits only the data line an edit touched, then slides the display-pointer array | the same, per line ([`EditorData::recount_line`](file:///home/leaflet/Development/lbbs-rust/src/editor.rs)) | the first port re-wrapped the **whole document** after every character, so a pasted article cost quadratically more work and pinned one CPU core while C stayed nearly idle |
-| An edit into a document that already fills the [`MAX_EDITOR_DATA_LINES`](file:///home/leaflet/Development/lbbs-rust/src/paths.rs) rows loses whatever needs a row the array has not got: the touched line is cut short with a `'\n'` glued to its last kept row (`:366-387`) and, for an edit further up, the row at the very end of the array is trimmed to one cell short (`:447-458`) | same, at the cap | the first port refused the edit instead, so a full article accepted nothing more; a real edit there now silently truncates the tail exactly as C does. One case is not reproduced: deleting the last row of a full array leaves C counting one row more than the document has — a tail entry it no longer maintains, which paints blank where the port paints the row that is really there. The saved bytes agree either way. |
+| `editor.c` re-splits only the data line an edit touched, then slides the display-pointer array | the same, per line ([`EditorData::recount_line`](src/editor.rs)) | the first port re-wrapped the **whole document** after every character, so a pasted article cost quadratically more work and pinned one CPU core while C stayed nearly idle |
+| An edit into a document that already fills the [`MAX_EDITOR_DATA_LINES`](src/paths.rs) rows loses whatever needs a row the array has not got: the touched line is cut short with a `'\n'` glued to its last kept row (`:366-387`) and, for an edit further up, the row at the very end of the array is trimmed to one cell short (`:447-458`) | same, at the cap | the first port refused the edit instead, so a full article accepted nothing more; a real edit there now silently truncates the tail exactly as C does. One case is not reproduced: deleting the last row of a full array leaves C counting one row more than the document has — a tail entry it no longer maintains, which paints blank where the port paints the row that is really there. The saved bytes agree either way. |
 
 ### 10.2 C quirks we reproduced on purpose
 
@@ -597,16 +661,16 @@ app disagrees with us. These behaviours are therefore reproduced verbatim and pi
 
 | Original behaviour | Where | Why it must not be "fixed" |
 | --- | --- | --- |
-| The privilege list's binary search is broken: depending on the order boards were added, a stored board can become **unfindable** | [`privilege.rs`](file:///home/leaflet/Development/lbbs-rust/src/privilege.rs) | repairing it silently changes what a person is allowed to do |
+| The privilege list's binary search is broken: depending on the order boards were added, a stored board can become **unfindable** | [`privilege.rs`](src/privilege.rs) | repairing it silently changes what a person is allowed to do |
 | With an empty list, slot 0 (section id 0 = the global word) is inspected | same file | same reason |
-| `ip_mask` **truncates the string at the first masked octet**, so an address with a fifth octet loses its tail | [`ipmask.rs`](file:///home/leaflet/Development/lbbs-rust/src/ipmask.rs) | the throttle's `LIKE '202.38.64.%'` depends on exactly this expression |
-| The username/password **format check issues no SQL at all**, so a malformed attempt is never logged | [`login.rs`](file:///home/leaflet/Development/lbbs-rust/src/login.rs) | the web unlock feature counts those rows |
+| `ip_mask` **truncates the string at the first masked octet**, so an address with a fifth octet loses its tail | [`ipmask.rs`](src/ipmask.rs) | the throttle's `LIKE '202.38.64.%'` depends on exactly this expression |
+| The username/password **format check issues no SQL at all**, so a malformed attempt is never logged | [`login.rs`](src/login.rs) | the web unlock feature counts those rows |
 | A disabled account (`p_login = 0`) still has its login row **committed before** the rejection | same | otherwise the visit counters move |
 | The EULA path updates neither visit counters nor the online list | same | same reason |
-| `moveto` prints a negative coordinate with its sign, and with a negative row emits a bare `\r` | [`Terminal::moveto_signed`](file:///home/leaflet/Development/lbbs-rust/src/term/mod.rs#L231) | menu cursors rely on it |
-| A key sequence split across packets is dropped and reported as `ESC` | [`Terminal::read_key`](file:///home/leaflet/Development/lbbs-rust/src/term/mod.rs#L275) | pager key handling must feel identical |
-| `S_DEFAULT = 0x3` (list + experience) and **no post bit** | [`privilege.rs`](file:///home/leaflet/Development/lbbs-rust/src/privilege.rs) | making new accounts "more convenient" would diverge from the web app |
-| A station that **refuses** the connection is only reported when the ten-second budget runs out, and then as `连接超时！` | [`bbsnet::connect`](file:///home/leaflet/Development/lbbs-rust/src/bbsnet.rs) | C's wait loop keeps spinning on a socket that is writable but unconnected, and the keys pressed while the bar runs are spent on the connect; failing fast would change both the screen and what reaches the station |
+| `moveto` prints a negative coordinate with its sign, and with a negative row emits a bare `\r` | [`Terminal::moveto_signed`](src/term/mod.rs#L231) | menu cursors rely on it |
+| A key sequence split across packets is dropped and reported as `ESC` | [`Terminal::read_key`](src/term/mod.rs#L275) | pager key handling must feel identical |
+| `S_DEFAULT = 0x3` (list + experience) and **no post bit** | [`privilege.rs`](src/privilege.rs) | making new accounts "more convenient" would diverge from the web app |
+| A station that **refuses** the connection is only reported when the ten-second budget runs out, and then as `连接超时！` | [`bbsnet::connect`](src/bbsnet.rs) | C's wait loop keeps spinning on a socket that is writable but unconnected, and the keys pressed while the bar runs are spent on the connect; failing fast would change both the screen and what reaches the station |
 
 If any of these is ever repaired, it should be a coordinated change with the data and the web application —
 never smuggled into a port.
@@ -621,10 +685,10 @@ never smuggled into a port.
 - C's constants (`BBS_max_section = 200`, `USERNAME_MAX_LEN = 12`, …) belong in `paths.rs`. No magic numbers.
 - Tests that do not need the database are `#[test]` / `#[tokio::test]`. Anything touching the live DB is
   `#[ignore]` + an `LBBS_REF_*` environment variable.
-- Need a `Session` in an offline test? Use [`session::offline_session()`](file:///home/leaflet/Development/lbbs-rust/src/session.rs):
+- Need a `Session` in an offline test? Use [`session::offline_session()`](src/session.rs):
   it builds a detached pool that never opens a connection and issues no queries.
 - Watch borrow conflicts when passing `&mut Session` around inside `async fn`.
-  For example [`Session::display_file`](file:///home/leaflet/Development/lbbs-rust/src/session.rs#L217)
+  For example [`Session::display_file`](src/session.rs#L217)
   is recursive — the pager can ask to show help, which displays a file — so its future is boxed with
   `Pin<Box<dyn Future<...>>>`; a plain `async fn` cannot have a recursive return type.
 - Before adding a SQL statement, read what C does around it, **especially where it commits**.
@@ -666,7 +730,7 @@ A: C has a fixed-width (F) / variable-width (V) choice that changes the width ar
 
 **Q: The characters I type as my password appear on screen.**
 A: They should not. A session opens by sending `IAC WILL ECHO, IAC WILL SGA`
-([`screen::set_input_echo`](file:///home/leaflet/Development/lbbs-rust/src/screen.rs)), which is what tells a
+([`screen::set_input_echo`](src/screen.rs)), which is what tells a
 telnet client this side does the echoing; the `NOECHO` prompt then prints one `*` per character and erases them.
 If the clear text comes back, the six negotiation bytes are missing from what the transport wrote — the mask
 alone cannot hide what the client echoes itself.
@@ -677,10 +741,10 @@ committed, never printed).
 
 **Q: Where is an article's body?**
 A: `var/articles/<CID>`, indexed by `article.CID`. C opened it with `fopen`; the port opens it the same way
-([`cache::load`](file:///home/leaflet/Development/lbbs-rust/src/cache.rs), called from
-[`browse`](file:///home/leaflet/Development/lbbs-rust/src/browse.rs)) and writes it from the loader
-([`cache::generate`](file:///home/leaflet/Development/lbbs-rust/src/cache.rs), called from
-[`loader`](file:///home/leaflet/Development/lbbs-rust/src/loader.rs)). A live guest read of a real post is covered
+([`cache::load`](src/cache.rs), called from
+[`browse`](src/browse.rs)) and writes it from the loader
+([`cache::generate`](src/cache.rs), called from
+[`loader`](src/loader.rs)). A live guest read of a real post is covered
 by section 6.2.
 
 **Q: My script drives a session and the keys do nothing.**
@@ -699,6 +763,7 @@ next key, and page with space.
 | done | live smoke test against the board database: guest login, menus, SSH auth, reload, log reopen | the session behaves like the C one on the same screens |
 | done | browse features end to end: `list_section`, the article list, reading a post, `LOCATE_ARTICLE` | a menu key opens a board, and a live guest session reads a real post |
 | done | write path: new/reply/edit/delete, the editor, index updates, cache generation, badwords on submit | unit-tested, and a live guest is refused before any SQL runs |
+| done | the three `utils/bin` PHP generators as binaries: `gen_top`, `gen_section_menu`, `gen_ex_list` (§7.4) | their files match the PHP's byte for byte against the live database (§6.2) |
 | next | one real post end to end against a **test** database, then the same reply/modify/delete | the web site shows what the Rust server wrote, with the header and cache files C would have produced |
 | then | the menu actions left: the profile editor items, `DATAMGR`, the digest tree's two filters | the top menu has no key that only logs |
 | last | a side-by-side comparison with C over the whole phase-1 surface | the same actions produce the same screen |
@@ -708,9 +773,9 @@ next key, and page with space.
 ## 14. Further reading
 
 - **The original C source**: `~/Development/lbbs/src/` and `~/Development/lbbs/include/` — read-only.
-- [reference/schema.sql](file:///home/leaflet/Development/lbbs-rust/reference/schema.sql) — the full database schema. **Start here when a table is confusing.**
-- [reference/sql_inventory.md](file:///home/leaflet/Development/lbbs-rust/reference/sql_inventory.md) — every statement the C server issues. **Start here when hunting for a missing port.**
-- [tests/fixtures/](file:///home/leaflet/Development/lbbs-rust/tests/fixtures) — sample article files and golden output captured from the C build.
+- [reference/schema.sql](reference/schema.sql) — the full database schema. **Start here when a table is confusing.**
+- [reference/sql_inventory.md](reference/sql_inventory.md) — every statement the C server issues. **Start here when hunting for a missing port.**
+- [tests/fixtures/](tests/fixtures) — sample article files and golden output captured from the C build.
 - The header comment of each module — what it ports and how it deviates. **That is the detailed documentation.**
 
 ## 15. License

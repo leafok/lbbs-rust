@@ -701,7 +701,7 @@ mod tests {
     /// leaves it hands the menu back.
     #[tokio::test]
     async fn the_mbem_item_opens_the_shuttle() {
-        let root = std::env::temp_dir().join(format!("lbbs-rust-runmbem-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("lbbs-runmbem-{}", std::process::id()));
         std::fs::create_dir_all(root.join("conf")).unwrap();
         std::fs::write(root.join("conf/bbsnet.conf"), "# 暂无站点\n").unwrap();
 

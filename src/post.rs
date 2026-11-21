@@ -1134,7 +1134,7 @@ mod tests {
             db: db.clone(),
         };
         let state = Arc::new(AppState::new(config, crate::db::Db::detached(&db)));
-        Session::new(state, Path::new("."), "lbbs-rust-test".into(), "127.0.0.1".into(), 2323, false)
+        Session::new(state, Path::new("."), "lbbs-test".into(), "127.0.0.1".into(), 2323, false)
     }
 
     /// The window a screen must stay silent before its answer is typed. A prompt flushes and then

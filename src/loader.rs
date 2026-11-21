@@ -1194,7 +1194,7 @@ mod tests {
     }
 
     fn temp_cache_dir(name: &str) -> String {
-        let dir = std::env::temp_dir().join(format!("lbbs-rust-loader-cache-{name}"));
+        let dir = std::env::temp_dir().join(format!("lbbs-loader-cache-{name}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         format!("{}/", dir.to_str().unwrap())

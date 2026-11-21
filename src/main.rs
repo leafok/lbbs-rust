@@ -39,20 +39,20 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::UNIX_EPOCH;
 
-use lbbs_rust::bwf::Badwords;
-use lbbs_rust::config::{self, Config};
-use lbbs_rust::daemon::{self, Args};
-use lbbs_rust::db::Db;
-use lbbs_rust::loader::Loader;
-use lbbs_rust::log::{self, LogSink};
-use lbbs_rust::menu::MenuSet;
-use lbbs_rust::net::{self, Front, Gateway};
-use lbbs_rust::paths::{
+use lbbs::bwf::Badwords;
+use lbbs::config::{self, Config};
+use lbbs::daemon::{self, Args};
+use lbbs::db::Db;
+use lbbs::loader::Loader;
+use lbbs::log::{self, LogSink};
+use lbbs::menu::MenuSet;
+use lbbs::net::{self, Front, Gateway};
+use lbbs::paths::{
     CONF_BBSD, CONF_BWF, CONF_MENU, CONF_TOP10_MENU, DATA_EULA, VAR_ARTICLE_CACHE_DIR,
     VAR_SECTION_AID_LOC_DIR,
 };
-use lbbs_rust::ssh;
-use lbbs_rust::state::AppState;
+use lbbs::ssh;
+use lbbs::state::AppState;
 
 /// `main()`'s successful return.
 const EXIT_OK: u8 = 0;
@@ -461,7 +461,7 @@ fn code(value: u8) -> ExitCode {
 mod tests {
     use super::*;
 
-    use lbbs_rust::session::now;
+    use lbbs::session::now;
 
     #[test]
     fn an_empty_bind_address_is_every_interface() {
@@ -476,7 +476,7 @@ mod tests {
             max_client_per_ip: 2,
             start_dt: String::new(),
             sys_id: 0,
-            db: lbbs_rust::config::DbConfig {
+            db: lbbs::config::DbConfig {
                 host: String::new(),
                 username: String::new(),
                 password: String::new(),
@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn eula_timestamp_is_the_c_one() {
-        let dir = std::env::temp_dir().join(format!("lbbs-rust-mtime-{}", now()));
+        let dir = std::env::temp_dir().join(format!("lbbs-mtime-{}", now()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("eula.txt");
         std::fs::write(&file, b"agreement").unwrap();
@@ -507,7 +507,7 @@ mod tests {
 
     #[test]
     fn an_existing_directory_is_not_an_error() {
-        let dir = std::env::temp_dir().join(format!("lbbs-rust-mkdir-{}", now()));
+        let dir = std::env::temp_dir().join(format!("lbbs-mkdir-{}", now()));
         assert!(create_dir(&dir).is_ok());
         // The second call is the EEXIST the original forgave.
         assert!(create_dir(&dir).is_ok());
