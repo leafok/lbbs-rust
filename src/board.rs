@@ -49,7 +49,7 @@ pub enum BoardError {
     NotTopicHead,
 }
 
-/// `ARTICLE` (`include/section_list.h:32`).
+/// `ARTICLE` (`include/section_list.h:34-55`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Article {
     pub aid: i32,
@@ -139,7 +139,7 @@ pub fn trunc_bytes(value: &str, cap: usize) -> String {
     value[..end].to_owned()
 }
 
-/// `SECTION_LIST` (`include/section_list.h:58`).
+/// `SECTION_LIST` (`include/section_list.h:57-81`).
 #[derive(Debug, Clone)]
 pub struct Section {
     pub sid: i16,
@@ -898,7 +898,7 @@ impl Board {
         self.sections[index].set_article_visible(&mut self.articles, aid, visible, &mut self.stats)
     }
 
-    /// `user_stat_update` (`user_list.c:1619`) and the map update it drives: widen the
+    /// `user_stat_update` (`user_list.c:1623`) and the map update it drives: widen the
     /// counters with the users the roster gained and fold in the articles the previous pass
     /// did not see.
     ///

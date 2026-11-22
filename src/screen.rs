@@ -483,7 +483,7 @@ fn char_start(bytes: &[u8], index: usize) -> usize {
     i
 }
 
-/// `set_input_echo` (`screen.c:126-139`): tell the telnet client who is going to echo what the
+/// `set_input_echo` (`screen.c:127-139`): tell the telnet client who is going to echo what the
 /// user typed. `false` sends `IAC WILL ECHO, IAC WILL SGA`, after which a `NOECHO` prompt shows
 /// only this side's `*` mask; without it the client keeps its own echo and the password walks
 /// across the screen in clear text.

@@ -158,13 +158,13 @@ impl Roster {
         usize::try_from(id).ok().and_then(|i| self.users.get(i))
     }
 
-    /// `query_user_info_by_uid` (`:1243`).
+    /// `query_user_info_by_uid` (`:1247`).
     pub fn by_uid(&self, uid: i32) -> Option<&UserInfo> {
         let pos = self.index_uid.binary_search_by_key(&uid, |e| e.uid).ok()?;
         self.by_id(self.index_uid[pos].id)
     }
 
-    /// `query_user_info_by_username` (`:1309`): every user whose name starts with `prefix`,
+    /// `query_user_info_by_username` (`:1313`): every user whose name starts with `prefix`,
     /// compared case-insensitively over the first `prefix.len()` bytes, because the pool is
     /// ordered by a case-insensitive MySQL collation.
     pub fn by_username_prefix(&self, prefix: &str, max: usize) -> Vec<&UserInfo> {
@@ -182,7 +182,7 @@ impl Roster {
         self.users[first..first + len].iter().take(max).collect()
     }
 
-    /// `get_user_id_list` (`:1561`): up to `max` uids from `start_uid` upwards, in index
+    /// `get_user_id_list` (`:1565`): up to `max` uids from `start_uid` upwards, in index
     /// order, which is how the statistics pass walks the roster.
     pub fn uid_list_from(&self, start_uid: i32, max: usize) -> Vec<i32> {
         let first = self.index_uid.partition_point(|e| e.uid < start_uid);
@@ -199,7 +199,7 @@ impl Roster {
         page_window(&self.users, page_id)
     }
 
-    /// `*p_page_count` of `query_user_list` (`:1058`).
+    /// `*p_page_count` of `query_user_list` (`:1062`).
     pub fn page_count(&self) -> i32 {
         (self.users.len() as i32 + USER_LIMIT_PER_PAGE - 1) / USER_LIMIT_PER_PAGE
     }
@@ -329,7 +329,7 @@ impl OnlineList {
         usize::try_from(id).ok().and_then(|i| self.users.get(i))
     }
 
-    /// `query_user_online_info_by_uid` (`:1470`): the sessions of one user, starting at index
+    /// `query_user_online_info_by_uid` (`:1474`): the sessions of one user, starting at index
     /// `start_id` so a screen can page through them.
     pub fn sessions_of(&self, uid: i32, start_id: i32, max: usize) -> Vec<&OnlineUser> {
         let Ok(start) = usize::try_from(start_id) else {
@@ -353,7 +353,7 @@ impl OnlineList {
         page_window(&self.users, page_id)
     }
 
-    /// `*p_page_count` of `query_user_online_list` (`:1114`).
+    /// `*p_page_count` of `query_user_online_list` (`:1118`).
     pub fn page_count(&self) -> i32 {
         (self.users.len() as i32 + USER_LIMIT_PER_PAGE - 1) / USER_LIMIT_PER_PAGE
     }
@@ -731,5 +731,201 @@ mod tests {
         assert_eq!(roster.uid_list_from(1, 10), vec![10, 11, 12, 20, 30]);
         assert_eq!(roster.uid_list_from(12, 2), vec![12, 20]);
         assert!(roster.uid_list_from(31, 10).is_empty());
+    }
+
+    /// `user_stat.c:54-64`: the watermark moves with the users a pass actually loaded, and with
+    /// none when it loaded none. The line `8e02db3` replaced ran even for `i == 0`, reading
+    /// `uid_list[-1]` — four bytes below the array — and publishing whatever was there.
+    #[test]
+    fn an_empty_window_leaves_the_watermark_where_it_was() {
+        let nobody = Roster::load(&[]);
+        let mut stats = UserStatMap::new();
+        stats.update(&nobody, &[]);
+        assert_eq!(
+            stats.last_uid, -1,
+            "a pass that loaded no user publishes no uid"
+        );
+        assert_eq!(stats.next_uid(), 0, "and asks for the same window again");
+
+        stats.update(&roster(), &[]);
+        let seen = stats.last_uid;
+        assert_eq!(seen, 30);
+
+        stats.update(&nobody, &[]);
+        assert_eq!(stats.last_uid, seen, "and an empty pass cannot move it");
+        assert_eq!(stats.next_uid(), seen + 1);
+    }
+
+    /// The map `build_map` (`src/test_user_stat.c:65-79` at `9193e5c`) seeds: uids 1, 2, 3 and 5
+    /// with counts 0, 5, 0 and 7, so uid 4 is the gap, uid 5 the last entry and two stored users
+    /// read as zero.
+    fn build_map(last_uid: i32, last_article_index: i32) -> UserStatMap {
+        UserStatMap {
+            stats: vec![(1, 0), (2, 5), (3, 0), (5, 7)],
+            last_uid,
+            last_article_index,
+        }
+    }
+
+    /// `test_lookup` (`test_user_stat.c:112-158`), whose stated point is that reading a count
+    /// must not depend on where the search settles: the two zero counts are found, and every
+    /// neighbour of a stored uid — below the first, in the gap, after the last, far above, and
+    /// the negative — reports no record rather than the slot next to it.
+    #[test]
+    fn the_reference_lookup_table() {
+        let stats = build_map(100, -1);
+        assert_eq!(
+            UserStatMap::new().covered_users(),
+            0,
+            "user_stat_map_init: user_count"
+        );
+        assert_eq!(UserStatMap::new().last_uid, -1, "map_init: last_uid");
+        assert_eq!(
+            UserStatMap::new().last_article_index,
+            -1,
+            "map_init: last_article_index"
+        );
+
+        for (uid, want) in [(1, Some(0)), (2, Some(5)), (3, Some(0)), (5, Some(7))] {
+            assert_eq!(stats.article_count(uid), want, "the count of uid {uid}");
+        }
+        for uid in [0, 4, 6, 1_000_000, -1] {
+            assert_eq!(stats.article_count(uid), None, "no record for uid {uid}");
+        }
+
+        // A single entry is both the first and the last of the list.
+        let only_one = UserStatMap {
+            stats: vec![(1, 0)],
+            ..build_map(100, -1)
+        };
+        assert_eq!(only_one.article_count(1), Some(0), "get of a single entry");
+        assert_eq!(only_one.article_count(2), None, "get past a single entry");
+        assert_eq!(
+            only_one.article_count(3),
+            None,
+            "get far past a single entry"
+        );
+
+        // Counting up follows the same search and reports a miss instead of writing one.
+        let mut stats = build_map(100, -1);
+        assert!(stats.article_cnt_inc(3, 1), "inc uid 3");
+        assert!(stats.article_cnt_inc(3, 4), "inc uid 3 again");
+        assert_eq!(stats.article_count(3), Some(5), "increments accumulate");
+        assert!(stats.article_cnt_inc(1, -2), "inc uid 1 by a negative");
+        assert_eq!(stats.article_count(1), Some(-2), "the count went negative");
+
+        for uid in [4, 6, 0] {
+            assert!(
+                !stats.article_cnt_inc(uid, 1),
+                "inc of the absent uid {uid}"
+            );
+        }
+        assert_eq!(stats.covered_users(), 4, "an absent uid adds no entry");
+        assert_eq!(
+            stats.article_count(2),
+            Some(5),
+            "an absent uid left uid 2 alone"
+        );
+        assert_eq!(
+            stats.article_count(5),
+            Some(7),
+            "an absent uid left uid 5 alone"
+        );
+    }
+
+    /// `test_update_without_users` and `test_update_at_the_end`
+    /// (`test_user_stat.c:162-222`), over the same five articles the C file builds: uids
+    /// 1, 1, 2, 3, 4 of which the third is hidden. No user is ever loaded in a test run, so the
+    /// scan runs against a map the caller seeded and the watermarks have to stay where they are.
+    #[test]
+    fn the_reference_scan_table() {
+        let article = |uid: i32, visible: bool| Article {
+            aid: 0,
+            sid: 1,
+            uid,
+            visible,
+            ..Article::default()
+        };
+        let articles = vec![
+            article(1, true),
+            article(1, true),
+            article(2, false),
+            article(3, true),
+            article(4, true),
+        ];
+        let nobody = Roster::load(&[]);
+
+        let mut stats = build_map(100, -1);
+        stats.update(&nobody, &articles);
+        assert_eq!(stats.covered_users(), 4, "an empty pool keeps user_count");
+        assert_eq!(stats.last_uid, 100, "an empty pool keeps last_uid");
+        assert_eq!(
+            stats.last_article_index, 4,
+            "the cursor is the last article scanned"
+        );
+        assert_eq!(
+            stats.article_count(1),
+            Some(2),
+            "both of uid 1's articles counted"
+        );
+        assert_eq!(
+            stats.article_count(2),
+            Some(5),
+            "uid 2's only article is hidden"
+        );
+        assert_eq!(stats.article_count(3), Some(1), "uid 3 counted once");
+        assert_eq!(
+            stats.article_count(5),
+            Some(7),
+            "uid 5 has no article at all"
+        );
+
+        // A pass over no new article changes nothing.
+        stats.update(&nobody, &articles);
+        assert_eq!(stats.last_article_index, 4, "nothing new: cursor");
+        assert_eq!(stats.article_count(1), Some(2), "nothing new: uid 1");
+        assert_eq!(stats.article_count(3), Some(1), "nothing new: uid 3");
+
+        // An author above `last_uid` waits for the pass that loads it.
+        let mut stats = build_map(2, -1);
+        stats.update(&nobody, &articles);
+        assert_eq!(stats.last_uid, 2, "low last_uid: still nothing loaded");
+        assert_eq!(
+            stats.article_count(1),
+            Some(2),
+            "low last_uid: uid 1 is covered"
+        );
+        assert_eq!(
+            stats.article_count(2),
+            Some(5),
+            "low last_uid: its only article is hidden"
+        );
+        assert_eq!(
+            stats.article_count(3),
+            Some(0),
+            "low last_uid: uid 3 is above it, so its article is skipped"
+        );
+        assert_eq!(
+            stats.article_count(5),
+            Some(7),
+            "low last_uid: uid 5 has no article"
+        );
+
+        // A map that already reached the end of the block recounts nothing.
+        let mut stats = build_map(100, 4);
+        stats.article_cnt_inc(1, 41);
+        stats.update(&nobody, &articles);
+        assert_eq!(
+            stats.article_count(1),
+            Some(41),
+            "update at the end recounts nothing"
+        );
+        assert_eq!(
+            stats.article_count(5),
+            Some(7),
+            "update at the end leaves the last entry"
+        );
+        assert_eq!(stats.last_uid, 100, "update at the end: last_uid");
+        assert_eq!(stats.last_article_index, 4, "update at the end: cursor");
     }
 }

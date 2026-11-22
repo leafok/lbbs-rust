@@ -194,7 +194,7 @@ pub async fn display_article_meta(term: &mut Terminal, session: &Session, aid: i
     screen::press_any_key(term).await;
 }
 
-/// `article_excerption_set` (`article_op.c:34-269`): put an article into the 精华 digest, or take
+/// `article_excerption_set` (`article_op.c:34-280`): put an article into the 精华 digest, or take
 /// it back out. The caller hands over the toggle it read off the list, which is what C's `m`
 /// handler does with `p_articles[selected_index]->excerption`.
 ///
@@ -259,9 +259,11 @@ pub async fn article_excerption_set(
         .await?;
     }
 
-    // C took the pool before committing and gave it back when a commit failed (`:214-250`), so
+    // C took the pool before committing and gave it back when a commit failed (`:208-269`), so
     // both the order and the revert are the original's. A pool that no longer holds the article
-    // is C's `ret = -3`: no commit, and the dropped transaction undoes the SQL.
+    // is C's `ret = -3`: no commit, and the dropped transaction undoes the SQL. The two `-3`s
+    // of `:221-224` and `:254-257` hand the write lock back on the way out, which is what
+    // `780e8ef` added; the guard here is a scope, so it has no path that could keep it.
     if let Err(err) = session
         .state
         .board_mut()
@@ -1164,6 +1166,41 @@ mod tests {
         }
     }
 
+    /// `:215-233` and `:248-265`: the pool update takes the board lock, gives it back, and takes it
+    /// again to undo itself when the commit fails. `780e8ef` is the second `gives it back` — a
+    /// toggle the pool refused while the lock was held used to leave the board locked for every
+    /// session in the process. The port holds [`crate::state::AppState::board_mut`] in a scope, so
+    /// what is worth pinning is that a refused toggle ends the guard rather than the board.
+    #[tokio::test]
+    async fn a_refused_digest_toggle_leaves_the_board_readable() {
+        use crate::board::{Board, BoardError};
+
+        let session = detached_session();
+        let mut board = Board::default();
+        assert!(
+            board
+                .create_section(1, "test", "测试板", "master")
+                .is_some()
+        );
+        *session.state.board_mut() = board;
+
+        for round in 1..=2 {
+            let err = session
+                .state
+                .board_mut()
+                .set_article_excerption(1, 999, true)
+                .expect_err("the pool holds no such aid");
+            assert!(
+                matches!(err, BoardError::NotFound),
+                "round {round}: {err:?} is C's `ret = -3`"
+            );
+        }
+        assert!(
+            session.state.board().section(1).is_some(),
+            "and the reader that comes after the failures still gets the pool"
+        );
+    }
+
     #[test]
     fn a_deletable_is_copied_out_of_the_arena() {
         let article = Article {
@@ -1198,7 +1235,7 @@ mod tests {
         };
         let config = Config {
             bbs_id: "test".into(),
-            bbs_name: "枫林在线".into(),
+            bbs_name: "MyBBS".into(),
             bbs_server: "www.bbs.test".into(),
             bbs_address: "127.0.0.1".into(),
             telnet_port: 2323,

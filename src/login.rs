@@ -14,10 +14,9 @@
 //! * `SET autocommit=0` is issued per transaction by sqlx rather than on the connection, so
 //!   the statements after `COMMIT` (`mark_login`, the online rows) are individually
 //!   committed exactly as in the original.
-//! * `NULL` columns crash the original: `load_user_info` (`login.c:439-448`) runs
-//!   `atoi`/`strncpy` on `life`, `last_login_dt`, `user_timezone`, `exp` and `nickname`
-//!   without testing them. The port reads them as zero or empty, which is what the web
-//!   application's schema defaults produce.
+//! * `load_user_info` (`login.c:439-448`) tests every one of its five columns against `NULL`
+//!   since `d373719`, reading `life`, `exp` and `last_login_dt` as `0` and `user_timezone` and
+//!   `nickname` as empty — the same five defaults the port has always used.
 //! * The user's timezone is stored on the session instead of being pushed into the process
 //!   with `setenv("TZ", …)` (`login.c:389-403`), which a shared process cannot do. The
 //!   original also applied it only after the dead-account check, so no ordering is lost.
@@ -51,7 +50,7 @@ pub const ALLOWED_FAILURES_WITHIN_INTERVAL: i64 = 10;
 pub const FAILURES_COUNT_INTERVAL_MINUTES: i64 = 10;
 /// `BBS_allowed_login_failures_per_account` (`login.c:36`).
 pub const ALLOWED_FAILURES_PER_ACCOUNT: i64 = 3;
-/// The `life` values that never expire (`login.c:458`). 365 is in the list, so a "one year"
+/// The `life` values that never expire (`login.c:459`). 365 is in the list, so a "one year"
 /// lifetime means immortal.
 pub const IMMORTAL_LIFE: [i16; 4] = [333, 365, 666, 999];
 
@@ -103,7 +102,7 @@ pub enum Account {
     Dead,
 }
 
-/// `user_update_agreement`'s return (`login.c:633`): `-1`, `0`, `1`.
+/// `user_update_agreement`'s return (`login.c:634`): `-1`, `0`, `1`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Agreement {
     Cancelled,
@@ -340,13 +339,17 @@ async fn staff_must_use_ssh(term: &mut Terminal, session: &Session) -> bool {
     true
 }
 
-/// `login.c:458-461`: an account is dead once it has been away longer than its own `life`
-/// (in days), unless `life` is one of the immortal sentinels in [`IMMORTAL_LIFE`].
+/// `login.c:458-460`: an account is dead once it has been away longer than its own `life`
+/// (in days), unless `life` is one of the immortal sentinels in [`IMMORTAL_LIFE`] and unless it
+/// has a last login at all — `last_login_dt == 0` is the account that never signed in, which has
+/// no deadline to miss.
 pub fn is_dead(life: i16, last_login: i64, at: i64) -> bool {
-    !IMMORTAL_LIFE.contains(&life) && at - last_login > 60 * 60 * 24 * life as i64
+    last_login != 0
+        && !IMMORTAL_LIFE.contains(&life)
+        && at - last_login > 60 * 60 * 24 * life as i64
 }
 
-/// `load_user_info` (`login.c:412-481`).
+/// `load_user_info` (`login.c:412-482`).
 pub async fn load_user_info(db: &Db, session: &mut Session, uid: i32) -> Account {
     let Ok(Some(row)) = db.pub_info(uid).await else {
         return Account::Unreadable;
@@ -358,10 +361,10 @@ pub async fn load_user_info(db: &Db, session: &mut Session, uid: i32) -> Account
         &username,
         row.nickname.as_deref().unwrap_or(""),
         row.exp.unwrap_or(0),
-        &row.user_timezone,
+        row.user_timezone.as_deref().unwrap_or(""),
     );
 
-    if is_dead(row.life, last_login, now()) {
+    if is_dead(row.life.unwrap_or(0), last_login, now()) {
         return Account::Dead;
     }
 
@@ -379,7 +382,7 @@ pub async fn load_user_info(db: &Db, session: &mut Session, uid: i32) -> Account
     Account::Active
 }
 
-/// `load_guest_info` (`login.c:483-521`). Its C return value is ignored by the caller, so a
+/// `load_guest_info` (`login.c:484-522`). Its C return value is ignored by the caller, so a
 /// database that cannot be reached still admits the guest — with the zeroed privileges the
 /// original would have run on.
 pub async fn load_guest_info(session: &mut Session) {
@@ -403,7 +406,7 @@ pub async fn load_guest_info(session: &mut Session) {
     session.last_access_tm = session.login_tm;
 }
 
-/// `user_update_agreement` (`login.c:633-708`).
+/// `user_update_agreement` (`login.c:634-709`).
 pub async fn update_agreement(term: &mut Terminal, session: &mut Session) -> Agreement {
     screen::clearscr(term);
     term.moveto(2, 0);
@@ -506,18 +509,31 @@ mod tests {
     fn immortal_accounts_have_no_deadline() {
         assert_eq!(IMMORTAL_LIFE, [333, 365, 666, 999]);
         // 365 is in the list, so a configured "one year" lifetime never expires.
-        assert!(!is_dead(365, 0, i64::from(u32::MAX)));
+        assert!(!is_dead(365, 1, i64::from(u32::MAX)));
     }
 
     #[test]
     fn the_deadline_is_the_accounts_own_lifetime_in_days() {
         let day = 60 * 60 * 24;
-        assert!(is_dead(30, 0, 31 * day));
-        // Exactly at the limit is still alive: the original compares with `>`.
-        assert!(!is_dead(30, 0, 30 * day));
-        assert!(!is_dead(365, 0, 10_000 * day), "365 is an immortal life");
-        // A NULL `last_login_dt` arrives as 0, which is older than any real lifetime.
-        assert!(is_dead(30, 0, now()));
+        // One second shy of thirty-one days away from a one-day-old login.
+        assert!(is_dead(30, day, 31 * day + day - 1));
+        assert!(
+            !is_dead(30, day, 31 * day),
+            "exactly the limit is still alive"
+        );
+        assert!(!is_dead(365, day, 10_000 * day), "365 is an immortal life");
+    }
+
+    /// `login.c:458`, since `d373719`: a `NULL last_login_dt` arrives as `0`, and `0` is the
+    /// account that has never signed in rather than one that signed in at the epoch. It is asked
+    /// to accept the agreement instead of being buried.
+    #[test]
+    fn an_account_that_never_signed_in_has_no_deadline() {
+        let day = 60 * 60 * 24;
+        assert!(!is_dead(30, 0, now()));
+        assert!(!is_dead(30, 0, 10_000 * day));
+        // The same account a day after it did sign in is judged by `life` again.
+        assert!(is_dead(30, day, 32 * day));
     }
 
     #[test]

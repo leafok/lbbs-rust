@@ -36,11 +36,11 @@
 //!   (`user_list_display.c:499-504`, `screen.c:319-345`), so C searches the stale prefix once
 //!   more before the next read reports the loss again. The port leaves the screen on either,
 //!   which is what an empty first buffer already does.
-//! * `user_info_display.c:61` declares `long line_offsets[BBS_user_intro_max_line + 1]`,
-//!   eleven slots, and `:182` then asks for a limit of
-//!   `MIN(SCREEN_ROWS - 1, BBS_user_intro_max_line + 9)`, nineteen: a profile of more than
-//!   eleven display lines wrote past that array. [`crate::text::Wrapped`] grows, so the port
-//!   keeps only the limit C's loop actually stops at — `count - 1` display lines.
+//! * `user_info_display.c:33` names the offset count after the array that holds it —
+//!   `USER_INFO_MAX_LINE = BBS_user_intro_max_line + 9`, the nineteen slots of `:62` and the
+//!   `MIN(SCREEN_ROWS - 1, USER_INFO_MAX_LINE)` of `:183` are one constant since `9e1eff6`.
+//!   [`crate::text::Wrapped`] grows, so the port keeps only the eighteen display lines that
+//!   count asks for.
 //! * `get_user_level`'s binary search and backward scan together give the largest index
 //!   whose threshold the point has reached, because `BBS_user_level_points[0]` is `INT_MIN`.
 //!   That is what the port computes, and it is why `get_user_level_name`'s unchecked array
@@ -72,11 +72,15 @@ use crate::session::Session;
 use crate::term::Terminal;
 use crate::term::key::{self, CR, KEY_ESC, KEY_NULL, KEY_TIMEOUT};
 
-/// `BBS_max_sessions_per_user` and `USER_INFO_MAX_LEN` (`user_info_display.c:27-33`). The
+/// `BBS_max_sessions_per_user` and `USER_INFO_MAX_LEN` (`user_info_display.c:27-34`). The
 /// two members that only sized a C buffer — `LAST_LOGIN_DT_MAX_LEN` and
 /// `ASTRO_STR_MAX_LEN` — format into a `String` here.
 const MAX_SESSIONS_PER_USER: usize = 10;
 const USER_INFO_MAX_LEN: usize = 8192;
+
+/// `USER_INFO_MAX_LINE` (`:33`): the introduction plus the nine header lines above it, which since
+/// `9e1eff6` is both the size of the C offset array (`:62`) and the count it asks for (`:183`).
+const USER_INFO_MAX_LINE: usize = USER_INTRO_MAX_LINE + 9;
 
 /// `user_list_search`'s grid (`user_list_display.c:478-480`), including the one extra slot
 /// that is how a search of more than a hundred matches says so.
@@ -84,7 +88,7 @@ const USERS_PER_LINE: usize = 5;
 const MAX_USER_LINES: usize = 20;
 const MAX_USER_CNT: usize = USERS_PER_LINE * MAX_USER_LINES + 1;
 
-/// `astro_dates` and `astro_names` (`bbs.c:61-66`): the day the sign changes in month
+/// `astro_dates` and `astro_names` (`bbs.c:61-65`): the day the sign changes in month
 /// `tm_mon`, and the twelve names with the first one repeated at the end so a December
 /// birthday past its date wraps to 摩羯.
 const ASTRO_DATES: [i32; 12] = [21, 20, 21, 21, 22, 22, 23, 24, 24, 24, 23, 22];
@@ -133,7 +137,7 @@ const USER_LEVEL_NAMES: [&str; 16] = [
     "★★★★★",
 ];
 
-/// The immortal `life` values, which age neither (`user_info_display.c:155`).
+/// The immortal `life` values, which age neither (`user_info_display.c:156`).
 const IMMORTAL_LIFE: [i32; 4] = [333, 365, 666, 999];
 
 /// `get_astro_name` (`bbs.c:107-119`). A birthday of 0 is the epoch, so a user who never
@@ -163,7 +167,7 @@ pub fn user_level_name(level: usize) -> &'static str {
     USER_LEVEL_NAMES[level]
 }
 
-/// `strftime("%F %H:%M")` of an epoch second (`user_info_display.c:96-107`).
+/// `strftime("%F %H:%M")` of an epoch second (`user_info_display.c:97-108`).
 fn clock_minute(ts: i64) -> String {
     chrono::Local
         .timestamp_opt(ts, 0)
@@ -172,15 +176,15 @@ fn clock_minute(ts: i64) -> String {
         .unwrap_or_default()
 }
 
-/// `user_info_display` (`:40`): the whole profile of one roster row, ending the way C's
+/// `user_info_display` (`:41`): the whole profile of one roster row, ending the way C's
 /// `display_data(…, 1, …)` does — with a press-any-key.
 pub async fn user_info_display(term: &mut Terminal, session: &mut Session, user: &UserInfo) {
     let profile = profile_screen(term, session, user);
 
     // `split_data_lines(user_info_f, SCREEN_COLS + 1, …, MIN(SCREEN_ROWS - 1,
-    // BBS_user_intro_max_line + 9), 1, NULL)` (`:182`): the `+1` is C's wrap budget, and the
+    // USER_INFO_MAX_LINE), 1, NULL)` (`:183`): the `+1` is C's wrap budget, and the
     // nineteen offset slots it asks for are eighteen display lines.
-    let max_lines = (SCREEN_ROWS - 1).min(USER_INTRO_MAX_LINE + 9) - 1;
+    let max_lines = (SCREEN_ROWS - 1).min(USER_INFO_MAX_LINE) - 1;
     let lines = term.wrap(&profile, SCREEN_COLS + 1, true, max_lines);
 
     screen::clearscr(term);
@@ -197,9 +201,9 @@ pub async fn user_info_display(term: &mut Terminal, session: &mut Session, user:
     .await;
 }
 
-/// The buffer C formats into `user_info_f` (`:169-180`), assembled in the same order.
+/// The buffer C formats into `user_info_f` (`:170-181`), assembled in the same order.
 fn profile_screen(term: &Terminal, session: &Session, user: &UserInfo) -> Vec<u8> {
-    // `get_user_article_cnt` (`user_list.c:1629`), whose `-1` for a uid the stat table does
+    // `get_user_article_cnt` (`user_list.c:1633`), whose `-1` for a uid the stat table does
     // not have is `unwrap_or(-1)` here.
     let article_cnt = session
         .state
@@ -207,7 +211,7 @@ fn profile_screen(term: &Terminal, session: &Session, user: &UserInfo) -> Vec<u8
         .user_article_count(user.uid)
         .unwrap_or(-1);
 
-    // `:76-94`, where the gender gate only chooses the colour.
+    // `:77-95`, where the gender gate only chooses the colour.
     let gender = user.gender.to_ascii_uppercase();
     let astro = astro_name(user.birthday);
     let astro_str = if user.gender_pub && gender == 'M' {
@@ -229,7 +233,7 @@ fn profile_screen(term: &Terminal, session: &Session, user: &UserInfo) -> Vec<u8
     let sessions = online.sessions_of(user.uid, 0, MAX_SESSIONS_PER_USER);
     let is_online = !sessions.is_empty();
 
-    // `action_str` (`:109-140`): `[标题] ` per session. C tests the room for the bracket, the
+    // `action_str` (`:110-141`): `[标题] ` per session. C tests the room for the bracket, the
     // title, the space, the newline and the NUL before appending any of them, and gives up on
     // the rest of the sessions when it runs out.
     let mut action_str: Vec<u8> = Vec::with_capacity(LINE_BUFFER_LEN);
@@ -248,7 +252,7 @@ fn profile_screen(term: &Terminal, session: &Session, user: &UserInfo) -> Vec<u8
     }
     action_str.push(b'\n');
 
-    // `:142-153`: the first session's address, masked one octet deeper for a caller who is
+    // `:143-154`: the first session's address, masked one octet deeper for a caller who is
     // not staff.
     let login_ip = match sessions.first() {
         Some(session_row) => ipmask::mask(
@@ -263,7 +267,7 @@ fn profile_screen(term: &Terminal, session: &Session, user: &UserInfo) -> Vec<u8
         None => String::new(),
     };
 
-    // `:155-162`: one day of life per day since the last visit, except for the immortals.
+    // `:156-163`: one day of life per day since the last visit, except for the immortals.
     let life = if IMMORTAL_LIFE.contains(&user.life) {
         user.life
     } else {
@@ -274,7 +278,7 @@ fn profile_screen(term: &Terminal, session: &Session, user: &UserInfo) -> Vec<u8
     let level = user_level(user.exp);
     let level_name = user_level_name(level);
 
-    // `lml_render(intro, intro_f, sizeof(intro_f), SCREEN_COLS, 0)` (`:167`).
+    // `lml_render(intro, intro_f, sizeof(intro_f), SCREEN_COLS, 0)` (`:168`).
     let intro = lml::render(
         user.intro.as_bytes(),
         USER_INTRO_MAX_LEN + 1,
@@ -338,7 +342,7 @@ fn profile_screen(term: &Terminal, session: &Session, user: &UserInfo) -> Vec<u8
     buf
 }
 
-/// `display_user_info_key_handler` (`:35-38`), which reports nothing and so leaves the
+/// `display_user_info_key_handler` (`:36-39`), which reports nothing and so leaves the
 /// profile with no status row of its own. Everything else is the session's pager bookkeeping.
 struct ProfileHooks<'a> {
     session: &'a mut Session,
@@ -781,6 +785,10 @@ mod tests {
         assert!(screen.ends_with('\n'));
     }
 
+    /// `:183` asks for `MIN(SCREEN_ROWS - 1, USER_INFO_MAX_LINE)` offsets, and since `9e1eff6`
+    /// `:33` defines that constant as the `BBS_user_intro_max_line + 9` slots the array of `:62`
+    /// has: nineteen of them, which is what the count and the storage agree on. The `+1` of the
+    /// same line is the wrap budget, and C's loop stops one line short of the slots it was given.
     #[tokio::test]
     async fn the_displayed_profile_stops_at_the_line_limit_and_ends_with_a_key() {
         let (mut term, client) = pair();
@@ -801,6 +809,10 @@ mod tests {
 
         assert!(screen.contains("\x1b[2J"), "cleared first: {screen}");
         assert!(screen.contains("amy (昵称) 上站 [7]"), "{screen}");
+        assert_eq!(
+            USER_INFO_MAX_LINE, 19,
+            "the ten introduction lines of `:33` and the nine header lines above them"
+        );
         // C asks for nineteen offset slots, which is eighteen display lines: the header, the
         // label and thirteen lines of the introduction, and no more.
         assert!(screen.contains("第1行"), "{screen}");

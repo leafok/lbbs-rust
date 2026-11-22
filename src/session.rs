@@ -10,7 +10,7 @@
 //! # Deviations from C
 //!
 //! * `user_online.SID` is `Telnet_Process_<n>` with a per-connection number instead of
-//!   `getpid()` (`login.c:543`), because one process serves every session. The prefix stays
+//!   `getpid()` (`login.c:544`), because one process serves every session. The prefix stays
 //!   so the web application's online list keeps recognising the row.
 //! * `check_user` pushes the user's timezone into the process with `setenv("TZ", …)` plus
 //!   `tzset()` (`login.c:389-403`). That is a process-wide mutation, so the port records
@@ -187,7 +187,7 @@ impl Session {
         self.user_tz = clamp_bytes(user_tz, USER_TZ_MAX_LEN);
     }
 
-    /// `user_online_add` (`login.c:523-552`): the visit row, then this session's online row
+    /// `user_online_add` (`login.c:524-553`): the visit row, then this session's online row
     /// replacing whatever an earlier connection of the same id left behind.
     pub async fn online_add(&mut self) -> Result<(), sqlx::Error> {
         self.state.db.visit_log(&self.hostaddr).await?;
@@ -198,17 +198,17 @@ impl Session {
             .await
     }
 
-    /// `user_online_del` (`login.c:554-568`).
+    /// `user_online_del` (`login.c:555-569`).
     pub async fn online_delete(&mut self) -> Result<(), sqlx::Error> {
         self.state.db.online_delete(&self.sid).await
     }
 
-    /// `user_online_exp` (`login.c:570-589`), the time-online allowance paid at logout.
+    /// `user_online_exp` (`login.c:571-590`), the time-online allowance paid at logout.
     pub async fn online_exp(&mut self) -> Result<(), sqlx::Error> {
         self.state.db.online_logout(self.privs.uid).await
     }
 
-    /// `user_online_update` (`login.c:591-631`). `None` is C's `NULL`: keep the current
+    /// `user_online_update` (`login.c:592-632`). `None` is C's `NULL`: keep the current
     /// action and only refresh the heartbeat. The return is C's `1` for "the row changed".
     pub async fn online_update(&mut self, action: Option<&str>) -> Result<bool, sqlx::Error> {
         let unchanged = match action {

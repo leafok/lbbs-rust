@@ -7,7 +7,7 @@
 //!
 //! ```text
 //! [2026-11-19 09:41:02] [1234] [INFO] 欢迎光临 Example BBS
-//! [2026-11-19 09:41:02] [1234] [ERROR] [net_server.c:410] accept() error: 24
+//! [2026-11-19 09:41:02] [1234] [ERROR] [net_server.c:948] accept(socket_server) error: 24
 //! ```
 //!
 //! The timestamp is UTC (`gmtime_r`), the pid is the writer's, and only the error stream carries

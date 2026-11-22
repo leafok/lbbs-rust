@@ -2,53 +2,59 @@
 //! 电子小鸡: the pocket chicken one user raises in a file under their own uid, reached from the
 //! top menu's `【 电子小鸡 】` item.
 //!
-//! Port of `utils/game/chicken.c` — `chicken_main` (`:60-84`), `load_chicken` (`:86-123`),
-//! `save_chicken` (`:125-135`), `create_a_egg` (`:137-188`), `show_chicken` (`:190-386`),
-//! `select_menu` (`:388-638`), `death` (`:640-667`), `pressany` (`:669-680`), `guess`
-//! (`:682-751`), `win_c` (`:753-762`), `tie` (`:764-772`), `lose` (`:774-783`), `situ`
-//! (`:785-801`) and `sell` (`:803-857`). The menu reaches it through `exec_mbem`
+//! Port of `utils/game/chicken.c` — `chicken_main` (`:61-85`), `load_chicken` (`:87-135`),
+//! `save_chicken` (`:137-163`), `create_a_egg` (`:165-217`), `show_chicken` (`:219-415`),
+//! `select_menu` (`:417-667`), `death` (`:669-696`), `pressany` (`:698-709`), `guess`
+//! (`:711-780`), `win_c` (`:782-791`), `tie` (`:793-801`), `lose` (`:803-812`), `situ`
+//! (`:814-830`) and `sell` (`:832-886`). The menu reaches it through `exec_mbem`
 //! (`src/menu_proc.c:107-110`) on the parameter `C@mod:game/so/libgame.so#chicken_main`
 //! (`conf/menu.conf:238`), and the 糖糖 it spends is [`crate::money`].
 //!
 //! The record is one line of fourteen numbers and a name in `var/chicken/<UID>`, and the shared
 //! `var/chicken/log` says who hatched, who sold and who lost. Age is never stored as an age:
-//! `load_chicken` rebuilds it from the birth day and month the file does keep (`:119-120`), so the
+//! `load_chicken` rebuilds it from the birth day and month the file does keep (`:125-132`), so the
 //! picture on the screen is a function of the calendar rather than of the number in the file.
 //!
 //! # Deviations from C
 //!
 //! * The record lives in a [`Chicken`] handed from function to function, not in the globals of
-//!   `:36-44`. Of those the file only reads and writes fourteen; `angery`, `sick`, `gold`, `x`,
+//!   `:37-45`. Of those the file only reads and writes fourteen; `angery`, `sick`, `gold`, `x`,
 //!   `ran`, `q_mon`, `p_mon`, `bank`, `birth`, `cfp`, `buf` and `buf1` are named and never used at
-//!   all, and `agetmp` (`:93`) and `last` (`:104`, `:109`) are written and never read, so none of
+//!   all, and `agetmp` (`:94`) and `last` (`:105`, `:115`) are written and never read, so none of
 //!   them has a field here.
-//! * `chictime` (`:39`) *is* read — `show_chicken` (`:192-200`) thins and dirties the chicken past
+//! * `chictime` (`:40`) *is* read — `show_chicken` (`:221-229`) thins and dirties the chicken past
 //!   200 of them — but no line in `chicken.c` ever assigns it, so the branch is dead in C and is
 //!   kept dead here with a test on both sides of it.
-//! * `fopen(fname, "r+")` (`:98`) is asked for read *and* write, so a record the session cannot
+//! * `fopen(fname, "r+")` (`:99`) is asked for read *and* write, so a record the session cannot
 //!   write to is treated as absent and hatched over. The port asks for the same two modes.
-//! * `fscanf` (`:111-112`) matches each `%d` and stops at the first token a number will not start
+//! * The egg that was just laid is opened a second time to be read back (`:106`), and an open the
+//!   kernel refuses there is the `Error!!cannot open file` of `:107-111` and a `-1` out of
+//!   `load_chicken`: the game is refused rather than started on the zeroes an unread record parses
+//!   to. A record that was already there is read through the `"r+"` of `:99`, which is never NULL,
+//!   so for it the only failure left is the short line of `:119-122`.
+//! * `fscanf` (`:117-118`) matches each `%d` and stops at the first token a number will not start
 //!   in; [`Chicken::parse`] splits on whitespace and reads every field with
 //!   [`crate::config::c_atoi`], which answers `0` where C would have left the rest of the line
 //!   unread. The two agree on every line `save_chicken` and `create_a_egg` wrote, and the count C
-//!   tested (`:113-116`) is the count reported here.
-//! * `save_chicken`'s `fopen(fname, "r+")` (`:129`) seeks to the front of the file and does not
-//!   truncate, so a shortened name leaves its own tail behind — visible in the reference tree's own
-//!   `var/chicken/12` — and `%s` stops at the first space, so the tail is never read back. The port
-//!   writes the same way, and C's NULL `FILE` handover on a vanished file is a logged error here.
-//! * `create_a_egg`'s naming loop (`:151-166`) is left by a name, by `SYS_server_exit`, or by
+//!   tested (`:119-122`) is the count reported here.
+//! * `save_chicken` (`:137-163`) opens `"r+"`, writes the line and then cuts the file to the
+//!   length it just wrote, so a chicken renamed shorter takes the tail of the longer name with it.
+//!   `%s` stops at the first space either way. An open that fails is C's `Error!!cannot open
+//!   file` and no write at all (`:143-147`).
+//! * `create_a_egg`'s naming loop (`:179-195`) is left by a name, by `SYS_server_exit`, or by
 //!   nothing at all: a `get_data` that times out leaves `chicken_name` empty and asks again, one
 //!   `bbs_delay` at a time. The port takes the timeout as the reader having gone and writes the egg
 //!   with the empty name it would have written on shutdown — the same record either way. The buffer
-//!   the loop re-asks with is `name_tmp` (`:146`), which the previous round left masked, and which
-//!   starts out holding `宝宝`: a nameless Enter names the chicken 宝宝, and because `get_data`
-//!   (`src/screen.c:326`) starts counting at that prefill and appends to it, a typed name rides on
-//!   it too — `宝宝` then `新鸡` is accepted as `宝宝新鸡`.
-//! * `srand((unsigned) time(NULL))` and `rand() % 3` (`:697-698`) are glibc's additive-feedback
+//!   the loop re-asks with is `name_tmp` (`:172`, seeded at `:175`), which starts out holding `宝宝`: a nameless
+//!   Enter names the chicken 宝宝, and because `get_data` (`src/screen.c:326`) starts counting at
+//!   that prefill and appends to it, a typed name rides on it too — `宝宝` then `新鸡` is accepted
+//!   as `宝宝新鸡`. A name the filter masked is emptied first (`:189`), so the second round opens
+//!   blank rather than offering the `***` back as an answer.
+//! * `srand((unsigned) time(NULL))` and `rand() % 3` (`:726-727`) are glibc's additive-feedback
 //!   generator, whose answer for a given second is a property of libc rather than of this game.
 //!   [`opponent`] mixes the same one-second seed into one of the same three hands: a second still
 //!   picks one hand for everyone and all three still come up, but which one is not glibc's answer.
-//! * `check_badwords` (`:155`, `:616`) returns a negative when the filter cannot be consulted, and
+//! * `check_badwords` (`:183`, `:645`) returns a negative when the filter cannot be consulted, and
 //!   the two callers treat it differently: `create_a_egg` falls through to `strncpy` with the
 //!   half-masked name, `select_menu` leaves the old one alone and only `log_error`s.
 //!   [`crate::bwf::Badwords::mask`] has no such failure, the same swap documented in
@@ -68,20 +74,20 @@ use crate::screen;
 use crate::session::{self, Session};
 use crate::term::Terminal;
 
-/// `CHICKEN_NAME_LEN` (`:27-28`), and the `+ 1` on every buffer that holds one.
+/// `CHICKEN_NAME_LEN` (`:28-29`), and the `+ 1` on every buffer that holds one.
 const CHICKEN_NAME_LEN: usize = 40;
 
-/// `DATA_FILE` (`:30`), the directory [`setuserfile`] puts the uid under — [`crate::paths::VAR_CHICKEN_DIR`],
+/// `DATA_FILE` (`:31`), the directory [`setuserfile`] puts the uid under — [`crate::paths::VAR_CHICKEN_DIR`],
 /// which is the directory the daemon creates at startup.
 const DATA_FILE: &str = crate::paths::VAR_CHICKEN_DIR;
 
-/// `LOG_FILE` (`:31`), the one file every player's hatchings, sales and deaths share.
+/// `LOG_FILE` (`:32`), the one file every player's hatchings, sales and deaths share.
 const LOG_FILE: &str = "var/chicken/log";
 
-/// The `current_action` the game signs the online row with (`:74`).
+/// The `current_action` the game signs the online row with (`:75`).
 pub const ACTION: &str = "CHICKEN";
 
-/// `cstate` (`:33-34`): ten slots and seven words. The three that were never initialised print
+/// `cstate` (`:34-35`): ten slots and seven words. The three that were never initialised print
 /// what glibc's `printf` prints for a NULL, and no caller of `pressany` reaches them.
 const CSTATE: [&str; 10] = [
     "我在吃饭",
@@ -96,17 +102,17 @@ const CSTATE: [&str; 10] = [
     "(null)",
 ];
 
-/// The name `create_a_egg` seeds its prompt with (`:146`), so an Enter with nothing typed hatches
+/// The name `create_a_egg` seeds its prompt with (`:175`), so an Enter with nothing typed hatches
 /// a chicken called 宝宝.
 const EGG_NAME: &str = "宝宝";
 
-/// The one-byte answers `:404` and `:825` read, and the three hands of `:692`.
+/// The one-byte answers `:433` and `:854` read, and the three hands of `:721`.
 const KEY_ROCK: u32 = b'2' as u32;
 const KEY_PAPER: u32 = b'3' as u32;
 const KEY_YES: u8 = b'y';
 const KEY_SCISSORS: u32 = b'1' as u32;
 
-/// The pictures of the `switch (age)` of `:225-353` and the 大怪鸟 of `:357-371`.
+/// The pictures of the `switch (age)` of `:254-382` and the 大怪鸟 of `:386-400`.
 const PICTURE_0: &str = "  ●●●●\r\n●  ●●  ●\r\n●●●●●●\r\n●●    ●●\r\n●●●●●●\r\n  ●●●●   ";
 const PICTURE_2: &str = "    ●●●●●●\r\n  ●            ●\r\n●    ●    ●    ●\r\n●                ●\r\n●      ●●      ●\r\n●                ●\r\n●                ●\r\n  ●            ●\r\n    ●●●●●●   ";
 const PICTURE_4: &str = "      ●●●●●●\r\n    ●            ●\r\n  ●  ●        ●  ●\r\n  ●                ●\r\n  ●      ●●      ●\r\n●●●    ●●      ●●\r\n  ●                ●\r\n  ●                ●\r\n    ●  ●●●●  ●\r\n      ●      ●  ●\r\n                ●    ";
@@ -117,14 +123,14 @@ const PICTURE_13: &str = "              ●●●●\r\n      ●●●●●●
 const PICTURE_15: &str = "  ●    ●●●●●●\r\n●  ●●  ●        ●\r\n●              ●    ●\r\n  ●●●                ●\r\n●                      ●\r\n●  ●●                ●\r\n  ●  ●                ●\r\n      ●        ●  ●    ●\r\n      ●          ●      ●\r\n      ●                  ●\r\n        ●              ●\r\n        ●  ●●  ●●●\r\n        ●  ●●  ●\r\n          ●    ●             ";
 const PICTURE_MONSTER: &str = "          ●●●●●●●\r\n        ●          ●●●\r\n      ●    ●    ●  ●●●\r\n  ●●●●●●●        ●●\r\n  ●          ●          ●\r\n  ●●●●●●●          ●            \x1b[1;5;31m我是大怪鸟\x1b[m\r\n  ●        ●            ●\r\n  ●●●●●●            ●\r\n  ●                    ●\r\n  ●                    ●\r\n    ●                ●\r\n●●  ●            ●\r\n●      ●●●●●●  ●●\r\n  ●                      ●\r\n●●●    我是大怪鸟       ●●● ";
 
-/// The meal (`:434-442`), the snack (`:482-488`), the cleaned-out coop (`:508-517`) and the
-/// 大补丸 (`:564-568`).
+/// The meal (`:463-471`), the snack (`:511-517`), the cleaned-out coop (`:537-546`) and the
+/// 大补丸 (`:593-597`).
 const SCENE_EAT: &str = "       □□□□□□\r\n         ∵∴ □  □\r\n              □  □                             □□□□  □          \r\n              □  □     □              □      □□□□□□□            \r\n         Ｃｏｋｅ □    _□□□□□□□□□_    □□□□□□□□                  \r\n             □   □     ％％％％％％％％％       □—∩∩—□          \r\n            □    □     □□□□□□□□□       │Mcdonald│      　　　 　\r\n           □     □     ※※※※※※※※※　     □————□          \r\n       □□□□□□      □□□□□□□□□     □□□□□□□□ ";
 const SCENE_SNACK: &str = "             □\r\n       \x1b[33;1m□\x1b[m□○\r\n       \x1b[37;42m■■\x1b[m\r\n       \x1b[32m□□\x1b[m\r\n       \x1b[32;40;1m□□\x1b[m\r\n       \x1b[31m □ \x1b[m\r\n      \x1b[31m □□\x1b[m   \x1b[32;1m水果酒冰淇淋苏打\x1b[m   嗯!好喝!   ";
 const SCENE_CLEAN: &str = "\x1b[1;36m                              □□□□□\x1b[m\r\n\x1b[1;33m                             『\x1b[37m□□□□\x1b[m\r\n\x1b[1;37m                               □□□□\x1b[m\r\n\x1b[1;37m             □□□□□□□□\x1b[32m◎\x1b[37m□□□□\x1b[m\r\n\x1b[37m             □□□□□□□□□\x1b[1;37m□□□□\x1b[m\r\n\x1b[37m             □□□□□□□□□\x1b[1;33m □\x1b[m\r\n\x1b[36m                  □□□□□□\x1b[1;33m□□\x1b[m\r\n\x1b[1;36m                  □□□□□□\x1b[m\r\n  \x1b[1;37m                □□□□□□\x1b[m\r\n                  耶耶耶...便便拉光光...                              ";
 const SCENE_PILL: &str = "\r\n               □□□□\r\n               □□□□\r\n               □□□□\r\n                          偷吃禁药大补丸.....";
 
-/// The three verdicts of `guess` (`:758`, `:768`, `:780`).
+/// The three verdicts of `guess` (`:787`, `:797`, `:809`).
 const VERDICT_WIN: &str = "判定:小鸡输了....    >_<~~~~~\r\n\r\n                                 ";
 const VERDICT_TIE: &str =
     "判定:平手                    -_-\r\n\r\n                                              ";
@@ -132,7 +138,7 @@ const VERDICT_LOSE: &str =
     "小鸡赢罗                      ∩∩\r\n                               □       ";
 
 /// The record as `var/chicken/<UID>` holds it: the fourteen numbers of the `fprintf` of
-/// `:130-131` in that order, then the name. C declares them all `int` (`:36-44`), so `i32`.
+/// `:149-150` in that order, then the name. C declares them all `int` (`:37-45`), so `i32`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct Chicken {
     weight: i32,
@@ -150,12 +156,12 @@ struct Chicken {
     food: i32,
     zfood: i32,
     name: Vec<u8>,
-    /// `chictime` (`:39`): read by `show_chicken`, assigned by nothing — see the header note.
+    /// `chictime` (`:40`): read by `show_chicken`, assigned by nothing — see the header note.
     chictime: i32,
 }
 
 impl Chicken {
-    /// `fprintf(fp, "%d %d … %s ", …)` of `:130-131` and `:173-174`, trailing space included.
+    /// `fprintf(fp, "%d %d … %s ", …)` of `:149-150` and `:202-203`, trailing space included.
     fn line(&self) -> String {
         format!(
             "{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} ",
@@ -177,7 +183,7 @@ impl Chicken {
         )
     }
 
-    /// The `fscanf` of `:111-112`, and the fifteen the return of `:113` is compared against.
+    /// The `fscanf` of `:117-118`, and the fifteen the return of `:119` is compared against.
     /// Fields past the fifteenth are not read, as they are not read in C either.
     fn parse(bytes: &[u8]) -> (Self, usize) {
         let text = String::from_utf8_lossy(bytes);
@@ -210,8 +216,8 @@ impl Chicken {
     }
 }
 
-/// `setuserfile(fname, sizeof(fname), DATA_FILE)` (`:67`), which is `snprintf("%s/%d", …, uid)`
-/// (`bbs.c:161-166`): each record lives in the shared directory under its uid.
+/// `setuserfile(fname, sizeof(fname), DATA_FILE)` (`:68`), which is `snprintf("%s/%d", …, uid)`
+/// (`bbs.c:161-165`): each record lives in the shared directory under its uid.
 fn setuserfile(session: &Session) -> PathBuf {
     session
         .root
@@ -219,7 +225,7 @@ fn setuserfile(session: &Session) -> PathBuf {
         .join(session.privs.uid.to_string())
 }
 
-/// `chicken_main` (`:60-84`). The `-1`, `-2` and `0` of `:64`, `:71` and `:83` are returned to
+/// `chicken_main` (`:61-85`). The `-1`, `-2` and `0` of `:65`, `:72` and `:84` are returned to
 /// nobody: `menu_proc.c:107-110` calls the entry and redraws the menu whatever it answers.
 pub async fn chicken_main(term: &mut Terminal, session: &mut Session) -> i32 {
     let mut wallet = Wallet::default();
@@ -244,22 +250,24 @@ pub async fn chicken_main(term: &mut Terminal, session: &mut Session) -> i32 {
     0
 }
 
-/// `load_chicken` (`:86-123`), keeping the record in place the way the C globals are refilled.
-/// `None` is the `-1` of `:99-103`, which only a `create_a_egg` that could not write produces —
-/// and which `chicken_main` (`:69-72`) turns into its `-2`.
+/// `load_chicken` (`:87-135`), keeping the record in place the way the C globals are refilled.
+/// `None` is one of the two `-1`s of this function — the `create_a_egg` that could not write
+/// (`:100-104`) and the egg that could not be read back (`:107-111`) — and `chicken_main`
+/// (`:70-73`) turns either into its `-2`.
 async fn load_chicken(term: &mut Terminal, session: &mut Session, path: &Path) -> Option<Chicken> {
-    // `:94-96`: the clock is read before the naming loop can spend a minute inside `create_a_egg`,
+    // `:95-97`: the clock is read before the naming loop can spend a minute inside `create_a_egg`,
     // and it is this fixed moment the age is computed from however long the name took.
     let now = Local::now();
 
-    // `:98`: `r+` wants to write as well as read, so an unwritable file counts as no file.
+    // `:99`: `r+` wants to write as well as read, so an unwritable file counts as no file.
     let existing = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .open(path)
         .ok();
 
-    if existing.is_none() {
+    let laid_an_egg = existing.is_none();
+    if laid_an_egg {
         let mut egg = Chicken::default();
         if create_a_egg(term, session, path, &mut egg).await < 0 {
             return None;
@@ -267,26 +275,40 @@ async fn load_chicken(term: &mut Terminal, session: &mut Session, path: &Path) -
     }
     drop(existing);
 
-    // `:111-116`: the reopened `fp` is read whether or not an egg was just written, and a short
-    // line is the `Error in chicken data` of `:113-116`.
-    let (mut chicken, fields) = Chicken::parse(&std::fs::read(path).unwrap_or_default());
+    // `:107-111`: C reaches the egg through a handle it opens here, so an egg it cannot open is
+    // reported and refused rather than parsed. A record that was already there is read through the
+    // `"r+"` of `:99`, and that handle is never NULL, so its only failure is the short line below.
+    let raw = match std::fs::read(path) {
+        Ok(raw) => raw,
+        Err(err) if laid_an_egg => {
+            tracing::error!("Error!!cannot open file '{}': {err}", path.display());
+            return None;
+        }
+        Err(_) => Vec::new(),
+    };
+
+    // `:117-122`: the reopened `fp` is read whether or not an egg was just written, and a short
+    // line is the `Error in chicken data` of `:119-122`.
+    let (mut chicken, fields) = Chicken::parse(&raw);
     if fields != 15 {
         tracing::error!("Error in chicken data");
     }
 
-    // `:119-120`: the stored age is dropped and rebuilt from the birth day and month. `+12` then
-    // `% 12` counts whole months since the birthday, so a chicken of a year and a day is one day
-    // old again, and in the days before its birthday inside the month the answer is negative —
-    // which draws no picture at all (`picture` has no case for it) and makes `[1]` fatten it by
-    // `5 - age`.
-    chicken.age =
-        (now.month0() as i32 + 1 + 12 - chicken.month) % 12 * 31 + (now.day() as i32 - chicken.day);
+    // `:125-132`: the stored age is dropped and rebuilt from the birth day and month. The month
+    // span is no longer taken modulo twelve, so a chicken of a year and a day is a year and a day
+    // old, and the only negative left is the days before this year's birthday — `:129-132` adds
+    // the year back, where the old formula aged the chicken backwards into a picture the `switch`
+    // of `:254-382` has no `case` for.
+    chicken.age = (now.month0() as i32 + 1 - chicken.month) * 31 + (now.day() as i32 - chicken.day);
+    if chicken.age < 0 {
+        chicken.age += 12 * 31;
+    }
 
     Some(chicken)
 }
 
-/// `save_chicken` (`:125-135`): the front of the existing file is overwritten and the tail of a
-/// longer previous line is left exactly where it was — see the header note.
+/// `save_chicken` (`:137-163`): the front of the existing file is overwritten and the record is
+/// then cut to the length just written, so a shortened name takes its tail with it.
 fn save_chicken(path: &Path, chicken: &Chicken) {
     let text = chicken.line();
     match std::fs::OpenOptions::new().write(true).open(path) {
@@ -294,14 +316,19 @@ fn save_chicken(path: &Path, chicken: &Chicken) {
             if let Err(err) = file.write_all(text.as_bytes()) {
                 tracing::error!("fwrite({}) error: {err}", path.display());
             }
+            // `:151-158`: `fflush` then `ftell` then `ftruncate` — the length the write reached.
+            let len = u64::try_from(text.as_bytes().len()).unwrap_or(u64::MAX);
+            if let Err(err) = file.set_len(len) {
+                tracing::error!("ftruncate({}) error: {err}", path.display());
+            }
         }
-        // C hands a NULL `FILE` to `fprintf`; the record it meant to write is lost either way.
-        Err(err) => tracing::error!("fopen({}) error: {err}", path.display()),
+        // `:143-147`: the record the daemon could not open is one it does not write.
+        Err(err) => tracing::error!("Error!!cannot open file '{}': {err}", path.display()),
     }
 }
 
-/// `create_a_egg` (`:137-188`): ask for a name until one passes the badword filter, then write the
-/// egg and sign the shared log. A negative is the error `load_chicken` (`:100-103`) leaves on.
+/// `create_a_egg` (`:165-217`): ask for a name until one passes the badword filter, then write the
+/// egg and sign the shared log. A negative is the error `load_chicken` (`:101-104`) leaves on.
 async fn create_a_egg(
     term: &mut Terminal,
     session: &mut Session,
@@ -315,7 +342,7 @@ async fn create_a_egg(
     let mut initial: Vec<u8> = EGG_NAME.as_bytes().to_vec();
     chicken.name.clear();
 
-    // `:151-166`: an empty name *is* the loop condition, so a rejected or absent answer asks again.
+    // `:179-195`: an empty name *is* the loop condition, so a rejected or absent answer asks again.
     while !session.state.is_exiting() && chicken.name.is_empty() {
         let Some(typed) = screen::get_data(
             term,
@@ -335,17 +362,16 @@ async fn create_a_egg(
 
         let mut masked = typed.clone();
         let hit = !masked.is_empty() && session.state.badwords().mask(&mut masked, b'*') > 0;
-        // `check_badwords` masks `name_tmp` in place (`:155`), so the next round of the loop opens
-        // with the `*`-masked text already on its line, and the `ret > 0` of `:159-162` is the
-        // `continue` that shows it.
-        initial = masked;
+        // `:187-191`: a masked answer is emptied instead of handed back, so the next round opens
+        // on a blank line — `name_tmp[0] = '\0'` before the `continue`.
+        initial = if hit { Vec::new() } else { masked };
         if hit || typed.is_empty() {
             continue;
         }
         chicken.name = typed;
     }
 
-    // `:173-174`: the egg weighs twice the hour it was laid at, and starts with ten meals and five
+    // `:202-203`: the egg weighs twice the hour it was laid at, and starts with ten meals and five
     // snacks.
     chicken.weight = now.hour() as i32 * 2;
     chicken.day = now.day() as i32;
@@ -362,7 +388,7 @@ async fn create_a_egg(
     chicken.food = 10;
     chicken.zfood = 5;
 
-    // `fopen(fname, "w")` (`:168`) truncates, which is the one write in this file that does.
+    // `fopen(fname, "w")` (`:197`) truncates, which is the one write in this file that does.
     if let Err(err) = std::fs::write(path, chicken.line()) {
         tracing::error!("Error!!cannot open file '{}': {err}", path.display());
         return -2;
@@ -389,7 +415,7 @@ async fn create_a_egg(
     0
 }
 
-/// `show_chicken` (`:190-386`): the numbers, the picture the calendar age picks, the smell
+/// `show_chicken` (`:219-415`): the numbers, the picture the calendar age picks, the smell
 /// warning, and the nine keys.
 async fn show_chicken(
     term: &mut Terminal,
@@ -398,7 +424,7 @@ async fn show_chicken(
     chicken: &mut Chicken,
     wallet: &Wallet,
 ) {
-    // `:192-200`: the ageing `chictime` gates, which nothing in C ever raises.
+    // `:221-229`: the ageing `chictime` gates, which nothing in C ever raises.
     if chicken.chictime >= 200 {
         chicken.weight -= 5;
         chicken.clean += 3;
@@ -407,7 +433,7 @@ async fn show_chicken(
         }
     }
     if chicken.weight < 0 {
-        // `:201-204` comes before the screen: a chicken already too thin does not get one.
+        // `:230-233` comes before the screen: a chicken already too thin does not get one.
         death(term, session, path, chicken).await;
     }
 
@@ -430,7 +456,7 @@ async fn show_chicken(
 
     term.moveto(3, 0);
     if chicken.age <= 16 {
-        // The `switch` of `:225-353` has no `default`, and no `case` for a negative age: C leaves
+        // The `switch` of `:254-382` has no `default`, and no `case` for a negative age: C leaves
         // the picture out entirely.
         if let Some(picture) = picture(chicken.age) {
             term.print(picture);
@@ -443,7 +469,7 @@ async fn show_chicken(
         term.moveto(10, 30);
         term.print("便便好多..臭臭...");
         if chicken.clean > 15 {
-            // `:377-378`: the death happens mid-warning, and the rows below it still print.
+            // `:406-407`: the death happens mid-warning, and the rows below it still print.
             death(term, session, path, chicken).await;
         }
         screen::press_any_key(term).await;
@@ -456,7 +482,7 @@ async fn show_chicken(
     term.print("\r\n\x1b[32m[6]-买鸡饲料$20  [7]-买零食$30  [8]-吃大补丸  [9]-卖鸡喔 \x1b[m");
 }
 
-/// The eight `case` groups of `:225-353`, in the ages they cover.
+/// The eight `case` groups of `:254-382`, in the ages they cover.
 fn picture(age: i32) -> Option<&'static str> {
     match age {
         0 | 1 => Some(PICTURE_0),
@@ -471,7 +497,7 @@ fn picture(age: i32) -> Option<&'static str> {
     }
 }
 
-/// `select_menu` (`:388-638`): the help bar, the question, and one action per answer.
+/// `select_menu` (`:417-667`): the help bar, the question, and one action per answer.
 async fn select_menu(
     term: &mut Terminal,
     session: &mut Session,
@@ -479,8 +505,8 @@ async fn select_menu(
     chicken: &mut Chicken,
     wallet: &mut Wallet,
 ) -> i32 {
-    // `:392-395`: `ptime` is read once, before the loop, which is the second the `猜拳` bonus of
-    // `:525` is taken from however many actions follow.
+    // `:421-424`: `ptime` is read once, before the loop, which is the second the `猜拳` bonus of
+    // `:554` is taken from however many actions follow.
     let opened = Local::now();
     let mut loop_open = true;
 
@@ -500,19 +526,19 @@ async fn select_menu(
         )
         .await
         else {
-            // `:404-407`: a timeout leaves the menu with no save beyond the one `chicken_main` does.
+            // `:433-436`: a timeout leaves the menu with no save beyond the one `chicken_main` does.
             return 0;
         };
         let answer = typed.first().copied().unwrap_or(b'\0');
 
-        // `:409-415`: the access time, then the heartbeat that keeps `CHICKEN` as the action.
+        // `:438-444`: the access time, then the heartbeat that keeps `CHICKEN` as the action.
         session.last_access_tm = session::now();
         if let Err(err) = session.online_update(None).await {
             tracing::error!("user_online_update(NULL) error: {err}");
         }
 
         if chicken.tiredstrong > 20 {
-            // `:417-423`: the rest is painted and then the action runs anyway.
+            // `:446-452`: the rest is painted and then the action runs anyway.
             screen::clearscr(term);
             term.moveto(15, 30);
             term.print("呜~~~小鸡会累坏的...要先去休息一下..");
@@ -538,8 +564,8 @@ async fn select_menu(
     0
 }
 
-/// The `switch (inbuf[0])` of `:424-630`. The return is C's `loop`: only `q` of `:627-629` stops
-/// the redraw of `:632-635`.
+/// The `switch (inbuf[0])` of `:453-659`. The return is C's `loop`: only `q` of `:656-658` stops
+/// the redraw of `:661-664`.
 async fn handle_key(
     term: &mut Terminal,
     session: &mut Session,
@@ -564,7 +590,7 @@ async fn handle_key(
             chicken.food -= 1;
             chicken.tiredstrong += 1;
             chicken.satis += 1;
-            // `:449-456`: a young chicken gains by how young it is.
+            // `:478-485`: a young chicken gains by how young it is.
             chicken.weight += if chicken.age < 5 { 5 - chicken.age } else { 1 };
 
             if chicken.weight > 100 {
@@ -574,7 +600,7 @@ async fn handle_key(
                 too_heavy(term, "鸡撑晕了~~").await;
             }
             if chicken.weight > 200 {
-                // `:469-472`: no message, just the two rows `death` prints.
+                // `:498-501`: no message, just the two rows `death` prints.
                 death(term, session, path, chicken).await;
             }
         }
@@ -619,7 +645,7 @@ async fn handle_key(
             screen::clrtobot(term, 20);
             term.moveto(20, 0);
             if money::money_withdraw(session, wallet, 20).await <= 0 {
-                // `:534-539`: `<= 0` covers `-1`, `-2` and the impossible `0` of `:126-129`.
+                // `:563-568`: `<= 0` covers `-1`, `-2` and the impossible `0` of `:138-142`.
                 term.print("糖果不足!!");
                 screen::press_any_key(term).await;
                 return true;
@@ -688,7 +714,7 @@ async fn handle_key(
             }
         }
         b'c' => {
-            // `:609-612`: the rename starts from the name the record already has.
+            // `:638-641`: the rename starts from the name the record already has.
             screen::clrline(term, 22, 22);
             let Some(typed) = screen::get_data(
                 term,
@@ -709,27 +735,27 @@ async fn handle_key(
             }
             let mut masked = typed.clone();
             if session.state.badwords().mask(&mut masked, b'*') == 0 {
-                // `:620-624`: a hit leaves the old name in place — unlike the naming loop, which asks
+                // `:649-653`: a hit leaves the old name in place — unlike the naming loop, which asks
                 // again.
                 chicken.name = typed;
             }
         }
         b'q' => return false,
-        // `:630`: any other byte is no action at all, and the screen is redrawn.
+        // `:659`: any other byte is no action at all, and the screen is redrawn.
         _ => {}
     }
 
     true
 }
 
-/// The two `moveto(9, 30)` warnings of `:457-468` and `:494-499`, which share everything but words.
+/// The two `moveto(9, 30)` warnings of `:486-497` and `:523-528`, which share everything but words.
 async fn too_heavy(term: &mut Terminal, message: &str) {
     term.moveto(9, 30);
     term.print(message);
     screen::press_any_key(term).await;
 }
 
-/// `pressany` (`:669-680`): the status line over the menu, one key, and the line cleared again.
+/// `pressany` (`:698-709`): the status line over the menu, one key, and the line cleared again.
 async fn pressany(term: &mut Terminal, index: usize) -> u32 {
     term.moveto(23, 0);
     term.print(&format!(
@@ -744,14 +770,14 @@ async fn pressany(term: &mut Terminal, index: usize) -> u32 {
     ch
 }
 
-/// `iflush` (`:445`, `:674`, `:678`, `:689`): the flush C wants before it waits for a key.
+/// `iflush` (`:474`, `:703`, `:707`, `:718`): the flush C wants before it waits for a key.
 async fn iflush(term: &mut Terminal) {
     if let Err(err) = term.flush().await {
         tracing::error!("io_flush() error: {err}");
     }
 }
 
-/// `guess` (`:682-751`). `-1` is the error input of `:692-695`, which `:524` throws away.
+/// `guess` (`:711-780`). `-1` is the error input of `:721-724`, which `:553` throws away.
 async fn guess(term: &mut Terminal, chicken: &mut Chicken, seed: u64) -> i32 {
     term.moveto(23, 0);
     term.print("[1]-剪刀 [2]-石头 [3]-布: ");
@@ -776,7 +802,7 @@ async fn guess(term: &mut Terminal, chicken: &mut Chicken, seed: u64) -> i32 {
     match ch {
         KEY_SCISSORS => {
             term.print("笨鸡---看我捡来的刀---");
-            // `:721-726`.
+            // `:750-755`.
             match com {
                 0 => tie(term).await,
                 1 => lose(term, chicken).await,
@@ -806,7 +832,7 @@ async fn guess(term: &mut Terminal, chicken: &mut Chicken, seed: u64) -> i32 {
     0
 }
 
-/// `srand((unsigned) time(NULL))` and `rand() % 3` (`:697-698`): one hand per second, three hands
+/// `srand((unsigned) time(NULL))` and `rand() % 3` (`:726-727`): one hand per second, three hands
 /// in all. See the header note on why the mixing is the port's own.
 fn opponent(seed: u64) -> i32 {
     let mut state = seed | 1;
@@ -816,7 +842,7 @@ fn opponent(seed: u64) -> i32 {
     (state % 3) as i32
 }
 
-/// `win_c` (`:753-762`): the player's win, which is the chicken's loss.
+/// `win_c` (`:782-791`): the player's win, which is the chicken's loss.
 async fn win_c(term: &mut Terminal, chicken: &mut Chicken) {
     chicken.winn += 1;
     screen::clrtobot(term, 20);
@@ -824,14 +850,14 @@ async fn win_c(term: &mut Terminal, chicken: &mut Chicken) {
     term.print(VERDICT_WIN);
 }
 
-/// `tie` (`:764-772`): C's `tie(void)` moves no counter, so it takes no record.
+/// `tie` (`:793-801`): C's `tie(void)` moves no counter, so it takes no record.
 async fn tie(term: &mut Terminal) {
     screen::clrtobot(term, 20);
     term.moveto(20, 0);
     term.print(VERDICT_TIE);
 }
 
-/// `lose` (`:774-783`): the chicken wins, and is happier for it.
+/// `lose` (`:803-812`): the chicken wins, and is happier for it.
 async fn lose(term: &mut Terminal, chicken: &mut Chicken) {
     chicken.losee += 1;
     chicken.happy += 2;
@@ -840,7 +866,7 @@ async fn lose(term: &mut Terminal, chicken: &mut Chicken) {
     term.print(VERDICT_LOSE);
 }
 
-/// `situ` (`:785-801`): the record, printed from both sides, and one of the two comments on it.
+/// `situ` (`:814-830`): the record, printed from both sides, and one of the two comments on it.
 async fn situ(term: &mut Terminal, chicken: &Chicken) {
     screen::clrtobot(term, 16);
     term.moveto(16, 0);
@@ -863,7 +889,7 @@ async fn situ(term: &mut Terminal, chicken: &Chicken) {
     }
 }
 
-/// `death` (`:640-667`): the log line, two rows of text, the record deleted, and a new egg hatched
+/// `death` (`:669-696`): the log line, two rows of text, the record deleted, and a new egg hatched
 /// in its place — the name asked in the middle of whatever action called this, because in C the
 /// globals are simply overwritten.
 async fn death(term: &mut Terminal, session: &mut Session, path: &Path, chicken: &mut Chicken) {
@@ -894,15 +920,15 @@ async fn death(term: &mut Terminal, session: &mut Session, path: &Path, chicken:
     term.print("\r\n笨史了...赶出系统...");
     screen::press_any_key(term).await;
 
-    // `:663-664`: the file goes, and `load_chicken` hatches a new one over the top of it.
+    // `:692-693`: the file goes, and `load_chicken` hatches a new one over the top of it.
     let _ = std::fs::remove_file(path);
     if let Some(fresh) = load_chicken(term, session, path).await {
         *chicken = fresh;
     }
 }
 
-/// `sell` (`:803-857`). The return codes of `-1` (`:826-832`), `-2` (`:834-840`, `:842-846`) and
-/// `0` are all thrown away by `:589`.
+/// `sell` (`:832-886`). The return codes of `-1` (`:855-861`), `-2` (`:863-869`, `:871-875`) and
+/// `0` are all thrown away by `:618`.
 async fn sell(
     term: &mut Terminal,
     session: &mut Session,
@@ -912,7 +938,7 @@ async fn sell(
 ) -> i32 {
     let now = Local::now();
 
-    // `:816-820`: happiness, satisfaction, weight, age, and a bonus decided by the second the
+    // `:845-849`: happiness, satisfaction, weight, age, and a bonus decided by the second the
     // screen opened the question in.
     let sel = price(
         chicken.happy,
@@ -941,7 +967,7 @@ async fn sell(
         return -1;
     };
     if typed.first().copied() != Some(KEY_YES) {
-        // `:829-832`: `N`, an empty answer and `Yes` all refuse; only a lowercase `y` sells.
+        // `:858-861`: `N`, an empty answer and `Yes` all refuse; only a lowercase `y` sells.
         return -1;
     }
 
@@ -979,7 +1005,7 @@ async fn sell(
     0
 }
 
-/// The sum of `:816-820`, in the order C adds it.
+/// The sum of `:845-849`, in the order C adds it.
 fn price(happy: i32, satis: i32, weight: i32, age: i32, second: i32) -> i32 {
     let mut sel = 0;
     sel += happy * 10;
@@ -990,7 +1016,7 @@ fn price(happy: i32, satis: i32, weight: i32, age: i32, second: i32) -> i32 {
     sel
 }
 
-/// The `fopen(LOG_FILE, "a")` and `fprintf` of `:177-185`, `:650-658` and `:842-850`: one
+/// The `fopen(LOG_FILE, "a")` and `fprintf` of `:206-214`, `:679-687` and `:871-879`: one
 /// appended line in the directory every player shares.
 fn append_log(session: &Session, text: &str) -> std::io::Result<()> {
     let path = session.root.join(LOG_FILE);
@@ -1091,7 +1117,7 @@ mod tests {
     }
 
     /// The fifteen fields `save_chicken` writes come back out of [`Chicken::parse`] unchanged, and
-    /// the line is the one `fprintf` of `:130-131` would have written: space separated, one space
+    /// the line is the one `fprintf` of `:149-150` would have written: space separated, one space
     /// after the name.
     #[test]
     fn the_record_round_trips_through_its_own_line() {
@@ -1117,11 +1143,11 @@ mod tests {
         let line = chicken.line();
         assert_eq!(
             line, "37 21 11 4 130 1 9 2 6 3 12 7 8 2 小花 ",
-            "the field order of `:130-131`"
+            "the field order of `:149-150`"
         );
         let (back, fields) = Chicken::parse(line.as_bytes());
         assert_eq!(back, chicken);
-        assert_eq!(fields, 15, "the count `:113` compares against");
+        assert_eq!(fields, 15, "the count `:119` compares against");
     }
 
     /// `%s` reads one token, so a record with anything after the name has it ignored — which is what
@@ -1133,7 +1159,7 @@ mod tests {
         assert_eq!(chicken.name, "小鸡".as_bytes());
         assert_eq!(fields, 15, "fifteen were matched and the rest left unread");
 
-        // A line with too few fields is the `Error in chicken data` of `:113-116`, and the numbers it
+        // A line with too few fields is the `Error in chicken data` of `:119-122`, and the numbers it
         // does not carry read as the `0` `c_atoi` answers.
         let (short, fields) = Chicken::parse(b"5 6 7 ");
         assert_eq!(fields, 3);
@@ -1142,9 +1168,8 @@ mod tests {
         assert!(short.name.is_empty());
     }
 
-    /// The eight `case` groups of `:225-353`, and the two ages that draw nothing: a negative one,
-    /// which the `age <= 16` test of `:224` lets through into a `switch` with no matching `case`, and
-    /// anything above sixteen, which takes the 大怪鸟 of `:357` instead.
+    /// The eight `case` groups of `:254-382`, the ages above sixteen that take the 大怪鸟 of `:386`
+    /// instead, and the shape of a `switch` that has no `default` to catch either.
     #[test]
     fn the_picture_is_chosen_by_the_age_c_switches_on() {
         assert_eq!(picture(0), Some(PICTURE_0));
@@ -1169,14 +1194,11 @@ mod tests {
         assert_eq!(
             picture(-7),
             None,
-            "no `case` matches a chicken whose birthday is still to come"
+            "the `switch` has no `default`, so an age no `case` covers draws nothing"
         );
     }
 
-    /// The `+12` then `% 12` of `:119` counts whole months since the birthday and forgets the years,
-    /// and it counts days by simple subtraction, so a birthday that has not come yet this month ages
-    /// the chicken *backwards*.
-    /// Hatched today, aged by the calendar: see the note on `:119-120` in the header.
+    /// A record on disk, aged by the calendar: see the note on `:125-132` in the header.
     async fn age_of(root: &Path) -> Chicken {
         let (loaded, _) = page!(root, [], |term, session, path| load_chicken(
             &mut term,
@@ -1186,12 +1208,14 @@ mod tests {
         loaded.expect("the record is there")
     }
 
+    /// `:125-132` counts whole months since the birthday without forgetting the years, and a span
+    /// that is negative because this year's birthday has not come round gets the year back.
     #[tokio::test]
     async fn the_age_is_the_calendar_subtraction_of_load_chicken() {
         let now = Local::now();
         let month = now.month0() as i32 + 1;
 
-        // Hatched today: `tm_mon + 1 + 12 - month` is 12, and `% 12` makes it nothing.
+        // Hatched today: the month span is nothing and so is the day subtraction.
         let root = root("age-today");
         write_record(
             &root,
@@ -1208,8 +1232,8 @@ mod tests {
             "the name is the fifteenth field"
         );
 
-        // Born on the first of this month, a year ago or yesterday: the same number, because the
-        // modulo cannot tell a year from nothing.
+        // Born on the first of this month: only the days since the first count, whether that was
+        // this year or last.
         let root = self::root("age-wrap");
         write_record(
             &root,
@@ -1221,8 +1245,8 @@ mod tests {
         );
         assert_eq!(age_of(&root).await.age, now.day() as i32 - 1);
 
-        // Born on the 28th, looked at before the 28th: the day subtraction goes negative and stays
-        // there, which is the age `picture` has no case for and `[1]` fattens by `5 - age`.
+        // Born on the 28th, looked at before the 28th: the span is negative, and `:129-132` makes
+        // it the year-and-a-bit that has actually passed rather than a subtraction below zero.
         let root = self::root("age-negative");
         write_record(
             &root,
@@ -1233,26 +1257,27 @@ mod tests {
             },
         );
         let chicken = age_of(&root).await;
-        assert_eq!(chicken.age, now.day() as i32 - 28);
         if now.day() < 28 {
-            assert!(
-                chicken.age < 0,
-                "the birthday has not come yet: {:?}",
-                chicken.age
+            assert_eq!(
+                chicken.age,
+                now.day() as i32 - 28 + 12 * 31,
+                "the birthday has not come round: the year is added back instead of an age below zero"
             );
             assert_eq!(
                 picture(chicken.age),
                 None,
-                "and the screen is left without a picture"
+                "and an age past the last `case` of `:254-382` draws nothing"
             );
+        } else {
+            assert_eq!(chicken.age, now.day() as i32 - 28);
         }
     }
 
-    /// `save_chicken` opens `"r+"` and does not truncate (`:129`), so a chicken renamed shorter keeps
-    /// the tail of the longer name in its file — the reason the reference tree's own records end in
-    /// debris. `%s` stops at the first space, so the debris is never read back.
+    /// `save_chicken` (`:151-158`) cuts the file to the length it has just written, so a chicken
+    /// renamed shorter takes the tail of the longer name away with it. Before `:151-158` the debris
+    /// stayed in the record, harmless only because `%s` stops at the first space.
     #[tokio::test]
-    async fn a_shorter_record_leaves_the_tail_of_the_longer_one() {
+    async fn a_shorter_record_cuts_the_tail_of_the_longer_one() {
         let root = root("tail");
         let long = Chicken {
             food: 3,
@@ -1269,26 +1294,36 @@ mod tests {
         save_chicken(&record_path(&root), &short);
 
         let bytes = std::fs::read(record_path(&root)).unwrap();
-        let text = String::from_utf8_lossy(&bytes).into_owned();
-        assert!(
-            text.starts_with("0 0 0 0 0 0 0 0 0 0 0 0 4 0 短 "),
-            "{text:?}"
-        );
-        assert!(
-            text.contains("长长"),
-            "the tail of the previous name is still in the file: {text:?}"
+        assert_eq!(
+            String::from_utf8_lossy(&bytes).as_ref(),
+            short.line(),
+            "the file is the record and nothing more of the previous one"
         );
 
         let (back, fields) = Chicken::parse(&bytes);
-        assert_eq!(
-            back.name,
-            "短".as_bytes(),
-            "and none of it reaches the name"
-        );
+        assert_eq!(back.name, "短".as_bytes());
         assert_eq!(fields, 15);
     }
 
-    /// `chictime` (`:39`) is read by `show_chicken` (`:192-200`) and assigned by no line of
+    /// `:143-147`: the record `save_chicken` cannot open is the record it does not write. Before
+    /// `c96f842` the `FILE *` went to `fprintf` unchecked, so this is the line the daemon used to
+    /// take down with it.
+    #[tokio::test]
+    async fn a_record_that_cannot_be_opened_is_not_written() {
+        let root = root("tail-absent");
+        let path = record_path(&root);
+        std::fs::remove_file(&path).ok();
+
+        let (_common, error) = crate::log::captured(|| save_chicken(&path, &hen("不见")));
+
+        assert!(
+            error.contains(&format!("Error!!cannot open file '{}'", path.display())),
+            "{error}"
+        );
+        assert!(!path.exists(), "and no record appears in its place");
+    }
+
+    /// `chictime` (`:40`) is read by `show_chicken` (`:221-229`) and assigned by no line of
     /// `chicken.c`, so the thinning and dirtying it gates cannot happen: nothing that reaches the
     /// field can raise it past 200.
     #[test]
@@ -1299,7 +1334,7 @@ mod tests {
         assert_eq!(hen("新").chictime, 0);
     }
 
-    /// The sum of `:816-820`, including the `(tm_sec % 9) * 10` that makes a sale worth a different
+    /// The sum of `:845-849`, including the `(tm_sec % 9) * 10` that makes a sale worth a different
     /// price at each second of the minute.
     #[test]
     fn a_sale_is_worth_what_c_adds_up() {
@@ -1310,7 +1345,7 @@ mod tests {
         assert_eq!(price(1, 1, 1, 1, 1), 10 + 7 + 10 + 1 + 10);
     }
 
-    /// `srand(time(NULL))` and `rand() % 3` (`:697-698`): the chicken has one hand per second, and it
+    /// `srand(time(NULL))` and `rand() % 3` (`:726-727`): the chicken has one hand per second, and it
     /// keeps it for every guess made inside that second.
     #[test]
     fn the_chicken_holds_one_hand_per_second() {
@@ -1324,7 +1359,7 @@ mod tests {
         assert_eq!(seen, [true, true, true], "and all three hands come up");
     }
 
-    /// `guess` (`:682-751`): the outcome table of `:717-747`, driven by a seed chosen for the hand it
+    /// `guess` (`:711-780`): the outcome table of `:746-776`, driven by a seed chosen for the hand it
     /// gives the chicken rather than by the clock.
     #[tokio::test]
     async fn the_guess_table_moves_the_record_the_way_c_writes_it() {
@@ -1333,7 +1368,7 @@ mod tests {
         let rock = (0..200u64).find(|s| opponent(*s) == 1).unwrap();
         let cloth = (0..200u64).find(|s| opponent(*s) == 2).unwrap();
 
-        // 石头 against the chicken's 石头 is the `tie()` of `:733`, and `tie` of `:764-772` takes no
+        // 石头 against the chicken's 石头 is the `tie()` of `:762`, and `tie` of `:793-801` takes no
         // record: the verdict line is all that changes.
         let mut chicken = hen("猜拳");
         let (ret, screen) = page!(&root, [b"2", b" "], |term, session, path| async {
@@ -1350,8 +1385,8 @@ mod tests {
             "a tie moves nothing"
         );
 
-        // 布 against 布 ties the same way (`:744`), and 石头 against 剪刀 is the `win_c()` of `:731`,
-        // which counts the hand for the player at `:753-762`.
+        // 布 against 布 ties the same way (`:773`), and 石头 against 剪刀 is the `win_c()` of `:760`,
+        // which counts the hand for the player at `:782-791`.
         let mut chicken = hen("猜拳");
         page!(&root, [b"3", b" "], |term, session, path| guess(
             &mut term,
@@ -1368,8 +1403,8 @@ mod tests {
         ));
         assert_eq!((chicken.winn, chicken.losee), (1, 0), "the player won");
 
-        // 剪刀 against 石头 is the `lose()` of `:724`, which counts against the player and pays the
-        // chicken two happiness (`:774-783`).
+        // 剪刀 against 石头 is the `lose()` of `:753`, which counts against the player and pays the
+        // chicken two happiness (`:803-812`).
         let mut chicken = hen("猜拳");
         page!(&root, [b"1", b" "], |term, session, path| guess(
             &mut term,
@@ -1380,7 +1415,7 @@ mod tests {
         assert_eq!(chicken.happy, 2, "and is happier for it");
     }
 
-    /// An answer that is not one of the three hands leaves at `:692-695`: no chicken hand is drawn,
+    /// An answer that is not one of the three hands leaves at `:721-724`: no chicken hand is drawn,
     /// no verdict, no counter.
     #[tokio::test]
     async fn a_hand_that_is_not_one_of_three_is_not_a_hand() {
@@ -1390,15 +1425,15 @@ mod tests {
             let ret = guess(&mut term, &mut chicken, 7).await;
             (ret, ())
         });
-        assert_eq!(ret.0, -1, "the error input of `:692-695`");
+        assert_eq!(ret.0, -1, "the error input of `:721-724`");
         assert!(screen.contains("[1]-剪刀 [2]-石头 [3]-布: "), "{screen}");
         assert!(!screen.contains("小鸡:"), "{screen}");
         assert_eq!((chicken.winn, chicken.losee), (0, 0));
     }
 
-    /// `create_a_egg` (`:137-188`) with nothing typed: `name_tmp` starts as `宝宝` (`:146`) and
+    /// `create_a_egg` (`:165-217`) with nothing typed: `name_tmp` starts as `宝宝` (`:175`) and
     /// `get_data` counts the buffer it leaves behind, so Enter alone is a name. The egg weighs twice
-    /// the hour it was laid in and starts with ten meals and five snacks (`:173-174`).
+    /// the hour it was laid in and starts with ten meals and five snacks (`:202-203`).
     #[tokio::test]
     async fn an_egg_nobody_named_is_called_baby() {
         let root = root("egg-default");
@@ -1439,15 +1474,15 @@ mod tests {
         );
         assert!(
             log.contains(&format!("[{}/{}  ", now.month0() as i32 + 1, now.day())),
-            "the stamp of `:181-185` is the hour the page opened, not the minute the name landed: {log}"
+            "the stamp of `:210-214` is the hour the page opened, not the minute the name landed: {log}"
         );
     }
 
-    /// A name the filter knows is masked (`:155-162`) and asked again — and because
-    /// `check_badwords` masks the buffer the prompt is prefilled from, the second round opens with
-    /// the masked text already on the line, so one more Enter lets it in.
+    /// A name the filter knows is masked (`:183-191`) and asked again — and since `:189` empties the
+    /// buffer the prompt is prefilled from, the masked text is never offered back as an answer: the
+    /// second round opens blank, an Enter there is no name, and only a clean third answer counts.
     #[tokio::test]
-    async fn a_bad_name_comes_back_masked_and_is_accepted() {
+    async fn a_masked_name_is_emptied_and_asked_again() {
         let root = root("egg-badword");
         let bwf = crate::bwf::Badwords::load(write_badwords("egg-badword", "笨\n")).unwrap();
         let mut session = test_session(&root);
@@ -1459,7 +1494,7 @@ mod tests {
         let (mut client, server) = Pipe::new();
         let mut term = Terminal::new(ByteIo::Pipe(server));
         let mut chicken = Chicken::default();
-        let script: &[&[u8]] = &["笨蛋\r".as_bytes(), b"\r"];
+        let script: &[&[u8]] = &["笨蛋\r".as_bytes(), b"\r", "花花\r".as_bytes()];
         tokio::time::timeout(Duration::from_secs(20), async {
             tokio::join!(
                 create_a_egg(&mut term, &mut session, &path, &mut chicken),
@@ -1467,27 +1502,108 @@ mod tests {
             );
         })
         .await
-        .expect("the second Enter is the second round of the loop");
+        .expect("the third answer is the third round of the loop");
         let _ = term.flush().await;
         let screen = String::from_utf8_lossy(&client.take_available()).into_owned();
 
         assert!(
-            screen.contains("笨"),
+            screen.contains("笨") && screen.contains("蛋"),
             "the first round echoes what was typed: {screen}"
         );
-        assert!(screen.contains("蛋"), "{screen}");
         assert!(
-            screen.contains("帮小鸡取个好名字: 宝宝***蛋"),
-            "the second round opens on the masked buffer, `宝宝` and all: {screen}"
+            !screen.contains('*'),
+            "the mask of `:189` stays inside the buffer that is then emptied: {screen}"
+        );
+        assert_eq!(
+            screen.matches("帮小鸡取个好名字: ").count(),
+            3,
+            "a masked name and an empty Enter each ask again: {screen}"
+        );
+        assert_eq!(
+            screen.matches("帮小鸡取个好名字: 宝宝").count(),
+            1,
+            "and only the first of the three opens on the prefill: {screen}"
         );
         assert_eq!(
             chicken.name,
-            "宝宝***蛋".as_bytes(),
-            "the masked buffer is the one `:163` copies"
+            "花花".as_bytes(),
+            "the masked buffer is never the one `:192` copies"
+        );
+        let log = log_lines(&root);
+        assert!(
+            log.contains("花花"),
+            "and the log sees the clean name: {log}"
         );
         assert!(
-            log_lines(&root).contains("宝宝***蛋"),
-            "and reaches the log that way"
+            !log.contains("笨") && !log.contains("宝宝"),
+            "not the word the filter knew, nor the prefill it was typed onto: {log}"
+        );
+    }
+
+    /// `:107-111`: an egg that cannot be opened again after it was laid is reported and the game
+    /// refused. The record it leaves on disk stays the egg — unparsed, unsaved — and the
+    /// `Error in chicken data` of `:119-122` is never reached because there is no handle to read
+    /// through. A process the kernel never refuses — root — cannot answer this, and says so.
+    #[test]
+    fn an_egg_that_cannot_be_read_back_refuses_the_game() {
+        #[cfg(unix)]
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = root("egg-blind");
+
+        // `captured` puts the subscriber on this thread, so the hatching runs on a runtime that
+        // never leaves it — and the session it needs has to wait for that runtime too.
+        let mut outcome = None;
+        let (_common, error) = crate::log::captured(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("a runtime that stays on the thread carrying the log");
+            outcome = Some(rt.block_on(async {
+                let record = record_path(&root);
+                std::fs::write(&record, "0 1 1 0 0 0 0 0 0 0 0 0 0 0 旧鸡 ").unwrap();
+                #[cfg(unix)]
+                std::fs::set_permissions(&record, std::fs::Permissions::from_mode(0o200)).unwrap();
+                if std::fs::File::open(&record).is_ok() {
+                    return (record, true, None, String::new(), String::new());
+                }
+                let (laid, drew) = page!(&root, [b"\r"], |term, session, path| load_chicken(
+                    &mut term,
+                    &mut session,
+                    &path
+                ));
+                #[cfg(unix)]
+                std::fs::set_permissions(&record, std::fs::Permissions::from_mode(0o600)).unwrap();
+                let on_disk =
+                    String::from_utf8_lossy(&std::fs::read(&record).unwrap()).into_owned();
+                (record, false, laid, drew, on_disk)
+            }));
+        });
+        let (record, readable, laid, drew, on_disk) = outcome.expect("the page ran");
+        if readable {
+            eprintln!(
+                "{} is readable after all: the guard needs a reader the kernel refuses",
+                record.display()
+            );
+            return;
+        }
+
+        assert!(
+            drew.contains("帮小鸡取个好名字: "),
+            "the egg was really laid: {drew}"
+        );
+        assert!(laid.is_none(), "and the record it left was refused");
+        assert!(
+            error.contains(&format!("Error!!cannot open file '{}'", record.display())),
+            "{error}"
+        );
+        assert!(
+            !error.contains("Error in chicken data"),
+            "nothing was read, so nothing could be short: {error}"
+        );
+        assert!(
+            on_disk.contains("宝宝"),
+            "the file holds the egg the naming round wrote, neither the old record nor a saved chicken: {on_disk}"
         );
     }
 
@@ -1499,7 +1615,7 @@ mod tests {
         path
     }
 
-    /// Clearing the line with `ESC` is not an answer: the loop of `:151-166` asks again, and the
+    /// Clearing the line with `ESC` is not an answer: the loop of `:179-195` asks again, and the
     /// name typed after it is the name the egg gets.
     #[tokio::test]
     async fn clearing_the_name_asks_again() {
@@ -1523,7 +1639,7 @@ mod tests {
         );
     }
 
-    /// `[1]` with an empty store (`:426-430`) is `pressany(5)` and nothing else: `没食物啦..` over the
+    /// `[1]` with an empty store (`:455-459`) is `pressany(5)` and nothing else: `没食物啦..` over the
     /// menu, one key, and the numbers untouched.
     #[tokio::test]
     async fn an_empty_food_store_is_the_only_answer() {
@@ -1559,7 +1675,7 @@ mod tests {
         );
     }
 
-    /// A meal is the arithmetic of `:446-456`: one food, one fatigue, one satisfaction, and weight by
+    /// A meal is the arithmetic of `:475-485`: one food, one fatigue, one satisfaction, and weight by
     /// `5 - age` while the chicken is under five — which is why a chicken whose birthday has not come
     /// this month (`age` negative) gains more than five.
     #[tokio::test]
@@ -1589,7 +1705,7 @@ mod tests {
         assert!(again, "the meal is not an exit");
         assert!(
             screen.contains("Ｃｏｋｅ"),
-            "the scene of `:434-442`: {screen}"
+            "the scene of `:463-471`: {screen}"
         );
         assert!(screen.contains("我在吃饭"), "pressany(0): {screen}");
         assert_eq!(
@@ -1598,7 +1714,7 @@ mod tests {
         );
         assert_eq!(chicken.weight, 13, "10 + (5 - 2)");
 
-        // Past five it is the single gram of `:455`.
+        // Past five it is the single gram of `:484`.
         let mut grown = Chicken {
             food: 3,
             weight: 10,
@@ -1641,7 +1757,7 @@ mod tests {
         assert_eq!(backdated.weight, 22);
     }
 
-    /// Two hundred and one grams is the `death()` of `:469-472`, which the chicken reaches through
+    /// Two hundred and one grams is the `death()` of `:498-501`, which the chicken reaches through
     /// both warnings: `太重了啦..肥鸡~~` at a hundred and one, `鸡撑晕了~~` at a hundred and fifty-one,
     /// and no message at all past two hundred — just `呜...小鸡挂了....` and a new egg to name.
     #[tokio::test]
@@ -1683,7 +1799,7 @@ mod tests {
         assert!(log.contains("养了一只叫 \x1b[33m宝宝新鸡"), "{log}");
     }
 
-    /// `[3]` is the cleaned coop of `:505-522`: five fatigue for nothing, and `clean` back to zero.
+    /// `[3]` is the cleaned coop of `:534-551`: five fatigue for nothing, and `clean` back to zero.
     #[tokio::test]
     async fn cleaning_the_coop_costs_five_fatigue() {
         let root = root("clean");
@@ -1711,7 +1827,7 @@ mod tests {
         assert_eq!((chicken.clean, chicken.tiredstrong), (0, 6));
     }
 
-    /// `[6]` asks the database for twenty 糖糖 before it fills the store (`:531-544`). With nothing
+    /// `[6]` asks the database for twenty 糖糖 before it fills the store (`:560-573`). With nothing
     /// behind it — the `-1` [`crate::money`] answers when the `BEGIN` fails — the screen says
     /// `糖果不足!!`, and `food` and the cached balance both stay where they were.
     #[tokio::test]
@@ -1749,7 +1865,7 @@ mod tests {
         );
     }
 
-    /// `[t]` is the same test for fifty 糖糖 (`:594-607`): a database that cannot answer leaves the
+    /// `[t]` is the same test for fifty 糖糖 (`:623-636`): a database that cannot answer leaves the
     /// fatigue exactly where the rest of the screen said it should go.
     #[tokio::test]
     async fn resting_costs_money_or_does_not_happen() {
@@ -1775,11 +1891,11 @@ mod tests {
         assert!(screen.contains("糖果不足!!"), "{screen}");
         assert_eq!(
             chicken.tiredstrong, 30,
-            "`tiredstrong = 0` of `:605` is only for the payer"
+            "`tiredstrong = 0` of `:634` is only for the payer"
         );
     }
 
-    /// `[9]` under five is the refusal of `:580-586`, and the negative ages `load_chicken` can
+    /// `[9]` under five is the refusal of `:609-615`, and the negative ages `load_chicken` can
     /// produce are under five too.
     #[tokio::test]
     async fn a_minor_cannot_be_sold() {
@@ -1809,8 +1925,8 @@ mod tests {
         }
     }
 
-    /// `[9]` at or over five opens the price line (`:818-820`) and asks `真的要卖掉小鸡?[y/N]`. A deposit
-    /// the database refuses (`:834-840`) prints `无法存钱，放弃交易！` and keeps the chicken: no log
+    /// `[9]` at or over five opens the price line (`:847-849`) and asks `真的要卖掉小鸡?[y/N]`. A deposit
+    /// the database refuses (`:863-869`) prints `无法存钱，放弃交易！` and keeps the chicken: no log
     /// line, and the record still holds its name.
     #[tokio::test]
     async fn a_sale_the_database_refuses_keeps_the_chicken() {
@@ -1853,7 +1969,7 @@ mod tests {
     }
 
     /// Answering the sale question with anything but a lowercase `y` — the `N` the prompt offers, an
-    /// empty Enter, or `Yes` (`:825-832`) — leaves before the money is asked, so no refusal line
+    /// empty Enter, or `Yes` (`:854-861`) — leaves before the money is asked, so no refusal line
     /// either.
     #[tokio::test]
     async fn only_a_lowercase_y_sells() {
@@ -1893,7 +2009,7 @@ mod tests {
         }
     }
 
-    /// `[k]` is `death()` (`:591-593` → `:640-667`): the log line, `呜...小鸡挂了....`,
+    /// `[k]` is the case arm of `:620-622`, which calls `death()` (`:669-696`): the log line, `呜...小鸡挂了....`,
     /// `笨史了...赶出系统...`, one key, the record unlinked and a new egg hatched in its place — the
     /// naming prompt arriving in the middle of the action that asked for the kill.
     #[tokio::test]
@@ -1937,8 +2053,8 @@ mod tests {
         assert!(log.contains("的小鸡 \x1b[33m旧鸡  \x1b[36m挂了~~"), "{log}");
     }
 
-    /// `[c]` renames from the name the record already has (`:609-612`), and unlike the naming loop a
-    /// hit leaves the old name in place: `:620-624` only copies when the count is nothing.
+    /// `[c]` renames from the name the record already has (`:638-641`), and unlike the naming loop a
+    /// hit leaves the old name in place: `:649-653` only copies when the count is nothing.
     #[tokio::test]
     async fn a_bad_rename_keeps_the_name_it_had() {
         let root = root("rename");
@@ -2004,7 +2120,7 @@ mod tests {
         );
     }
 
-    /// `[5]` is `situ()` (`:785-801`): the record printed from both sides, and `pressany(4)` when the
+    /// `[5]` is `situ()` (`:814-830`): the record printed from both sides, and `pressany(4)` when the
     /// player is ahead or level, `pressany(3)` when behind.
     #[tokio::test]
     async fn the_record_is_read_from_both_sides() {
@@ -2056,8 +2172,8 @@ mod tests {
         assert!(screen.contains("笨蛋..输给鸡?"), "pressany(3): {screen}");
     }
 
-    /// Any other byte at the question (`:630`) is no action at all, and `q` is the only answer that
-    /// stops the loop without redrawing (`:627-629`).
+    /// Any other byte at the question (`:659`) is no action at all, and `q` is the only answer that
+    /// stops the loop without redrawing (`:656-658`).
     #[tokio::test]
     async fn an_unknown_answer_only_redraws_and_q_leaves() {
         let root = root("menu");
@@ -2086,7 +2202,7 @@ mod tests {
         assert!(screen.contains("要做些什么呢?: "), "{screen}");
         assert!(
             screen.contains("c 改名字   k 杀鸡   t 消除非疲劳($50)   q 退出"),
-            "the help bar of `:398`: {screen}"
+            "the help bar of `:427`: {screen}"
         );
         assert!(
             screen.contains("重量:20"),
@@ -2095,7 +2211,7 @@ mod tests {
         assert_eq!(chicken, before, "and changed nothing");
     }
 
-    /// A chicken past twenty fatigue is told so (`:417-423`) before whatever it was asked to do runs —
+    /// A chicken past twenty fatigue is told so (`:446-452`) before whatever it was asked to do runs —
     /// the rest screen does not replace the action, it prints over the top of the screen.
     #[tokio::test]
     async fn the_rest_screen_is_painted_before_the_answer_counts() {
@@ -2135,7 +2251,7 @@ mod tests {
         );
     }
 
-    /// `show_chicken` (`:190-386`): the numbers of `:205-222`, with 糖糖 right-aligned in eight like
+    /// `show_chicken` (`:219-415`): the numbers of `:234-251`, with 糖糖 right-aligned in eight like
     /// `%8d`, the picture `age` picks, and the two menu rows.
     #[tokio::test]
     async fn the_status_line_carries_the_wallet_and_the_record() {
@@ -2188,7 +2304,7 @@ mod tests {
         );
     }
 
-    /// The smell warning of `:374-383` is the only place `show_chicken` stops for a key: past ten
+    /// The smell warning of `:403-412` is the only place `show_chicken` stops for a key: past ten
     /// `便便` the row `便便好多..臭臭...` appears at `moveto(10, 30)` and the redraw waits for the
     /// reader.
     #[tokio::test]
@@ -2211,8 +2327,8 @@ mod tests {
             "and the rows below it still came: {screen}"
         );
 
-        // Fifteen is `:377-378`: the death is announced over the warning, mid-draw — and the
-        // `press_any_key()` of `:381` still waits for the reader afterwards, because the branch was
+        // Fifteen is `:406-407`: the death is announced over the warning, mid-draw — and the
+        // `press_any_key()` of `:410` still waits for the reader afterwards, because the branch was
         // taken on the old `clean` and the new egg's zero does not close it.
         let root = self::root("show-dead");
         let mut dying = Chicken {
@@ -2238,8 +2354,8 @@ mod tests {
         );
     }
 
-    /// `weight < 0` (`:201-204`) is the other way into `death`, and it is checked before anything is
-    /// drawn: the screen gets no status line at all, only the two rows of `:660-661` and a new egg.
+    /// `weight < 0` (`:230-233`) is the other way into `death`, and it is checked before anything is
+    /// drawn: the screen gets no status line at all, only the two rows of `:689-690` and a new egg.
     #[tokio::test]
     async fn a_starved_chicken_dies_before_the_screen() {
         let root = root("show-thin");
@@ -2262,12 +2378,12 @@ mod tests {
         assert!(screen.contains("呜...小鸡挂了...."), "{screen}");
         assert!(
             !screen.contains("重量:-1"),
-            "the status line of `:205` never ran: {screen}"
+            "the status line of `:234` never ran: {screen}"
         );
         assert_eq!(chicken.name, "宝宝新鸡".as_bytes());
     }
 
-    /// The `switch` of `:225-353` covers nothing above sixteen, and `:357-371` is the 大怪鸟 that
+    /// The `switch` of `:254-382` covers nothing above sixteen, and `:386-400` is the 大怪鸟 that
     /// answers for all of it: one picture for every age past sixteen, whatever the number.
     #[tokio::test]
     async fn anything_past_sixteen_is_the_same_monster() {

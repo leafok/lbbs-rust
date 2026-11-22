@@ -376,15 +376,16 @@ pub struct OnlineRow {
     pub last_tm: Option<i64>,
 }
 
-/// `load_user_info` (`login.c:421`).
+/// `load_user_info` (`login.c:421`). All five columns answer `NULL` in the schema, which is what
+/// the five `row[i] == NULL` tests of `login.c:439-448` are for.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PubInfoRow {
     #[sqlx(rename = "life")]
-    pub life: i16,
+    pub life: Option<i16>,
     #[sqlx(rename = "last_login_dt")]
     pub last_login_dt: Option<i64>,
     #[sqlx(rename = "user_timezone")]
-    pub user_timezone: String,
+    pub user_timezone: Option<String>,
     #[sqlx(rename = "exp")]
     pub exp: Option<i32>,
     #[sqlx(rename = "nickname")]
@@ -446,7 +447,7 @@ impl Db {
             .map(|_| ())
     }
 
-    /// `user_online_login`: insert, and the caller deletes on logout (`login.c:541`).
+    /// `user_online_login`: insert, and the caller deletes on logout (`login.c:542`).
     pub async fn online_login(&self, sid: &str, uid: i32, ip: &str) -> Result<(), sqlx::Error> {
         sqlx::query(
             "INSERT INTO user_online(SID, UID, ip, current_action, login_tm, last_tm)
@@ -478,7 +479,7 @@ impl Db {
             .map(|_| ())
     }
 
-    /// The logout bookkeeping (`login.c:576`): one exp per 300 seconds online, capped at
+    /// The logout bookkeeping (`login.c:577`): one exp per 300 seconds online, capped at
     /// 288, computed by the server from the two timestamps.
     pub async fn online_logout(&self, uid: i32) -> Result<(), sqlx::Error> {
         sqlx::query(
@@ -608,10 +609,10 @@ impl Db {
 }
 
 // ---------------------------------------------------------------------------
-// Privileges: `user_priv.c:113-280`
+// Privileges: `user_priv.c:141-341`
 // ---------------------------------------------------------------------------
 
-/// The `verified` gate on posting and mailing (`:130`). No row means the account is not
+/// The `verified` gate on posting and mailing (`:163`). No row means the account is not
 /// verified, which is what clears the bits.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct UserFlagsRow {
@@ -621,7 +622,7 @@ pub struct UserFlagsRow {
     pub p_msg: bool,
 }
 
-/// A section the user moderates (`:173`).
+/// A section the user moderates (`:206`).
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct MasterRow {
     #[sqlx(rename = "SID")]
@@ -630,7 +631,7 @@ pub struct MasterRow {
     pub major: bool,
 }
 
-/// The per-section level gates, fetched once at startup (`:198`).
+/// The per-section level gates, fetched once at startup (`:238`).
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct SectionLevelRow {
     #[sqlx(rename = "SID")]
@@ -652,7 +653,7 @@ impl Db {
     }
 
     /// `major` of the first `admin_config` row: truthy means the major administrator,
-    /// falsy a normal one (`:151`).
+    /// falsy a normal one (`:184`).
     pub async fn admin_major(&self, uid: i32) -> Result<Option<bool>, sqlx::Error> {
         sqlx::query(
             "SELECT major FROM admin_config WHERE UID = ? AND enable AND (NOW() BETWEEN begin_dt AND end_dt)",
@@ -685,7 +686,7 @@ impl Db {
         .await
     }
 
-    /// Sections the user is currently banned from posting in (`:233`).
+    /// Sections the user is currently banned from posting in (`:280`).
     pub async fn banned_sids(&self, uid: i32) -> Result<Vec<i16>, sqlx::Error> {
         sqlx::query(
             "SELECT SID FROM ban_user_list WHERE UID = ? AND enable AND (NOW() BETWEEN ban_dt AND unban_dt)",
@@ -823,7 +824,7 @@ impl Db {
         .await
     }
 
-    /// [`Db::signature`] with the two reasons `user_info_update.c:237-252` separates them: an
+    /// [`Db::signature`] with the two reasons `user_info_update.c:242-257` separates them: an
     /// empty signature is a NULL column, a missing row is the error of `:249`.
     pub async fn signature_row(
         &self,
@@ -1288,7 +1289,7 @@ pub async fn editable_content(
     }))
 }
 
-/// `UPDATE user_pubinfo SET introduction = '%s' WHERE UID = %d` (`user_info_update.c:166-168`).
+/// `UPDATE user_pubinfo SET introduction = '%s' WHERE UID = %d` (`user_info_update.c:171-173`).
 /// C opens its own connection for this one statement, so the [`Db`] is the pool rather than a
 /// transaction.
 pub async fn update_introduction(db: &Db, uid: i32, text: &str) -> Result<(), sqlx::Error> {
@@ -1300,7 +1301,7 @@ pub async fn update_introduction(db: &Db, uid: i32, text: &str) -> Result<(), sq
         .map(|_| ())
 }
 
-/// `UPDATE user_pubinfo SET sign_%d = '%s' WHERE UID = %d` (`user_info_update.c:336-338`), the
+/// `UPDATE user_pubinfo SET sign_%d = '%s' WHERE UID = %d` (`user_info_update.c:346-348`), the
 /// column from [`SignSlot::update_query`] because a column name cannot be a bind parameter.
 pub async fn update_signature(
     db: &Db,

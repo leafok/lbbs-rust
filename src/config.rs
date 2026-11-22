@@ -322,12 +322,12 @@ mod tests {
 
     #[test]
     fn parses_live_style_config_with_crlf_and_comments() {
-        let text = "bbs_id LBBS-devel\r\nbbs_name 枫林在线\r\nbbs_port 2323\r\n\
+        let text = "bbs_id LBBS-devel\r\nbbs_name MyBBS\r\nbbs_port 2323\r\n\
                     bbs_max_client 1000 # Keep it as low as possible\r\n\
                     bbs_start_dt 2000-10-30\r\nbbs_sys_id 600\r\n\r\n";
         let (cfg, warns) = parse(text);
         assert_eq!(cfg.bbs_id, "LBBS-devel");
-        assert_eq!(cfg.bbs_name, "枫林在线");
+        assert_eq!(cfg.bbs_name, "MyBBS");
         assert_eq!(cfg.telnet_port, 2323);
         assert_eq!(cfg.max_client, 1000);
         assert_eq!(cfg.start_dt, "2000年10月30日");

@@ -15,8 +15,8 @@ The sections build on each other, so reading top to bottom works.
 | Item | Value |
 | --- | --- |
 | Name | LBBS (Leaflet BBS Daemon) |
-| Version | 1.7.12 — revision `49805a5` on `main` (the release has no `v1.7.12` tag yet) |
-| Language | C (about 30,340 lines across `src/*.c` and `include/*.h`) |
+| Version | 1.7.13 — revision `9193e5c` on `main` (`416ea61` is where the number was bumped; `main` carries no `v1.7.13` tag) |
+| Language | C (31,235 lines across `src/*.c` and `include/*.h` at that revision, 27,251 of them the server and the rest its own test programs) |
 | License | GPL-3.0-or-later |
 | Author | Leaflet &lt;leaflet@leafok.com&gt; |
 | Reference copy, alongside this repo | `../lbbs` — read-only for us; **we never modify it** |
@@ -30,10 +30,18 @@ and the index of users, boards and posts lives in a **MySQL database**. The site
 that same database. So LBBS is really a *terminal front-end to that web board*, and that gives us a
 hard constraint: **we must not change the schema.**
 
-The reference 1.7.12 is `v1.7.11..49805a5`: twenty commits, 23 files, +616/−57 lines, and the working tree
-matches `49805a5`. Every `file.c:NNN` citation in the Rust sources is anchored to that one revision, so
-`git -C ../lbbs show 49805a5:src/<file>` prints exactly the text the comment describes. [Section
-10.3](#103-the-1712-round-what-each-reference-fix-means-here) records how the 1.7.12 fixes are represented here.
+The reference 1.7.13 is `v1.7.11..9193e5c`: thirty-one commits, 32 files, +1,564/−85 lines. `main` is at
+`9193e5c`, and the only thing it adds over `27ffdde` — the revision that carries the last server change — is three
+test programs: every file in `src/*.c` and `include/*.h` outside `src/test_*` is byte-identical at the two, which
+is why the citations of section 10.4 did not move. Every `file.c:NNN` citation in the Rust sources is anchored to
+that one revision, so
+`git -C ../lbbs show 9193e5c:src/<file>` — or `…:utils/game/chicken.c` for the game — prints exactly the text the
+comment describes; a citation points at a committed revision, never at the reference working tree, which is the
+author's own and moves. [Section 10.3](#103-the-1712-round-what-each-reference-fix-means-here) and [section
+10.4](#104-the-1713-round-what-each-reference-fix-means-here) record how the two rounds are represented here, and
+§10.4 also says what the reference's new tests mean for the port. The
+`v1.7.11` and `v1.7.12` tags point at commits outside `main`'s history, which is why the ranges are written from
+a revision.
 
 ### 1.2 This project (lbbs-rust)
 
@@ -65,8 +73,8 @@ Words that appear over and over in this document and in the source.
 | telnet | The old way of attaching a terminal over plain TCP. LBBS speaks a little telnet protocol itself (echo and go-ahead negotiation) |
 | SSH | Encrypted connection. LBBS implements the server side; users arrive with `ssh -p 2322` |
 | session | One connection: from the first prompt to disconnect |
-| section / board | A category of the board (e.g. "Poetry", "Computers"). Table `section`, its id is **SID** |
-| article | One post on a board. Its id is **AID** |
+| section / board | A category of the board (e.g. "Poetry", "Computers"). Table `section_config`, grouped by `section_class`; its id is **SID** |
+| article | One post on a board. Its id is **AID**, one row of the `bbs` index plus a body in `bbs_content` |
 | user | A person who logs in. Their id is **UID**, split across tables `user_list` (credentials, flags) and `user_pubinfo` (profile) |
 | privilege | The bits saying whether this person may read, post, moderate, administer. In C these live in the global `BBS_priv` |
 | menu | The item table in `menu.conf`; it decides which key runs which function |
@@ -100,8 +108,10 @@ Two things define that design:
 
 1. **One connection = one forked process.** That is why the C code can use global variables without shame —
    and why every connection opens its own MySQL connection.
-2. **Boards, articles and users stay resident in shared memory**, refreshed on signals such as `SIGUSR1`,
-   and refreshed *incrementally*: only rows that changed are re-read.
+2. **Boards, articles and users stay resident in shared memory**, and refreshed *incrementally*: only rows that
+   changed since the last pass are re-read. The pass is a **timer**, not a signal — the loader process loops on
+   `BBS_section_list_load_interval` (`bbs.c:38`, one second), while `SIGUSR1` only reopens the log files (and the
+   parent ignores it outright).
 
 ---
 
@@ -133,7 +143,7 @@ We read and write `conf/bbsd.conf`, `conf/menu.conf`, `var/menu_merged.conf`, `v
 | --- | --- | --- |
 | Phase 1a | daemon startup, both listeners, connection limits, logging, signals, charset prompts, login, menus | **done**, and smoke-tested against the real database |
 | Phase 1b | board list, article list, reading (pager), post/reply, badwords wired to menu actions | **done**, including the write path and the editor |
-| Phase 2 | the digest tree, statistics, the user-profile editor, GBK polish, SSH window size | partly: browsing the digest tree is done, the rest not |
+| Phase 2 | the digest tree, statistics, the user-profile editor, GBK polish, SSH window size | **mostly done**: the digest tree and its generator, the article counter behind a profile, and both profile texts are in. What is left is GBK corner cases and the SSH window size (§6.3) |
 
 Every phase ends with **a clean compile and a green test run**. We do not pile up broken code and hope.
 
@@ -161,49 +171,49 @@ differently from C, read the deviations section first — the reason is written 
 | [src/daemon.rs](src/daemon.rs) | 480 | `src/main.c`, `src/daemon.c` | command line, `--help`/`--version`, `fork` into background | done |
 | [src/config.rs](src/config.rs) | 394 | `src/init.c` | reads `conf/bbsd.conf` | done |
 | [src/log.rs](src/log.rs) | 542 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
-| [src/text.rs](src/text.rs) | 362 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
+| [src/text.rs](src/text.rs) | 635 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
 | [src/term/mod.rs](src/term/mod.rs) | 812 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
 | [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | turns ESC sequences into key codes | done |
 | [src/screen.rs](src/screen.rs) | 1151 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
-| [src/db.rs](src/db.rs) | 1580 | `src/database.c` etc. | MySQL queries through sqlx | done |
+| [src/db.rs](src/db.rs) | 1581 | `src/database.c` etc. | MySQL queries through sqlx | done |
 | [src/board.rs](src/board.rs) | 1602 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
 | [src/browse.rs](src/browse.rs) | 3371 | `src/section_list_display.c`, `src/section_list_loader.c`, `src/menu_proc.c` (the two digest items) | the article list, its keys, reading a post, the saved reading position, and a board's digest tree | done |
 | [src/editor.rs](src/editor.rs) | 1853 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
-| [src/post.rs](src/post.rs) | 1640 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, the article's web link, and the transaction each write runs in | done |
+| [src/post.rs](src/post.rs) | 1677 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, the article's web link, and the transaction each write runs in | done |
 | [src/viewlog.rs](src/viewlog.rs) | 369 | `src/article_view_log.c` | which posts this user has read | done |
 | [src/favorlog.rs](src/favorlog.rs) | 452 | `src/article_favor.c` | which posts this user starred | done |
 | [src/favorlist.rs](src/favorlist.rs) | 785 | `src/article_favor_display.c`, `src/article_favor.c` (the page query), `src/menu_proc.c` (the `FAVOR_TOPIC` item) | the 我收藏的主题 list: two name columns, the star removed in place, and the board each row opens | done |
-| [src/roster.rs](src/roster.rs) | 735 | `src/user_list_loader.c` | the online-user roster and the article counters | done |
-| [src/userinfo.rs](src/userinfo.rs) | 954 | `src/user_info_display.c`, `src/user_list_display.c` (the search), `src/bbs.c` (the level and sign tables) | one user's profile page, and the name search that reaches it | done |
-| [src/user_info_update.rs](src/user_info_update.rs) | 642 | `src/user_info_update.c`, `src/menu_proc.c` (the two profile items) | the 说明档 and 签名档 editors: one `user_pubinfo` column through the editor, masked, counted and written back | done |
+| [src/roster.rs](src/roster.rs) | 931 | `src/user_list_loader.c`, `src/user_stat.c` | the online-user roster and the article counters | done |
+| [src/userinfo.rs](src/userinfo.rs) | 966 | `src/user_info_display.c`, `src/user_list_display.c` (the search), `src/bbs.c` (the level and sign tables) | one user's profile page, and the name search that reaches it | done |
+| [src/user_info_update.rs](src/user_info_update.rs) | 677 | `src/user_info_update.c`, `src/menu_proc.c` (the two profile items) | the 说明档 and 签名档 editors: one `user_pubinfo` column through the editor, masked, counted and written back | done |
 | [src/userlist.rs](src/userlist.rs) | 1053 | `src/user_list_display.c`, `src/menu_proc.c` (the two roster items) | the 线上使用者 and 已注册用户 pages: titles, columns, paging, and the keys between them | done |
-| [src/loader.rs](src/loader.rs) | 1684 | `src/section_list_loader.c` | the incremental refresh task, the article cache files it writes, and each board's digest menu | done |
+| [src/loader.rs](src/loader.rs) | 1689 | `src/section_list_loader.c` | the incremental refresh task, the article cache files it writes, and each board's digest menu | done |
 | [src/state.rs](src/state.rs) | 410 | the shared-memory segments | what the loader publishes and a session reads | done |
-| [src/cache.rs](src/cache.rs) | 650 | `src/article_cache.c` | render and load `var/articles/<CID>` with its line index | done |
-| [src/data_file_mgr.rs](src/data_file_mgr.rs) | 452 | `src/data_file_mgr.c`, `src/bbs_cmd.c` (the `DATAMGR` entry) | the `@DATAMGR` list: pick one of the eight site texts by number, edit it, preview it, and write the result to both the packaged file and its `.user` copy | done |
+| [src/cache.rs](src/cache.rs) | 732 | `src/article_cache.c` | render and load `var/articles/<CID>` with its line index | done |
+| [src/data_file_mgr.rs](src/data_file_mgr.rs) | 456 | `src/data_file_mgr.c`, `src/bbs_cmd.c` (the `DATAMGR` entry) | the `@DATAMGR` list: pick one of the eight site texts by number, edit it, preview it, and write the result to both the packaged file and its `.user` copy | done |
 | [src/menu.rs](src/menu.rs) | 2440 | `src/menu.c` | `menu.conf` parsing and navigation | parsing/navigation done, feature bodies not |
 | [src/lml.rs](src/lml.rs) | 720 | `src/lml.c` | LML markup rendering | done |
 | [src/bwf.rs](src/bwf.rs) | 242 | `src/trie_dict.c` etc. | badword matching and masking | done |
 | [src/ipmask.rs](src/ipmask.rs) | 109 | `src/ip_mask.c` | address masking (`202.38.64.x`) | done |
-| [src/privilege.rs](src/privilege.rs) | 487 | `src/user_priv.c` | privilege words and levels | done |
+| [src/privilege.rs](src/privilege.rs) | 561 | `src/user_priv.c` | privilege words and levels | done |
 | [src/session.rs](src/session.rs) | 619 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
-| [src/login.rs](src/login.rs) | 569 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
-| [src/bbsnet.rs](src/bbsnet.rs) | 1890 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
-| [src/chicken.rs](src/chicken.rs) | 2289 | `utils/game/chicken.c` | 电子小鸡: one line of fourteen numbers and a name, the naming prompt, the nine things you do with a chicken, and the death that hatches the next egg | done |
+| [src/login.rs](src/login.rs) | 585 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
+| [src/bbsnet.rs](src/bbsnet.rs) | 1852 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
+| [src/chicken.rs](src/chicken.rs) | 2405 | `utils/game/chicken.c` | 电子小鸡: one line of fourteen numbers and a name, the naming prompt, the nine things you do with a chicken, and the death that hatches the next egg | done |
 | [src/money.rs](src/money.rs) | 243 | `utils/game/money.c` | 糖糖: the balance a session caches, the deposit that stops at the cap, and the withdrawal that is all or nothing | done |
-| [src/bbs.rs](src/bbs.rs) | 1126 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | menu loop done, and every action `conf/menu.conf` binds has a handler (the favourites filter is a menu filter, not an action) |
+| [src/bbs.rs](src/bbs.rs) | 1127 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | menu loop done, and every action `conf/menu.conf` binds has a handler (the favourites filter is a menu filter, not an action) |
 | [src/net.rs](src/net.rs) | 469 | `src/net_server.c` | accept, connection limits, graceful drain | done |
 | [src/ssh.rs](src/ssh.rs) | 504 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
 | [src/main.rs](src/main.rs) | 580 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
-| [src/batch.rs](src/batch.rs) | 383 | `utils/lib/db_open.inc.php` + the lines the three scripts repeat | one generator's life: arguments, server root, `conf/bbsd.conf`, database, the PHP's own stdout text and exit bytes | done |
+| [src/batch.rs](src/batch.rs) | 385 | `utils/lib/db_open.inc.php` + the lines the three scripts repeat | one generator's life: arguments, server root, `conf/bbsd.conf`, database, the PHP's own stdout text and exit bytes | done |
 | [src/section_list.rs](src/section_list.rs) | 149 | `utils/lib/section_list.inc.php` | the class/board hierarchy the generators walk, with the caller's per-board values | done |
 | [src/gen_top.rs](src/gen_top.rs) | 306 | `utils/bin/gen_top.php` | `var/bbs_top.txt` and `var/bbs_top_menu.conf`: the ten hottest posts of the week | done |
 | [src/gen_section_menu.rs](src/gen_section_menu.rs) | 691 | `utils/bin/gen_section_menu.php` | `var/menu_merged.conf`: `conf/menu.conf` plus the six generated menu blocks | done |
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 424 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-36 912 lines in total, the tests included (they live in the modules they test). There are 537 tests: 531 in the
-library and 6 in the binary. 523 of them need nothing but the checked-out tree; the other 14 are ignored because
+37 728 lines in total, the tests included (they live in the modules they test). There are 553 tests: 547 in the
+library and 6 in the binary. 533 of them need nothing but the checked-out tree; the other 14 are ignored because
 they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
@@ -236,18 +246,27 @@ that does not run is described as if it did.
 8. **`menu.conf` parsing**, cursor navigation, and privilege-based filtering of items.
 9. **LML rendering** and **badword masking**.
 10. **The privilege model** (`user_priv.c`) and **IP masking** (`ip_mask.c`).
-11. **Login**: three attempts, `guest` and `new` special cases, brute-force throttles (per /24 and per account),
-    re-acceptance of the user agreement, and the rule that staff accounts must arrive over SSH.
+11. **Login**: three attempts, `guest` and `new` special cases, re-acceptance of the user agreement, the
+    brute-force throttles (per /24 and per account) and the rule that staff accounts must arrive over SSH. The
+    offline tests in [`login`](src/login.rs) pin the username and password shapes, the account deadline, the two
+    prompts and the three-silent-tries exit. The throttles and `staff_must_use_ssh` need an existing
+    `user_err_login_log` row to count, so nothing offline can drive them; their two queries run in the
+    read-only live test of §7.2.
 12. **The server body**: `conf/bbsd.conf` → shared state → the loader task → both listeners, with C's command
     line, `--foreground`/`--display-log`, the `fork()` before the runtime exists, the two log files and
     `log_restart()`, `SIGHUP` reload, `SIGTERM` drain with a 15-second grace and a 1-second escalation. The
-    periodic task is the very loader that finished the startup pass, which is what the fork gave the C child:
-    `last_article_op_log_mid` is the cursor a pass needs to reach `bbs_article_op` at all, so a loop started
-    from a fresh one keeps appending new articles while every change to an old one goes unseen.
+    [`net`](src/net.rs) tests pin the two accept gates; the drain itself and the reload are checked by hand
+    against a running daemon (§6.2). The periodic task is the very loader that finished the startup pass, which
+    is what the fork gave the C child: `last_article_op_log_mid` is the cursor a pass needs to reach
+    `bbs_article_op` at all, so a loop started from a fresh one keeps appending new articles while every change
+    to an old one goes unseen.
 13. **Connection limits**: total `bbs_max_client` and per-IP `bbs_max_client_per_ip`, counted the way the C
     parent counted its children, with the log lines it logged.
 14. **SSH** through russh on the same host keys: password-only auth, the same three tries, one session channel,
-    and the session running the same `bbs_main` as telnet.
+    and the session running the same `bbs_main` as telnet. This is the one front end with no offline test of its
+    own — the §6.2 session that arrives over russh is the check — and the two deliberate differences from C, the
+    ignored window size and the missing 60-second auth clock, are recorded at the head of
+    [`ssh`](src/ssh.rs).
 15. **The session's opening**, in C's order: [`screen::set_input_echo`](src/screen.rs)
     sending `IAC WILL ECHO, IAC WILL SGA` so the client stops echoing what it types, then the two 5-second
     prompts, `bbs_info`, `data/welcome.txt`, the counts line, `var/bbs_top.txt` and the top menu with its
@@ -262,7 +281,7 @@ that does not run is described as if it did.
    and `article_del`, each behind the same privilege gate as C, with the title/class prompts, the post header,
    the `article`/`thread`/`section` index updates, the experience change and the `article_log` row in one
    transaction — the shape of C's `*_tx` helpers. A guest pressing `^P` gets `您没有权限在本版块发表文章`
-   before any SQL runs. The `m` key is `article_excerption_set` (`article_op.c:34-269`), the 精华 toggle: the
+   before any SQL runs. The `m` key is `article_excerption_set` (`article_op.c:34-280`), the 精华 toggle: the
    locked row's five columns, the flag, the generated-digest columns and the `ex_file` row on the way out, the
    attachments' owner, the author's experience — 50 for an original topic, 20 for a reprint, 10 for a reply, all
    of it at the same rate backwards — and the `'E'`/`'O'` audit row, then the pool's copy of the flag before the
@@ -277,7 +296,7 @@ that does not run is described as if it did.
    repainting, the status row, and the `MAX_EDITOR_DATA_LINES` limit.
 20. **Writing the article cache.** [`cache::generate`](src/cache.rs)
    is C's `article_cache_generate` down to the byte, and the loader calls it for every post a pass appends and
-   every `'M'` a replay applies (`section_list_loader.c:327`, `:542`), so `var/articles/<CID>` appears on its
+   every `'M'` a replay applies (`section_list_loader.c:333`, `:550`), so `var/articles/<CID>` appears on its
    own — within a second of the post landing, the same as C.
 21. **The two roster pages and the profile behind them** — `user_list_display(1)` and `user_list_display(0)`
     ([`userlist::user_list_display`](src/userlist.rs)), reached from the
@@ -388,13 +407,13 @@ that does not run is described as if it did.
     `KEY_NULL`/`KEY_TIMEOUT` refreshes `BBS_last_access_tm`, and a timeout only leaves when the clock has run
     `BBS_max_user_idle_time` seconds ([`net::IDLE_LIMIT`](src/net.rs), `include/bbs.h:36`); before that it repaints
     (`bbs_main.c:169-206`, `menu_proc.c:295-330`). The panel has one more condition: it belongs to the root menu
-    alone, and only moves ten seconds after the last key (`bbs_main.c:178`), so an open submenu stops the rotation
+    alone, and only moves ten seconds after the last key (`bbs_main.c:179`), so an open submenu stops the rotation
     instead of repainting it under the submenu's own screen.
 31. **累计访问人次** — the visit total the welcome page quotes, which C loads in the same pass as the online list
-    and not on its own schedule ([`user_list.c:370`](../lbbs/src/user_list.c), reached from `:616-657`). The
+    and not on its own schedule ([`user_list.c:370`](../lbbs/src/user_list.c), reached from `:620-661`). The
     reload queries the list, then `SELECT ID FROM user_login_log ORDER BY ID DESC LIMIT 1`, and publishes the two
-    together ([`loader::Loader::reload_online`](src/loader.rs)); an empty log leaves the previous total in place
-    rather than announcing a site nobody has visited, as `:394` only assigns when a row came back.
+    together ([`loader::Loader::reload_online`](src/loader.rs)); `:394-401` assigns in both branches, so an empty
+    log is published as `0` rather than left at whatever the previous pass measured.
 32. **What the command surface prints** — `bbsd -h` quotes the literal `bbsd` the way `arg_usage()` does
     ([`daemon::PROG_NAME`](src/daemon.rs)), not the path the shell started it from; `bbsd -C` lands every bracketed
     answer on column 24 the way C's tab stops do ([`daemon::flag_line`](src/daemon.rs)); and `@RELOADCONF` answers
@@ -403,10 +422,13 @@ that does not run is described as if it did.
 33. **The lines the load paths write** — the pool loads report themselves as C reported them: the roster's
     `Rebuild index of %d users, last_uid=%d` and `Loaded %d users` (`user_list.c:243`/`:248`), the two
     `Inconsistent state found: article %d …` answers a sticky list gives when the flags and the index disagree
-    (`section_list.c:1104`/`:1147`), `Count of page exceed limit in section %d` (`section_list.c:1384`), and
-    `Reload section config successfully` on the common stream when a config pass comes back
-    (`section_list_loader.c:757`). The loader's own counts are formatted into the message rather than passed as
-    tracing fields, because the C log has one string per line — see
+    (`section_list.c:1104`/`:1147`), and `Reload section config successfully` on the common stream when a config
+    pass comes back (`section_list_loader.c:761`) — each pinned by a test that captures both streams and compares
+    them byte for byte. `Count of page exceed limit in section %d` (`section_list.c:1384`) is the exception: it
+    fires only past `PAGE_INDEX_CAPACITY` ([`paths.rs`](src/paths.rs), 2 500 pages because
+    `section_list.h:26-27` says 50 000 articles per board and 20 per page), so the line is ported and
+    unrehearsed. The loader's own counts are formatted into the message rather than passed as tracing fields,
+    because the C log has one string per line — see
     [`log::format_line`](src/log.rs) and the test that pins it.
 34. **Two limits that follow their configuration** — the accept gate compares the live session count with the
     `bbs_max_client` the reload just published ([`net::Gateway::reserve_total`](src/net.rs)), which is what
@@ -476,7 +498,7 @@ wired and unit-tested". The first account that really posts should do it against
 
 | What | Version | Notes |
 | --- | --- | --- |
-| Rust | 1.96 or newer | the crate uses `edition = "2024"` |
+| Rust | 1.88 or newer | `Cargo.toml` asks for `edition = "2024"`, which needs 1.85, and four `if let … && let` chains — [`net.rs`](src/net.rs) and [`term/`](src/term/key.rs) — need the 1.88 stabilisation. There is no `rust-version` key to enforce either floor |
 | MySQL | 8.x | the database that holds the board's data |
 | Linux | — | development and verification happen on Linux |
 | Locale | `en_US.UTF-8` | `locale -a` must list it: the server installs it before it writes any article cache, as C does, and refuses to start without it |
@@ -486,14 +508,14 @@ wired and unit-tested". The first account that really posts should do it against
 ```bash
 cd lbbs-rust
 cargo build            # compile the library and the binary
-cargo test             # 523 tests that need no database (14 more are opt-in, see 7.2)
+cargo test             # 533 tests that need no database (14 more are opt-in, see 7.2)
 cargo fmt              # the tree is rustfmt-clean; run it before you commit
 ```
 
 A healthy run looks like this:
 
 ```
-test result: ok. 517 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
+test result: ok. 533 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
@@ -504,9 +526,12 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 ### 7.2 The tests that use the real database and real files
 
-Fourteen tests carry `#[ignore]` because they touch the live database or need the real generated files. The tree
-ships those files now (§8), so they only need pointing at. `LBBS_REF_CONF` decides the server root the session
-tests read `var/` from, so give it an absolute path:
+Fourteen tests carry `#[ignore]` because they touch the live database or need the real generated files. Those
+files are **not** in git: `var/menu_merged.conf`, `var/bbs_top_menu.conf` and `conf/bbsd.conf` are all
+gitignored, the first two because §7.4 generates them and the third because it holds a password. A fresh clone
+therefore builds them first (§7.4, then copy `conf/bbsd.conf.default` and add `db_password`); in a tree that has
+already done this they only need pointing at. `LBBS_REF_CONF` decides the server root the session tests read
+`var/` from, so give it an absolute path:
 
 ```bash
 export LBBS_REF_CONF=$PWD/conf/bbsd.conf     # add a db_password line first; see §8
@@ -567,8 +592,9 @@ files for logrotate and `SIGTERM` drains the sessions before exiting: the exit f
 session parked at a prompt runs its own goodbye instead of waiting out its idle limit — which is what C's
 children did when the parent's `kill(0, SIGTERM)` interrupted their `select()`.
 
-The configuration in this tree listens on telnet `2323` and SSH `2322` (from `bbs_port` and `bbs_ssh_port`),
-the same pair the reference C installation uses; the shipped template still has C's `23` and `22`.
+The development tree's `conf/bbsd.conf` listens on telnet `2323` and SSH `2322` (`bbs_port` and
+`bbs_ssh_port`) — the pair the reference C installation uses for its own, equally uncommitted file. The tracked
+template `conf/bbsd.conf.default` still has C's `23` and `22`, which need root to bind.
 When you connect over telnet, use `telnet -c`: the server tells the client to stop echoing locally, and `-c`
 keeps the client from displaying characters twice before that negotiation lands.
 
@@ -577,9 +603,10 @@ keeps the client from displaying characters twice before that negotiation lands.
 > the counters double-count while both are up.
 
 A guest session goes all the way through: the two prompts, the welcome page, login, the top menu, a board group,
-a board, the article list, and a real post. [tools/guest_smoke.py](tools/guest_smoke.py)
-drives exactly that walk and stops at the permission gate, so it never writes anything; run it with
-`python3 tools/guest_smoke.py 2323`.
+a board, the article list, and a real post. The local `tools/guest_smoke.py` drives exactly that walk and stops
+at the permission gate, so it never writes anything; run it with `python3 tools/guest_smoke.py 2323` against a
+server started as above. It is a scratch helper, not repository content — `tools/` is gitignored (§8) — so the
+same walk is open by hand in `telnet -c` or with any script of your own.
 
 ### 7.4 Running the batch generators
 
@@ -618,32 +645,36 @@ The figures in §6.2 were measured that way.
 ## 8. Where the configuration and data live
 
 The repository carries its own server root, so it runs instead of or next to `bbsd` with no C checkout in
-reach. Everything a connection reads is in the tree; what stays out of git is only what belongs to a machine
-or to a person — the password and the host keys.
+reach. What git holds is what a human wrote: `conf/menu.conf`, the three `*.default` templates, and the eleven
+`data/*.txt`. Everything else the directory has is generated or belongs to the machine, and `.gitignore` keeps
+it out — `conf/bbsd.conf` with the password, `conf/bbsnet.conf`, `conf/badwords.conf`, `conf/ca_cert.pem`, the
+host keys, the whole of `var/`, `log/`, and the symlinks in `bin/`. A fresh clone is therefore not a runnable
+root yet: §7.4 builds the generated menus and `conf/bbsd.conf.default` copied over supplies the credentials.
 
 ```
 lbbs-rust/                      ← the server root (§7.3)
-├── bin/                       ← where the built binary goes — not in git
+├── bin/                       ← symlinks to the built `bbsd` and the three generators — not in git
 ├── conf/
 │   ├── bbsd.conf.default      ← main configuration template
 │   ├── bbsd.conf              ← your copy, with the credentials — not in git, see below
-│   ├── bbsnet.conf            ← the other stations this board knows (+ .default)
-│   ├── badwords.conf          ← banned terms (+ .default)
+│   ├── bbsnet.conf.default    ← the other stations this board knows (your `bbsnet.conf` is not in git)
+│   ├── badwords.conf.default  ← banned terms (your `badwords.conf` is not in git)
 │   ├── menu.conf              ← menu definitions, the source of var/menu_merged.conf
-│   ├── ca_cert.pem            ← MySQL TLS verification (the C version uses it, so we do too)
-│   ├── lbbs.service           ← systemd unit, and lbbs.logrotate for log rotation (+ the .in templates)
+│   ├── ca_cert.pem            ← MySQL TLS verification, used only if present — not in git
 │   └── ssh_host_*             ← SSH host keys: generated, never committed, see below
 ├── data/                      ← the eleven texts the screens show: welcome, goodbye, eula, register,
-│                                 login_error, license, copyright, version, active_board, read_help and
-│                                 editor_help (the twelfth file the loader preloads is var/bbs_top.txt)
-├── var/
-│   ├── menu_merged.conf       ← the menu set the daemon actually reads
-│   ├── bbs_top_menu.conf      ← the top-ten menu as generated
-│   ├── bbs_top.txt            ← the screen shown just after login
+│   │                             login_error, license, copyright, version, active_board, read_help and
+│   │                             editor_help
+│   └── *.txt.user             ← the copy a user edited, written beside the shipped file and read first
+├── var/                       ← generated or written while the server runs; none of it is in git
+│   ├── menu_merged.conf       ← the menu set the daemon actually reads, from conf/menu.conf (§7.4)
+│   ├── bbs_top.txt            ← the screen shown just after login, and the twelfth text the loader preloads
+│   ├── bbs_top_menu.conf      ← the top-ten menu as generated, by the same run (§7.4)
 │   ├── gen_ex/<SID>           ← one board's digest tree, rewritten by gen_ex_list
 │   ├── chicken/<UID>          ← one user's 电子小鸡 record, with chicken/log beside it; made at startup
-│   ├── articles/<CID>         ← article bodies — data, not configuration, not in git; see below
-│   └── section_aid_loc/<UID>  ← "last read article" state, written as people browse
+│   ├── articles/<CID>         ← article bodies — data, not configuration; see below
+│   ├── section_aid_loc/<UID>  ← "last read article" state, written as people browse
+│   └── known_hosts            ← the far side's key, learned the first time this board shuttles out
 └── log/                       ← bbsd.log and error.log
 ```
 
@@ -661,8 +692,9 @@ Three of those need a word of explanation:
   ```bash
   for k in rsa ed25519 ecdsa; do ssh-keygen -t $k -f conf/ssh_host_${k}_key -N '' -q; done
   ```
-- **`var/articles/` is content, and the server generates it.** The `article` table holds the index;
-  the body a reader sees comes from `var/articles/<CID>`, and a missing file is a hard error, logged as
+- **`var/articles/` is content, and the server generates it.** The `bbs` table holds the index, `bbs_content`
+  holds the body text, and the file a reader sees is rendered from the two into `var/articles/<CID>`; a missing
+  file is a hard error, logged as
   `article_cache_load(aid=…, cid=…) error`, exactly as in C. The loader writes those files as it ingests a post
   ([`cache::generate`](src/cache.rs) is that renderer), so an empty
   directory fills itself from the database — the test board's 28 000 files and 130 MB in about two seconds —
@@ -676,11 +708,11 @@ Keys in `conf/bbsd.conf` (identical names, meanings and quirks as C):
 | Key in the file | Rust field | Meaning |
 | --- | --- | --- |
 | `bbs_id` | `bbs_id` | board's internal name (e.g. `LBBS-devel`) |
-| `bbs_name` | `bbs_name` | display name (e.g. 枫林在线) |
+| `bbs_name` | `bbs_name` | display name (e.g. MyBBS) |
 | `bbs_server` | `bbs_server` | domain / advertised URL |
 | `bbs_address` | `bbs_address` | bind address |
-| `bbs_port` | `telnet_port` | telnet port (2323 in the reference file) |
-| `bbs_ssh_port` | `ssh_port` | SSH port (2322 in the reference file) |
+| `bbs_port` | `telnet_port` | telnet port (23 in the template, 2323 in this tree's local file) |
+| `bbs_ssh_port` | `ssh_port` | SSH port (22 in the template, 2322 locally) |
 | `bbs_max_client` | `max_client` | global concurrent-connection limit |
 | `bbs_max_client_per_ip` | `max_client_per_ip` | per-IP concurrent-connection limit |
 | `bbs_start_dt` | `start_dt` | opening date, written `YYYY-M-D` |
@@ -707,7 +739,9 @@ The parsing quirks are ported too, and they are the usual reason "my setting had
   the password is only ever passed programmatically from the config file, never echoed. `.gitignore` is what
   keeps the promise: `conf/bbsd.conf` is ignored, `conf/bbsd.conf.default` is what ships, and no tree in this
   repository has ever held the value.
-- The MySQL connection **verifies the server certificate** through `ca_cert.pem`, because the C client did.
+- The MySQL connection verifies the server certificate **when `conf/ca_cert.pem` is present** ([`db::options`](src/db.rs));
+  without it sqlx falls back to `PREFERRED`, which is what the C client did with `SSL_MODE_PREFERRED`. The file
+  is gitignored because it is a host's CA, not the port's.
 - The original C version logged the **plaintext password** into `user_err_login_log` when a login failed.
   We reproduce it as-is for data compatibility (the web side reads the same column). Porting did **not** make
   this table safe: treat it as sensitive and consider it a real improvement candidate for the deployment, not a
@@ -726,19 +760,19 @@ What a user sees, in the C version's real order. The right-hand column gives the
 | 1a | over SSH | `net_server.c`'s libssh child | [`ssh.rs`](src/ssh.rs): password auth, then the same session; `欢迎使用ssh方式访问` replaces the login prompt ✅ |
 | 2 | asked `(U)UTF-8/(G)GBK? [U]` | `bbs_charset_select`, two 5-second prompts | [`bbs_charset_select`](src/bbs.rs) ✅ |
 | 3 | `(V)变宽/(F)定宽` (width mode) | same prompt set | same call, both answers wired to [`Terminal::set_fixed_width`](src/term/mod.rs) ✅ |
-| 4 | welcome screen | `data/welcome.txt` via `display_file(..., 2)` | [`Session::display_file`](src/session.rs#L217) ✅ |
+| 4 | welcome screen | `data/welcome.txt` via `display_file(..., 2)` | [`Session::display_file`](src/session.rs#L247) ✅ |
 | 5 | "please enter your account" | `bbs_login`, up to 3 tries | [`login()`](src/login.rs#L160) ✅ |
 | 6 | typing `guest` or `new` | trial account / registration notice | ✅ (`new` shows the notice and ends the session) |
 | 7 | "please enter your password" | `check_user` | [`check_user()`](src/login.rs#L235) ✅ |
 | 8 | blocked for too many failures | 10 failures per /24 in 10 minutes; 3 per account | ✅ (`ipmask::subnet_pattern` + `db::count_errors_by_*`) |
 | 9 | "您目前无权登陆..." | reproduced, including the log row written first | ✅ |
 | 10 | "the user agreement changed" | `user_update_agreement` | [`update_agreement()`](src/login.rs#L418) ✅, called by both transports |
-| 11 | online entry, visit counters | `user_online_add`, `visit_log` | [`Session::online_add`](src/session.rs#L162) ✅ |
+| 11 | online entry, visit counters | `user_online_add`, `visit_log` | [`Session::online_add`](src/session.rs#L192) ✅ |
 | 12 | `var/bbs_top.txt` + the top menu | `display_file(VAR_BBS_TOP)` → `bbs_center` | [`bbs_main`](src/bbs.rs) ✅, with the ten-second `data/active_board.txt` panel |
 | 13 | pick a board → pick an article → read it | menu item + `display_file` + `section_list_*` | [`menu`](src/menu.rs) parsing and navigation ✅, [`browse`](src/browse.rs) ✅ — this is the guest path `tools/guest_smoke.py` walks |
 | 14 | post, reply, modify, delete | editor + writes into `var/articles/` + DB updates + badwords | [`editor`](src/editor.rs) ✅, [`post`](src/post.rs) ✅ (one transaction each, badwords on submit); a guest is refused before any SQL runs |
-| 15 | experience accrual and goodbye | `user_online_exp` + `data/goodbye.txt` | [`Session::logout`](src/session.rs#L244) ✅ |
-| 16 | removed from the online list | `user_online_del` | [`Session::cleanup`](src/session.rs#L260) ✅ |
+| 15 | experience accrual and goodbye | `user_online_exp` + `data/goodbye.txt` | [`Session::logout`](src/session.rs#L359) ✅ |
+| 16 | removed from the online list | `user_online_del` | [`Session::cleanup`](src/session.rs#L390) ✅ |
 
 The cells that are still ⬜ are the screens behind those keys — see §6.3.
 
@@ -756,10 +790,10 @@ The cells that are still ⬜ are the screens behind those keys — see §6.3.
 | `mysql_real_escape_string` + `sprintf` SQL | sqlx **bound parameters** | removes the SQL-injection class of bugs at the root |
 | transactions left open until `mysql_close` | explicit `commit` / `rollback` on every path | a pooled connection handed back with an open transaction corrupts the next user |
 | `setenv("TZ", ...)` + `tzset()` | stored in `Session::user_tz` | mutating the process environment would leak into other sessions |
-| pool refresh via `SIGUSR1` | `Loader::run` refreshes periodically | a task replaces the signal |
+| `kill(0, SIGUSR1)` at the end of a reload (`net_server.c:877`) so the children re-read what the parent just loaded | [`reload_configuration`](src/main.rs) publishes new `Arc` snapshots and every session draws from them | there is nobody to signal. The refresh of the resident tables is a **timer** either way — the loader loops on `BBS_section_list_load_interval` (`bbs.c:38`, `section_list_loader.c:843-845`, copied by [`Loader::run`](src/loader.rs)) — and `SIGUSR1` in C only reopens the log files (`bbs_main.c:41-47`), which the parent ignores (`main.c:443-447`) |
 | `editor.c` re-splits only the data line an edit touched, then slides the display-pointer array | the same, per line ([`EditorData::recount_line`](src/editor.rs)) | the first port re-wrapped the **whole document** after every character, so a pasted article cost quadratically more work and pinned one CPU core while C stayed nearly idle |
-| `srand((unsigned) time(NULL))` then `rand() % 3` inside every game of 猜拳 (`chicken.c:697-698`) | [`chicken::opponent`](src/chicken.rs) mixes the same one-second seed | glibc's additive-feedback generator is a property of libc, not of this game, and a port that replayed it would be a second libm to keep in step. The seed still changes once per second and still has three answers, so two guesses inside one second are still the same hand — which is the part the player sees. |
-| The chicken record is read with `fscanf` of fourteen `%d` and one `%s` (`chicken.c:111-112`) | [`Chicken::parse`](src/chicken.rs) splits the line and reads each field with [`c_atoi`](src/config.rs) | the count C tested against `15` is the count reported here, and a field C leaves unread reads as `0` — the two agree on every line `save_chicken` and `create_a_egg` wrote |
+| `srand((unsigned) time(NULL))` then `rand() % 3` inside every game of 猜拳 (`chicken.c:726-727`) | [`chicken::opponent`](src/chicken.rs) mixes the same one-second seed | glibc's additive-feedback generator is a property of libc, not of this game, and a port that replayed it would be a second libm to keep in step. The seed still changes once per second and still has three answers, so two guesses inside one second are still the same hand — which is the part the player sees. |
+| The chicken record is read with `fscanf` of fourteen `%d` and one `%s` (`chicken.c:117-118`) | [`Chicken::parse`](src/chicken.rs) splits the line and reads each field with [`c_atoi`](src/config.rs) | the count C tested against `15` is the count reported here, and a field C leaves unread reads as `0` — the two agree on every line `save_chicken` and `create_a_egg` wrote |
 | An edit into a document that already fills the [`MAX_EDITOR_DATA_LINES`](src/paths.rs) rows loses whatever needs a row the array has not got: the touched line is cut short with a `'\n'` glued to its last kept row (`:366-387`) and, for an edit further up, the row at the very end of the array is trimmed to one cell short (`:447-458`) | same, at the cap | the first port refused the edit instead, so a full article accepted nothing more; a real edit there now silently truncates the tail exactly as C does. One case is not reproduced: deleting the last row of a full array leaves C counting one row more than the document has — a tail entry it no longer maintains, which paints blank where the port paints the row that is really there. The saved bytes agree either way. |
 | `SO_REUSEADDR` **and** `SO_REUSEPORT` on every listening socket (`net_server.c:634-645`) | `SO_REUSEADDR` only ([`net::bind`](src/net.rs)) | the second option exists so several processes can bind one port and have the kernel split the connections between them; with `fork()` gone there is exactly one listener, so setting it would only turn "another `bbsd` is still running" from a refused bind into two daemons quietly sharing the port. A restart fails loudly instead. |
 | A parent that counts its children in `SYS_child_process_count` and compares it to `BBS_max_client` on each accept (`net_server.c:961`) | [`net::Gateway::reserve_total`](src/net.rs) compares the live task count to the limit the reload published | the first port sized a semaphore once at startup, which is the number the C process could never be: raise or lower `bbs_max_client` and the gate now moves on the next accept, as C's does. |
@@ -780,13 +814,9 @@ app disagrees with us. These behaviours are therefore reproduced verbatim and pi
 | A key sequence split across packets is dropped and reported as `ESC` | [`Terminal::read_key`](src/term/mod.rs#L275) | pager key handling must feel identical |
 | `S_DEFAULT = 0x3` (list + experience) and **no post bit** | [`privilege.rs`](src/privilege.rs) | making new accounts "more convenient" would diverge from the web app |
 | A station that **refuses** the connection is only reported when the ten-second budget runs out, and then as `连接超时！` | [`bbsnet::connect`](src/bbsnet.rs) | C's wait loop keeps spinning on a socket that is writable but unconnected, and the keys pressed while the bar runs are spent on the connect; failing fast would change both the screen and what reaches the station |
-| The profile editors have **no `SYS_server_exit` guard** in front of their `UPDATE`, where `data_file_mgr.c:201` has one: an edit the shutdown interrupts between two rounds still writes, with the text the last save left behind — the one the line count had just rejected — or with nothing at all | [`user_info_update.rs`](src/user_info_update.rs) | the column belongs to the web application as much as to the board; a port that quietly skipped the write would leave the two servers recording different things about the same shutdown |
 | The editors' **ten-line limit admits nine**: `split_data_lines` is a do/while, so the newline that closes the tenth line is counted as an eleventh line of its own | [`user_info_update.rs`](src/user_info_update.rs), [`text::split_data_lines`](src/text.rs) | counting the lines the way a reader does would accept texts C refuses with `长度超过限制 (10行)`, and the same counter decides what the profile page and the board lists fit on their screens |
-| The chicken's **age is a calendar subtraction that can go backwards**: `(tm_mon + 1 + 12 - month) % 12 * 31 + (tm_mday - day)` (`chicken.c:119-120`) forgets the years, so a chicken born on the 28th looked at on the 21st is `−7` — no picture on the screen, a meal worth twelve grams instead of one, and no sale — while a chicken born on this day twelve months ago reads as just hatched | [`chicken::load_chicken`](src/chicken.rs) | the number is recomputed on every open and never stored, so "fixing" the wrap would repaint every coop in the site and change what `[1]` and `[9]` do to a real record |
-| The naming prompt **starts out holding `宝宝`** (`chicken.c:146`) and `get_data` counts that prefill as the beginning of the line (`screen.c:326`), so Enter alone names the chicken 宝宝 and a typed name rides on it: `宝宝` then `新鸡` is accepted as `宝宝新鸡` | [`chicken::create_a_egg`](src/chicken.rs) | the same buffer seeds the 改名字 prompt with the current name, so an editor that cleared the prefill would rename the chicken to something its owner never typed |
-| A rejected name **comes back masked and is then accepted**: `check_badwords(name_tmp, '*')` masks the buffer in place and `:151-166` asks again with it still there, so one more Enter lets `宝宝***蛋` through | [`chicken::create_a_egg`](src/chicken.rs) | refusing and re-prompting with an empty line would be friendlier and would not be C; the log line and the record both keep the masked text |
-| `save_chicken` opens the record `"r+"` and **does not truncate** (`chicken.c:129`), so a chicken renamed shorter keeps the tail of the longer name in the file — visible in the reference tree's own records — and `%s` stops at the first space, so nothing ever reads it back | [`chicken::save_chicken`](src/chicken.rs) | the same open mode is what makes a record the session cannot write count as absent and hatch over |
-| `chictime` is **read and never assigned**: `show_chicken` (`:192-200`) thins and dirties a chicken past 200 of them, and no line in `chicken.c` sets the field, so the starved-and-dirty coop C describes cannot happen | [`chicken::show_chicken`](src/chicken.rs) | it is a documented feature of the game that the code does not deliver; delivering it would be a design change, and the field is kept so the record still parses the same fourteen numbers |
+| The naming prompt **starts out holding `宝宝`** (`chicken.c:175`) and `get_data` counts that prefill as the beginning of the line (`screen.c:326`), so Enter alone names the chicken 宝宝 and a typed name rides on it: `宝宝` then `新鸡` is accepted as `宝宝新鸡` | [`chicken::create_a_egg`](src/chicken.rs) | the same buffer seeds the 改名字 prompt with the current name, so an editor that cleared the prefill would rename the chicken to something its owner never typed |
+| `chictime` is **read and never assigned**: `show_chicken` (`chicken.c:221-229`) thins and dirties a chicken past 200 of them, and no line in `chicken.c` sets the field, so the starved-and-dirty coop C describes cannot happen | [`chicken::show_chicken`](src/chicken.rs) | it is a documented feature of the game that the code does not deliver; delivering it would be a design change, and the field is kept so the record still parses the same fourteen numbers |
 
 One entry left this table on 2026-11-21, and only because upstream moved first: the privilege list's binary
 search, which lost a stored board whenever the boards arrived out of `sid` order, and which — on an empty list —
@@ -795,18 +825,32 @@ inspected slot 0, the global word. The port had reproduced both and pinned them.
 the C was wrong: [`privilege.rs`](src/privilege.rs) now carries the `left <= right` loop with the `found` flag,
 and `boards_that_arrive_out_of_order_stay_reachable` and `every_insertion_order_leaves_the_list_sorted_and_findable`
 pin the list as sorted and every board as findable. Nothing moved for the web application, because the C server
-computes the same words the Rust server now does. That is the rule this table runs by: an entry leaves it only
-when the reference has already left, never because we decided the C was wrong.
+computes the same words the Rust server now does.
+
+Four more left on 2026-11-22, with the same reason. The profile editors' missing `SYS_server_exit` guard became a
+guard in `9b9670f`, so [`user_info_update.rs`](src/user_info_update.rs) now skips the `UPDATE` on shutdown like
+`data_file_mgr.c` always did, pinned by `only_a_running_daemon_writes_the_text`. `c96f842` took three chicken
+quirks at once: the age keeps its years and the negative span gets them back rather than wrapping into a picture
+no `case` draws ([`chicken::load_chicken`](src/chicken.rs), pinned by
+`the_age_is_the_calendar_subtraction_of_load_chicken`); a name the filter masked is emptied before the prompt
+re-asks, so `宝宝***蛋` no longer arrives on a second Enter (pinned by
+`a_masked_name_is_emptied_and_asked_again`); and `save_chicken` cuts the record to the length it wrote, so a
+shorter name no longer leaves the longer one's tail in the user's file (pinned by
+`a_shorter_record_cuts_the_tail_of_the_longer_one`).
+
+That is the rule this table runs by: an entry leaves it only when the reference has already left, never because we
+decided the C was wrong.
 
 If any of these is ever repaired, it should be a coordinated change with the data and the web application —
 never smuggled into a port.
 
 ### 10.3 The 1.7.12 round: what each reference fix means here
 
-`v1.7.11..49805a5` — twenty commits, 23 files, +616/−57 lines. Going through the hunks one by one, the answer
-is that **only `9dd183a` needed a functional change in Rust** — it repaired exactly the quirk §10.2 used to
-reproduce, and upstream moved first — while every other one needed a check, not a change. They leak, forget to
-bound, mis-count, or treat user text as a `printf` format, and this project has owned buffers, RAII guards and
+`v1.7.11..bfa86c5` — twenty-one commits, 23 files, +620/−57 lines. Going through the hunks one by one, the answer
+is that **only `9dd183a` and `bfa86c5` needed a functional change in Rust** — the first repaired exactly the quirk
+§10.2 used to reproduce, and upstream moved first; the second gives the visit total a value to publish when its
+query answers with no row. Every other one needed a check, not a change. They leak, forget to bound, mis-count, or
+treat user text as a `printf` format, and this project has owned buffers, RAII guards and
 bound parameters instead; the logging `49805a5` adds already has a counterpart here. What each fix *means* is
 written into the C file's replacement module; this table is only the index.
 
@@ -831,17 +875,82 @@ written into the C file's replacement module; this table is only the index.
 | `b7a8b16` | `editor.c:395-414`: three `memmove`s shifted display rows by `display_line_total - last_display_line - 1` directly, so a dirty count became a huge `size_t` and both ends ran off; the fix requires `display_line_total >= last_display_line + 1` and logs the surprise otherwise | [`editor.rs`](src/editor.rs) — `EditorData::insert` changes data rows and `recount()` recomputes display rows, so there is no parallel array to shift and the negative length has no shape here |
 | `9dd183a` | `search_priv` used `while (left < right)` and then decided a hit by comparing `s_priv_list[left]`, while `setpriv` shifted the tail with a linear loop: an insert could land in the wrong place, the list stopped being sorted, and a stored board became unfindable | [`privilege.rs`](src/privilege.rs) — the port had reproduced this on purpose; §10.2 records the repair, and `boards_that_arrive_out_of_order_stay_reachable` and `every_insertion_order_leaves_the_list_sorted_and_findable` pin the sorted, findable list |
 | `49805a5` | `load_priv` dropped privileges once the list was full and said nothing; the new `count_priv_dropped()`/`log_priv_dropped()` (`:119-138`) report each stage | [`privilege.rs`](src/privilege.rs) — `Dropped::default()` plus `dropped.report(uid, "…")` is that logging, already ported |
+| `bfa86c5` | `user_login_count_load` (`user_list.c:370-405`) assigned the visit total only when `SELECT ID FROM user_login_log ORDER BY ID DESC LIMIT 1` returned a row, so an empty log left whatever the last pass had measured in place; the new `else` writes `0` | [`loader.rs`](src/loader.rs) — `publish_online_pass` takes `Option<i32>` and stores `count.unwrap_or(0)`, pinned by `the_online_pass_publishes_the_visit_total_with_the_list` |
 
-**The last seven were still uncommitted at the previous sync.** Two of them move citation line numbers:
+**The last seven of these were still uncommitted in `../lbbs` when this round was first written; they are all in
+`main` now.** Two of them move citation line numbers:
 `b7a8b16` adds eight lines inside `editor_data_insert`, so every `editor.c` citation after that hunk in
 [`editor.rs`](src/editor.rs) is +8; `ebaa144` adds seven lines above the `split_data_lines` the file pager
 cites, moving it from `file_loader.c:81` to `:88`. None of this was applied by arithmetic: each new line number
-was checked against the C text the old number pointed at, which is why `editor.c:344` and `:348-349` stay put
+was checked against the C text the old number pointed at, which is why `editor.c:345` and `:349-350` stay put
 while the ones after the inserted check move. Only `file_loader.c:88` — it sits inside the changed hunk — had to
 be re-read by hand against `git show 49805a5:src/file_loader.c`. `9dd183a` and `49805a5` likewise move
 `user_priv.c`: `search_priv` `:30`→`:31`, `setpriv` `:60`→`:63`, `getpriv` `:99`→`:103`, `load_priv`
 `:113`→`:141`, and the stages `:130`/`:151`/`:173`/`:198`/`:233`/`:255` move to `:162`/`:183`/`:205`/`:237`/
-`:279`/`:308`.
+`:279`/`:308`. `bfa86c5` adds four lines inside `user_login_count_load`, so every `user_list.c` citation below
+`:398` is untouched and every citation after it is +4: `user_list_pool_reload`'s online branch moves
+`:616-657`→`:620-661`, the roster swap moves `:658-664`→`:662-668`, and the readers move
+`:1031`/`:1058`/`:1087`/`:1114`/`:1243`/`:1309`/`:1470`/`:1561`/`:1619`/`:1629` to
+`:1035`/`:1062`/`:1091`/`:1118`/`:1247`/`:1313`/`:1474`/`:1565`/`:1623`/`:1633` — again checked line by line against
+`git show bfa86c5:src/user_list.c`, in [`roster.rs`](src/roster.rs), [`userlist.rs`](src/userlist.rs),
+[`userinfo.rs`](src/userinfo.rs), [`board.rs`](src/board.rs) and [`loader.rs`](src/loader.rs). None of the files
+these shifts are written against is touched by the tip `9193e5c`, which adds reference test programs only, so
+every number above still reads the same out of `git show 9193e5c:src/<file>`.
+
+### 10.4 The 1.7.13 round: what each reference fix means here
+
+`bfa86c5..9193e5c` — ten commits, 13 files, +947/−31 lines. Seven of them are what `416ea61` released as 1.7.13;
+`39d89e9` and `27ffdde` were pushed after the bump the same day, and `9193e5c` the same day too — it changes no
+server file and is listed below only for the tests it adds. This time **four changed behaviour here**: the
+shutdown gate of `9b9670f`, the `last_login_dt != 0` half of `d373719`, and all of `c96f842` and `39d89e9`.
+`9e1eff6` bought a shared constant rather than a behaviour. The other checks came out clean, because the port has
+owned buffers, RAII guards and bound parameters — and a check that is only clean because a test says so is listed
+with its test below.
+
+| Reference commit | The problem in C | Where the port says so |
+| --- | --- | --- |
+| `9b9670f` | `user_info_update.c`: `line_offsets` was `[max_line + 1]` while both callers passed `max_line + 2` as the count, and neither editor checked `SYS_server_exit` before its `UPDATE`, so an interrupted edit wrote the text the line count had just rejected | [`user_info_update.rs`](src/user_info_update.rs) — the offsets are a `Vec` the same call grows, so count and capacity cannot disagree, and the two `is_exiting()` gates (`:154-157`, `:329-332`) answer `9b9670f`; pinned by `only_a_running_daemon_writes_the_text` |
+| `9e1eff6` | `user_info_display.c`: an 11-element `line_offsets` measured against a count of 19 — the same contract, eight `long`s of it; the fix names the count `USER_INFO_MAX_LINE` and gives the array that size too | [`userinfo.rs`](src/userinfo.rs) — `USER_INFO_MAX_LINE` is the same `+ 9` expression (`:33`) and is the only number the array and the `MIN` share (`:62`, `:183`), pinned by `assert_eq!(USER_INFO_MAX_LINE, 19, …)` |
+| `8e02db3` | `user_stat.c`: `p_map->last_uid = uid_list[i - 1]` — `:59` until the fix, `:63` behind the new guard — ran with `i == 0` too, reading four bytes below the stack array and publishing the garbage into shared memory | [`roster.rs`](src/roster.rs) — `UserStatMap::update` assigns the watermark inside the loop, so an empty window leaves it where it was; pinned by `an_empty_window_leaves_the_watermark_where_it_was` |
+| `d373719` | `login.c:160-161`, as they read until the fix: `strnlen(password, sizeof(password))` on a `const char *` parameter is a bound of 8, not 12 — long passwords were escaped short. `load_user_info` (`:437-448`) then dereferenced `row[0..4]`, three of which are nullable in the schema, and an account that never signed in compared `0` against the deadline and was called expired | [`login.rs`](src/login.rs) — the credentials reach MySQL as bound parameters (`db.rs`), so there is no escape buffer to bound; [`pub_info`](src/db.rs) decodes `life`, `exp`, `user_timezone`, `nickname` and `last_login_dt` into `Option`s that default the way the five guards of `:439-448` do, and [`is_dead`](src/login.rs) is the `last_login_dt != 0` rule of `:458-460` (`immortal_accounts_have_no_deadline`, `the_deadline_is_the_accounts_own_lifetime_in_days`) |
+| `780e8ef` | `article_op.c`: two `goto cleanup` paths in `article_excerption_set` left the section write lock held (`:221-224`, `:254-257`), so the board stayed locked for everyone until the session died | [`post.rs`](src/post.rs) — the digest toggle takes the board lock through a guard that releases on every return, pinned by `a_refused_digest_toggle_leaves_the_board_readable` |
+| `c96f842` | `chicken.c`: `save_chicken` `fprintf`'d into a `FILE *` it never checked and never truncated, so a shorter name left the previous record's tail in the user's data file; `load_chicken` wrapped the age at twelve months and counted a month it had subtracted twice; `create_a_egg` re-asked with the masked `***` still in the buffer and let one more Enter accept it | [`chicken.rs`](src/chicken.rs) — all four in the deviations list: the checked open (`:143-147`) with `set_len` after the write (`:151-158`), the year-aware age (`:125-132`) with the negative span given the year back (`:129-132`), and the emptied buffer (`:189`); pinned by `a_record_that_cannot_be_opened_is_not_written`, `a_shorter_record_cuts_the_tail_of_the_longer_one`, `the_age_is_the_calendar_subtraction_of_load_chicken` and `a_masked_name_is_emptied_and_asked_again` |
+| `416ea61` | the version number | §1.1 |
+| `39d89e9` | `chicken.c:107-111`: the egg `load_chicken` had just written was read back through a `fopen(fname, "r")` whose NULL was never tested, so an egg the daemon could not reopen was parsed from nothing and the game opened on a zeroed record | [`chicken.rs`](src/chicken.rs) — the second open is checked and the game refuses to start (`load_chicken` answers `None`, `chicken_main` its `-2`), pinned by `an_egg_that_cannot_be_read_back_refuses_the_game` |
+| `27ffdde` | `section_list_loader.c`: `last_sid` still named a board the loop had already unlocked (`:287`, `:468`), and the end-of-loop release (`:342`, `:658`) could run on a `p_section` the batch had stopped holding | [`loader.rs`](src/loader.rs) — the header note: there is no held-board id to go stale here, because [`append_articles_into`](src/loader.rs) and [`apply_ops`](src/loader.rs) are handed one locked `&mut Board` per batch |
+| `9193e5c` | no server file changed. The tip adds `src/test_str_process.c` — tables for `str_length`, `split_line`, `split_data_lines` and `str_filter`, with canary slots on both sides of the caller's offsets and widths arrays — and `src/test_user_stat.c`, a map of uid 1/2/3/5 holding 0/5/0/7 posts scanned over five articles of uid 1/1/2/3/4 whose second one is hidden; plus 99 lines of Testing #7 in `src/test_section_list.c` about the board's read-write semaphore | [`text.rs`](src/text.rs) — `the_reference_str_length_table`, `the_reference_split_line_table`, `the_reference_split_capacity_table` and `the_reference_str_filter_table`; [`roster.rs`](src/roster.rs) — `the_reference_lookup_table` and `the_reference_scan_table`, including the uid 4 that is in no map, the author above the watermark whose post the pass skips, and the recount that starts at the end of the article block. Testing #7 is not mirrored: it constrains a shared-memory semaphore the port does not have. See the paragraph below |
+
+**Citations moved in seven files.** The shifts below were derived from the `git diff -U0` hunk headers and then
+confirmed by reading the C text at both ends — `git show bfa86c5:utils/game/chicken.c` against
+`git show 9193e5c:utils/game/chicken.c` — rather than applied by arithmetic; the `+N` of a range means every
+citation at or after that line. `utils/game/chicken.c` grew by the 24 lines `c96f842` added and the 5 `39d89e9`
+added inside `load_chicken`: `:18-119` +1, `:120` +3, `:121-127` +7, `:128-129` +8, `:130-131` +14, `:132-160` +23,
+`:161` and below +24, then `+5` again above `:106` — the file is 886 lines. `src/article_op.c` is +5 after `:219`
+and +5 more after `:247` (280 lines); `src/login.c` +1 after `:458` (709); `src/user_info_display.c` +1 after `:32`
+(189); `src/user_info_update.c` +5 after `:153` and +5 more after `:323` (374); `src/user_stat.c` +3 after `:61`
+(185); `src/section_list_loader.c` +2 after `:286` and +2 more after `:465` (1366). That is 308 `chicken.c`
+citations re-anchored in [`chicken.rs`](src/chicken.rs) and 11 `section_list_loader.c` citations in
+[`loader.rs`](src/loader.rs) and [`browse.rs`](src/browse.rs), with the C line at each old number byte-identical
+to the line at each new one.
+
+**What the tip's tests are worth here.** `test_str_process.c` and `test_user_stat.c` are the reference's own proof
+of `text.rs` and of the article counters in `roster.rs`, so the port replays their tables instead of paraphrasing
+them, and they pass as written — the width, wrapping and counting rules were already the ones the port implements.
+Two contracts of the C file are Rust types here and are therefore asserted differently. C hands
+`split_data_lines` two caller-sized arrays and protects them with canary slots; the port returns a `Wrapped` whose
+`offsets` always has exactly one entry more than its `count` and whose `widths` has exactly `count`, so the
+canaries became `widths.len() == count()`, every offset inside the buffer and never behind the previous one, and
+the last offset at `buf.len()` unless the window ran out — and C's `count` is this port's `max_lines + 1`. The
+`UTF8_fixed_width` global that C's `str_length` reads between its two modes is the `fixed` argument of
+[`display_width`](src/text.rs) here, so a table sets it per case instead of leaving a process-wide switch on, and
+one row of the C length table that reads like a truncated sequence actually spells a whole `中`. Testing #7 of
+`test_section_list.c` is the part with no counterpart: it locks, re-locks and releases a board's System V
+read-write semaphore and checks that releasing what nobody holds is refused, that a refused release still leaves
+the board lockable, that a second nested write lock times out, that two readers are granted and only a third
+release fails, and that `NULL` is not "no section" but the global slot `get_section_index(NULL) ==
+BBS_max_section` every section lock passes through. Those are contracts of shared memory and pool slots; the port
+has no semaphore to honour — [§10.1](#101-deliberate-changes-mechanics) records the `Arc<RwLock<...>>` that
+replaces it — so the rule is documented here and not tested.
 
 ---
 
@@ -857,7 +966,7 @@ be re-read by hand against `git show 49805a5:src/file_loader.c`. `9dd183a` and `
 - Need a `Session` in an offline test? Use [`session::offline_session()`](src/session.rs):
   it builds a detached pool that never opens a connection and issues no queries.
 - Watch borrow conflicts when passing `&mut Session` around inside `async fn`.
-  For example [`Session::display_file`](src/session.rs#L217)
+  For example [`Session::display_file`](src/session.rs#L247)
   is recursive — the pager can ask to show help, which displays a file — so its future is boxed with
   `Pin<Box<dyn Future<...>>>`; a plain `async fn` cannot have a recursive return type.
 - Before adding a SQL statement, read what C does around it, **especially where it commits**.
@@ -868,14 +977,14 @@ be re-read by hand against `git show 49805a5:src/file_loader.c`. `9dd183a` and `
 
 | Type | File | In one line |
 | --- | --- | --- |
-| `AppState` | `state.rs` | everything shared by all connections (config, DB pool, section/article/user pools) |
+| `AppState` | `state.rs` | everything shared by all connections: the config and menu snapshots, the DB pool, the loaded data texts, the badword trie, and the resident `Board`, `Roster` and `OnlineList` |
 | `Session` | `session.rs` | one connection: uid, username, privileges, peer address, current action, timestamps |
 | `Terminal` | `term/mod.rs` | that connection's buffered input and output |
 | `Config` / `DbConfig` | `config.rs` | the parsed `bbsd.conf` |
 | `Db` | `db.rs` | the sqlx pool; `Clone` is cheap because it wraps an `Arc` |
 | `UserPriv` | `privilege.rs` | a person's level, global privilege word, and per-board words |
 | `MenuSet` / `MenuItem` / `Action` | `menu.rs` | a menu's items and which function a key press maps to |
-| `Board` | `board.rs` | the in-memory copy of sections, articles and users |
+| `Board` | `board.rs` | the sections, the append-only article arena, and the per-user article counters — the people themselves are `Roster` and `OnlineList`, held one level up |
 
 ---
 
@@ -894,8 +1003,9 @@ the original, and the web side shows the same strings, so translating during a p
 A: `Db::detached(...)` can only be created inside a runtime. Make that test `#[tokio::test]`.
 
 **Q: Wide characters render misaligned.**
-A: C has a fixed-width (F) / variable-width (V) choice that changes the width arithmetic. Go through
-`Session`/`Terminal`'s `fixed_width` instead of calling `text::display_width` directly.
+A: C has a fixed-width (F) / variable-width (V) choice that changes the width arithmetic. Ask
+[`Terminal::fixed_width`](src/term/mod.rs) — the choice lives on the connection's terminal, not on `Session` —
+and pass its answer to `text::display_width` instead of taking the default.
 
 **Q: The characters I type as my password appear on screen.**
 A: They should not. A session opens by sending `IAC WILL ECHO, IAC WILL SGA`
@@ -909,7 +1019,9 @@ A: Point `conf/bbsd.conf` at a **backup or test database**, and keep `db_passwor
 committed, never printed).
 
 **Q: Where is an article's body?**
-A: `var/articles/<CID>`, indexed by `article.CID`. C opened it with `fopen`; the port opens it the same way
+A: `var/articles/<CID>`. `CID` is the column the `bbs` index row carries (`UNIQUE KEY CID`) and the primary key
+of its `bbs_content` body — there is no `article` table. C opened the file with `fopen`; the port opens it the
+same way
 ([`cache::load`](src/cache.rs), called from
 [`browse`](src/browse.rs)) and writes it from the loader
 ([`cache::generate`](src/cache.rs), called from
@@ -928,7 +1040,7 @@ next key, and page with space.
 
 | Step | Work | Done when |
 | --- | --- | --- |
-| done | listeners: raw TCP + russh SSH, connection limits, the real `main.rs`, EULA hook-in | `cargo run -- --foreground` accepts a connection |
+| done | listeners: raw TCP + russh SSH, connection limits, the real `main.rs`, EULA hook-in | `bin/bbsd --foreground` accepts a connection on both ports (§7.3 — `cargo run` cannot, because the root it derives has no `conf/`) |
 | done | live smoke test against the board database: guest login, menus, SSH auth, reload, log reopen | the session behaves like the C one on the same screens |
 | done | browse features end to end: `list_section`, the article list, reading a post, `LOCATE_ARTICLE` | a menu key opens a board, and a live guest session reads a real post |
 | done | write path: new/reply/edit/delete, the editor, index updates, cache generation, badwords on submit | unit-tested, and a live guest is refused before any SQL runs |

@@ -58,9 +58,17 @@ const FOOTER_COLORS: [&str; 7] = [
 const PREFIX_WORDS: usize = 5;
 const WORD: usize = 8;
 
-/// `%s%d`: the cache directory already ends with a separator (`var/articles/`).
+/// `%s%d`: in C the directory is the literal `var/articles/`, so the separator comes from the
+/// constant. The callers here hand over a `PathBuf` spelling instead, and on Windows that one ends
+/// with no separator at all — `canonicalize()` returns a `\\?\`-prefixed path and `join` folds
+/// `var/articles/` down to `var\articles`. Concatenating unconditionally then writes the cache of
+/// cid 9001 beside the directory, as `var\articles9001`, so the separator is added when missing.
 pub fn path(cache_dir: &str, cid: i32) -> String {
-    let joined = format!("{cache_dir}{cid}");
+    let sep = match cache_dir.ends_with(['/', '\\']) {
+        true => "",
+        false => std::path::MAIN_SEPARATOR_STR,
+    };
+    let joined = format!("{cache_dir}{sep}{cid}");
     joined.chars().take(FILE_PATH_LEN - 1).collect()
 }
 
@@ -414,16 +422,61 @@ mod tests {
         "/tests/fixtures/article_contents/"
     );
 
+    /// The shape the daemon hands over: `root.join(VAR_ARTICLE_CACHE_DIR)` rendered as a string,
+    /// which on Windows has no trailing separator. Appending one here would hide the difference
+    /// from [`path`].
     fn temp_dir(name: &str) -> String {
         let dir = std::env::temp_dir().join(format!("lbbs-cache-{name}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        format!("{}/", dir.to_str().unwrap())
+        dir.to_string_lossy().into_owned()
     }
 
     #[test]
     fn paths_match_the_c_naming() {
         assert_eq!(path("var/articles/", 1234), "var/articles/1234");
+    }
+
+    /// The failure [`path`] guards: a directory with no trailing separator still has to hold the
+    /// file. Writing beside it round-trips through [`load`], so only a listing can see it — and
+    /// [`temp_dir`] empties the directory first, so a cid in there is one this test put there.
+    #[test]
+    fn a_generated_cache_lands_inside_the_directory() {
+        let dir = temp_dir("inside");
+        let content = std::fs::read(format!("{CONTENTS}c1.txt")).unwrap();
+        generate(
+            &dir,
+            "MyBBS",
+            "www.bbs.test",
+            &article(9001, 12345),
+            &section(),
+            &content,
+            "203.0.113.7",
+            true,
+            false,
+        )
+        .unwrap();
+
+        let mut names: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["9001"]);
+    }
+
+    #[test]
+    fn the_cache_file_is_inside_the_directory_however_the_directory_is_spelled() {
+        for dir in ["var/articles/", "var/articles"] {
+            let joined = path(dir, 9001);
+            let file = Path::new(&joined);
+            assert_eq!(file.file_name().and_then(|n| n.to_str()), Some("9001"));
+            assert_eq!(
+                file.parent(),
+                Some(Path::new("var/articles")),
+                "{dir} put the file elsewhere"
+            );
+        }
     }
 
     /// The four `tests/fixtures/articles` files were written by `article_cache_generate` in the
@@ -451,7 +504,7 @@ mod tests {
                 "cid {cid}"
             );
             assert!(
-                text.contains("※ 来源: 枫林在线 https://www.bbs.test [FROM: 203.0.113.7]"),
+                text.contains("※ 来源: MyBBS https://www.bbs.test [FROM: 203.0.113.7]"),
                 "cid {cid}"
             );
         }
@@ -460,8 +513,8 @@ mod tests {
         assert_eq!(
             String::from_utf8_lossy(&short.data),
             "发布者: tester (测试者), 版块: Test (测试版)\n标  题: Re: 一个标题 [test]\n\
-             发布于: 枫林在线 (Wed Nov 15 06:13:20 2023 CST)\n\nHello world\n\n--\n\
-             \x1b[35m※ 来源: 枫林在线 https://www.bbs.test [FROM: 203.0.113.7]\x1b[m\n\n"
+             发布于: MyBBS (Wed Nov 15 06:13:20 2023 CST)\n\nHello world\n\n--\n\
+             \x1b[35m※ 来源: MyBBS https://www.bbs.test [FROM: 203.0.113.7]\x1b[m\n\n"
         );
         // The footer colour follows `aid % 7`, and 12345 % 7 == 4.
         assert!(String::from_utf8_lossy(&short.data).contains("\x1b[35m※"));
@@ -493,18 +546,14 @@ mod tests {
     #[test]
     fn a_rejected_file_is_reported_instead_of_panicking() {
         let dir = temp_dir("reject");
-        std::fs::write(
-            format!("{dir}7"),
-            b"not a cache file at all, but long enough",
-        )
-        .unwrap();
+        std::fs::write(path(&dir, 7), b"not a cache file at all, but long enough").unwrap();
         assert_eq!(
             load(&dir, 7).unwrap_err().kind(),
             io::ErrorKind::InvalidData,
             "mmap_len does not match the size"
         );
 
-        std::fs::write(format!("{dir}8"), b"short").unwrap();
+        std::fs::write(path(&dir, 8), b"short").unwrap();
         assert_eq!(
             load(&dir, 8).unwrap_err().kind(),
             io::ErrorKind::InvalidData
@@ -530,7 +579,7 @@ mod tests {
             assert!(
                 generate(
                     &dir,
-                    "枫林在线",
+                    "MyBBS",
                     "www.bbs.test",
                     &article(cid, 12345),
                     &section(),
@@ -543,7 +592,7 @@ mod tests {
                 "cid {cid} was not written"
             );
 
-            let mine = std::fs::read(format!("{dir}{cid}")).unwrap();
+            let mine = std::fs::read(path(&dir, cid)).unwrap();
             let theirs = std::fs::read(format!("{FIXTURES}{cid}")).unwrap();
             assert_eq!(mine.len(), theirs.len(), "cid {cid} length differs");
             if mine != theirs {
@@ -569,7 +618,7 @@ mod tests {
 
         generate(
             &dir,
-            "枫林在线",
+            "MyBBS",
             "www.bbs.test",
             &article,
             &section(),
@@ -579,11 +628,12 @@ mod tests {
             true,
         )
         .unwrap();
-        let before = std::fs::read(format!("{dir}4242")).unwrap();
+        let file = path(&dir, 4242);
+        let before = std::fs::read(&file).unwrap();
         assert!(
             !generate(
                 &dir,
-                "枫林在线",
+                "MyBBS",
                 "www.bbs.test",
                 &article,
                 &section(),
@@ -594,11 +644,11 @@ mod tests {
             )
             .unwrap()
         );
-        assert_eq!(std::fs::read(format!("{dir}4242")).unwrap(), before);
+        assert_eq!(std::fs::read(&file).unwrap(), before);
         assert!(
             generate(
                 &dir,
-                "枫林在线",
+                "MyBBS",
                 "www.bbs.test",
                 &article,
                 &section(),
@@ -609,7 +659,7 @@ mod tests {
             )
             .unwrap()
         );
-        assert_ne!(std::fs::read(format!("{dir}4242")).unwrap(), before);
+        assert_ne!(std::fs::read(&file).unwrap(), before);
 
         let cache = load(&dir, 4242).unwrap().unwrap();
         let body = String::from_utf8_lossy(&cache.data);
@@ -626,7 +676,7 @@ mod tests {
         let dir = temp_dir("index");
         generate(
             &dir,
-            "枫林在线",
+            "MyBBS",
             "www.bbs.test",
             &article(5150, 3),
             &section(),
@@ -654,7 +704,7 @@ mod tests {
 
         generate(
             &dir,
-            "枫林在线",
+            "MyBBS",
             "www.bbs.test",
             &article(6000, 1),
             &section(),
@@ -676,7 +726,7 @@ mod tests {
         );
         assert_eq!(
             cache.mmap_len,
-            std::fs::metadata(format!("{dir}6000")).unwrap().len() as usize
+            std::fs::metadata(path(&dir, 6000)).unwrap().len() as usize
         );
     }
 }

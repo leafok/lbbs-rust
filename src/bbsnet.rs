@@ -1336,7 +1336,7 @@ mod tests {
         };
         let config = Config {
             bbs_id: "test".into(),
-            bbs_name: "枫林在线".into(),
+            bbs_name: "MyBBS".into(),
             bbs_server: "www.bbs.test".into(),
             bbs_address: "127.0.0.1".into(),
             telnet_port: 2323,
@@ -1419,7 +1419,7 @@ mod tests {
 # 注释整行跳过
 	水木社区   新水木 bbs.newsmth.net\t23\tN\tUTF-8
 
-LBBS 枫林在线 127.0.0.1 0022 y GBK
+LBBS MyBBS 127.0.0.1 0022 y GBK
 坏端口 站 127.0.0.1 22x Y UTF-8
 缺字段 站 127.0.0.1 23
 错标记 站 127.0.0.1 23 YY UTF-8
@@ -1446,7 +1446,7 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
             stations[1],
             Station {
                 org_name: "LBBS".into(),
-                site_name: "枫林在线".into(),
+                site_name: "MyBBS".into(),
                 host_name: "127.0.0.1".into(),
                 port: "0022".into(),
                 use_ssh: true,
@@ -1535,7 +1535,7 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
     async fn detail_rows_pad_by_display_cells() {
         let (mut term, mut client) = pair();
         let station = Station {
-            org_name: "枫林在线".into(),
+            org_name: "示例站点".into(),
             site_name: "LBBS".into(),
             host_name: "bbs.test".into(),
             port: "2323".into(),
@@ -1546,9 +1546,9 @@ LBBS 枫林在线 127.0.0.1 0022 y GBK
         let seen = String::from_utf8_lossy(&client.take_available()).into_owned();
 
         // Eight cells of CJK in a 20-cell field, so `%*s` owes twelve spaces rather than the six
-        // a byte count of 枫林在线 would give, and C's own two spaces come after them.
+        // a byte count of 示例站点 would give, and C's own two spaces come after them.
         assert!(
-            seen.contains("\x1b[20;1H\x1b[K|\x1b[1m单位: \x1b[1;33m枫林在线\x1b[m              \
+            seen.contains("\x1b[20;1H\x1b[K|\x1b[1m单位: \x1b[1;33m示例站点\x1b[m              \
                            站名: \x1b[1;33mLBBS\x1b[m                  类型: \x1b[1;33mSSH\x1b[m\x1b[20;80H|"),
             "{seen}"
         );

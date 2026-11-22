@@ -22,7 +22,7 @@
 //!   then `aid`, one pair per board.
 //! * `p_articles[BBS_article_limit_per_page]` is a fixed C array whose index can be reached
 //!   one past the end by `query_section_articles`' `<= BBS_article_limit_per_page` loop
-//!   condition (`section_list_loader.c:920`) — the same condition that lets it log
+//!   condition (`section_list_loader.c:924`) — the same condition that lets it log
 //!   `Inconsistent visible article count %d detected in section %d page %d`. The row list here
 //!   has no capacity, so the loop condition is kept and the extra row exists instead of
 //!   overwriting the stack.
@@ -142,7 +142,7 @@ pub enum BrowseError {
     SectionNotFound,
     /// `log_error("Forbid access to unauthorized section, sid=%d, uid=%d", …)` (`:631`).
     Forbidden { sid: i16, uid: i32 },
-    /// `log_debug("Invalid page_id=%d, not in range [0, %d)")` (`section_list_loader.c:899`).
+    /// `log_debug("Invalid page_id=%d, not in range [0, %d)")` (`section_list_loader.c:903`).
     OutOfRange { sid: i16, page_id: i32 },
     /// `log_error("article_cache_load(aid=%d, cid=%d) error", …)` (`:776`).
     CacheLoad { aid: i32, cid: i32 },
@@ -215,7 +215,7 @@ impl Page {
     }
 }
 
-/// `query_section_articles` (`section_list_loader.c:868`): the visible articles of one page of
+/// `query_section_articles` (`section_list_loader.c:872`): the visible articles of one page of
 /// the list index, then the sticky posts once the last indexed page is reached.
 ///
 /// `Err` is C's `-3`, an out-of-range page. An empty board and a page beyond the index both
@@ -304,7 +304,7 @@ pub fn query_section(board: &Board, section: &Section, page_id: i32) -> Result<P
     Ok(page)
 }
 
-/// The out-parameters of `locate_article_in_section` (`section_list_loader.c:954`).
+/// The out-parameters of `locate_article_in_section` (`section_list_loader.c:958`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Located {
     pub page_id: i32,
@@ -1952,7 +1952,7 @@ pub async fn list_ex_dir(term: &mut Terminal, session: &mut Session, sid: i16) -
     };
 
     let mut nav = MenuNav::new(&menus);
-    // `section_list_loader.c:174` sets `allow_exit` on the menu set as it loads it; the port sets
+    // `section_list_loader.c:175` sets `allow_exit` on the menu set as it loads it; the port sets
     // it on the walker, which is where the flag lives.
     nav.set_allow_exit(true);
 
@@ -3204,7 +3204,7 @@ mod tests {
         let dir = root.join(VAR_ARTICLE_CACHE_DIR);
         cache::generate(
             &dir.to_string_lossy(),
-            "枫林在线",
+            "MyBBS",
             "www.bbs.test",
             &article,
             board.section(1).expect("section"),
@@ -3285,7 +3285,7 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
     }
 
-    /// `menu_proc.c:262-266`: the parameter is a board name, and a name the pool does not have is
+    /// `menu_proc.c:263-268`: the parameter is a board name, and a name the pool does not have is
     /// the handler's `-1` — `menu_control` hands it to the caller's `NOREDRAW` arm, which leaves
     /// the menu that ran it untouched. A board that is there but whose menu never loaded is C's
     /// `-3`, which its caller logs and still answers `REDRAW` with (`:268-274`).

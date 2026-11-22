@@ -307,10 +307,10 @@ impl EditorData {
             // The tail gets the rows the head did not use plus the ones the array still had.
             let allowed = old_count.saturating_sub(self.segments[line].len()) + free;
             let cut = self.cut_overflow(line + 1, allowed, display_line, offset);
-            // `:344`: the redraw reaches as far as the document used to.
+            // `:345`: the redraw reaches as far as the document used to.
             *last_updated_line = old_total.max(self.last_display(line + 1) + cut as i64);
         } else {
-            // `:348-349`: the insert goes into the line at the cursor.
+            // `:349-350`: the insert goes into the line at the cursor.
             self.lines[line].splice(pos..pos, inserted.iter().copied());
             // `:358`, before the re-split: the clamp below belongs to the offset the insert left
             // behind, not to the one it started from.
@@ -459,7 +459,7 @@ impl EditorData {
 
     /// Re-wrap every data line and update `display_line_total`. `split_data_lines` adds a
     /// display line after the one that ends on a `'\n'`; C's re-split stops at that newline
-    /// instead (`:427-431`), so the empty tail of a terminated line is dropped here — but only
+    /// instead (`:428-431`), so the empty tail of a terminated line is dropped here — but only
     /// when the split got far enough to produce it, which the display-line budget below can cut
     /// off.
     ///

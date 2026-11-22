@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 //! The two texts a reader edits about themselves: the introduction and one of three signatures.
 //!
-//! Port of `src/user_info_update.c` — `user_intro_edit` (`:38-194`) and `user_sign_edit`
-//! (`:196-364`) — reached from the toolbox of the top menu (`conf/menu.conf:155-156`), the only
+//! Port of `src/user_info_update.c` — `user_intro_edit` (`:38-199`) and `user_sign_edit`
+//! (`:201-374`) — reached from the toolbox of the top menu (`conf/menu.conf:155-156`), the only
 //! two items there that write to the database. C calls them from `menu_proc.c:402-420`, which
 //! logs a negative return and redraws the menu whichever way they go; [`crate::bbs`] does the
 //! same.
@@ -19,29 +19,30 @@
 //!
 //! # Deviations from C
 //!
-//! * The two connections C opens per save (`:53`, `:154`) and the `goto cleanup` ladder between
+//! * The two connections C opens per save (`:53`, `:159`) and the `goto cleanup` ladder between
 //!   them become one method each on [`crate::db::Db`] and a `match` on its `Result`; a pooled
 //!   connection is not closed on the way out.
-//! * C splices the text in after `mysql_real_escape_string` (`:163`, `:333`); the port binds it,
+//! * C splices the text in after `mysql_real_escape_string` (`:168`, `:343`); the port binds it,
 //!   which lands the same bytes in the column. The `sign_%d` name is the part that cannot be
 //!   bound, and [`crate::db::SignSlot`] is what keeps it to three spelled-out statements.
 //! * `check_badwords` returning negative is C's `BWF not loaded` (`bwf.c:141-145`) or an offset
 //!   vector too small for one match (`bwf.c:167-171`); the port's mask answers with a count and
-//!   cannot fail, so `:117-122` and `:287-292` have no counterpart. A site with no patterns is
+//!   cannot fail, so `:117-122` and `:292-297` have no counterpart. A site with no patterns is
 //!   not that case: `bwf_compile` compiles the empty pattern string (`bwf.c:112`) rather than
 //!   leaving it unset, and C counts zero matches.
 //! * `lml_render`'s negative return is the one given up on in [`crate::lml::render`], so C's
-//!   unchecked calls at `:124` and `:294` are plain bindings here.
-//! * The over-length test (`:126-136`, `:296-306`) hands the rendered text to `split_data_lines`
+//!   unchecked calls at `:124` and `:299` are plain bindings here.
+//! * The over-length test (`:126-136`, `:301-311`) hands the rendered text to `split_data_lines`
 //!   with `BBS_user_*_max_line + 2` slots — one more display line than it is willing to count —
 //!   and then looks only at whether the count it gets back is above ten. [`edit_round`] asks for
 //!   the same two numbers for the same reason, including what that count is made of: the
 //!   do/while of `str_process.c:190` yields a line after a closing newline, so ten
 //!   newline-terminated lines are eleven and the limit admits nine.
-//! * Neither function has `data_file_mgr.c:201`'s guard: falling out of the `for` because the
-//!   daemon is going down still reaches the `UPDATE`, with whatever the last save left in the
-//!   buffer and with an empty one if there was no such round. The port reproduces that, which is
-//!   why [`Outcome::Update`] covers both ways out.
+//! * Both functions now have `data_file_mgr.c:201`'s guard (`:154-157`, `:329-332`): a loop the
+//!   shutdown ended reaches `cleanup` with `ret` still `0` and no `UPDATE` at all. The text that
+//!   the last `editor_data_save` filled in is dropped with the editor, which is why
+//!   [`Outcome::Update`] still covers both ways out of the loop and the callers look at
+//!   [`crate::session::AppState::is_exiting`] before they believe it.
 
 use crate::config::c_atoi;
 use crate::db::SignSlot;
@@ -70,7 +71,7 @@ const KEY_S: u32 = b'S' as u32;
 /// How the editor loop of `:89-152` ended.
 #[derive(Debug, PartialEq, Eq)]
 enum Outcome {
-    /// C's `break` (`:151`, `:321`), which carries the text `editor_data_save` filled in. The
+    /// C's `break` (`:151`, `:326`), which carries the text `editor_data_save` filled in. The
     /// fall-out of a loop that the shutdown ended before its body ran again is this too, and
     /// then it carries that round's leftover.
     Update(Vec<u8>),
@@ -79,7 +80,7 @@ enum Outcome {
     Cleanup(i32),
 }
 
-/// `user_intro_edit` (`:38-194`). The return is C's `ret`, because `menu_proc.c:404` tests it for
+/// `user_intro_edit` (`:38-199`). The return is C's `ret`, because `menu_proc.c:404` tests it for
 /// its `log_error`; the menu is redrawn either way.
 pub async fn user_intro_edit(term: &mut Terminal, session: &mut Session) -> i32 {
     let uid = session.privs.uid;
@@ -115,7 +116,13 @@ pub async fn user_intro_edit(term: &mut Terminal, session: &mut Session) -> i32 
         Outcome::Cleanup(ret) => return ret,
     };
 
-    // `:154-178`.
+    // `:154-157`: the shutdown that ended the loop is not an answer. C goes to `cleanup` with
+    // the `ret` it was given at the top of the function, and the text goes with it.
+    let Some(saved) = kept_for_writing(session, saved) else {
+        return 0;
+    };
+
+    // `:159-183`.
     if let Err(err) =
         db::update_introduction(&session.state.db, uid, &String::from_utf8_lossy(&saved)).await
     {
@@ -134,15 +141,15 @@ pub async fn user_intro_edit(term: &mut Terminal, session: &mut Session) -> i32 
     1
 }
 
-/// `user_sign_edit` (`:196-364`): the same round, with a number in front of it.
+/// `user_sign_edit` (`:201-374`): the same round, with a number in front of it.
 pub async fn user_sign_edit(term: &mut Terminal, session: &mut Session) -> i32 {
     let uid = session.privs.uid;
 
-    // `:213-220`.
+    // `:218-225`.
     screen::clearscr(term);
-    // `get_data(1, 1, prompt, buf, sizeof(buf), 1)` (`:214`): one display cell out of a two-byte
+    // `get_data(1, 1, prompt, buf, sizeof(buf), 1)` (`:219`): one display cell out of a two-byte
     // buffer. C throws the return code away, so a timeout is answered with the empty `buf` the
-    // stack had and `atoi` (`:215`) reads that as no slot at all.
+    // stack had and `atoi` (`:220`) reads that as no slot at all.
     let typed = screen::get_data(
         term,
         1,
@@ -188,6 +195,11 @@ pub async fn user_sign_edit(term: &mut Terminal, session: &mut Session) -> i32 {
         Outcome::Cleanup(ret) => return ret,
     };
 
+    // `:329-332`.
+    let Some(saved) = kept_for_writing(session, saved) else {
+        return 0;
+    };
+
     if let Err(err) = db::update_signature(
         &session.state.db,
         uid,
@@ -204,7 +216,13 @@ pub async fn user_sign_edit(term: &mut Terminal, session: &mut Session) -> i32 {
     1
 }
 
-/// The `for (ch = 'E'; !SYS_server_exit;)` of `:89-152`, which `:259-322` repeats word for word
+/// `:154-157` and `:329-332`: on the way out the daemon takes the text back. `None` is the
+/// `goto cleanup` that answers a shutdown with no `UPDATE` and no notice.
+fn kept_for_writing(session: &Session, saved: Vec<u8>) -> Option<Vec<u8>> {
+    (!session.state.is_exiting()).then_some(saved)
+}
+
+/// The `for (ch = 'E'; !SYS_server_exit;)` of `:89-152`, which `:264-327` repeats word for word
 /// apart from the two numbers and the word in the over-length message. `noun` is that word.
 async fn edit_round(
     term: &mut Terminal,
@@ -214,7 +232,7 @@ async fn edit_round(
     max_lines: usize,
     noun: &str,
 ) -> Outcome {
-    // `intro` (`:47`) and `sign` (`:205`): buffers C leaves uninitialised, which is what an
+    // `intro` (`:47`) and `sign` (`:210`): buffers C leaves uninitialised, which is what an
     // update forced out by the shutdown writes from.
     let mut saved: Vec<u8> = Vec::new();
     let mut ch: u32 = KEY_E;
@@ -236,14 +254,14 @@ async fn edit_round(
             KEY_NULL | KEY_TIMEOUT => return Outcome::Cleanup(0),
             KEY_CR | KEY_S => {
                 let Some(mut bytes) = data.save(max_len) else {
-                    // `:110-115`, `:280-285`: the text outgrew the save buffer.
+                    // `:110-115`, `:285-290`: the text outgrew the save buffer.
                     tracing::error!("editor_data_save() error");
                     return Outcome::Cleanup(-3);
                 };
                 session.state.badwords().mask(&mut bytes, b'*');
                 saved = bytes;
 
-                // `lml_render(intro, intro_f, sizeof(intro_f), SCREEN_COLS, 0)` (`:124`, `:294`),
+                // `lml_render(intro, intro_f, sizeof(intro_f), SCREEN_COLS, 0)` (`:124`, `:299`),
                 // whose output buffer is twice the save buffer plus the byte C ends it with.
                 let rendered = lml::render(
                     &saved,
@@ -280,7 +298,7 @@ async fn edit_round(
                 ch = KEY_E;
                 continue;
             }
-            // `default: // Invalid selection` (`:147-148`, `:317-318`).
+            // `default: // Invalid selection` (`:147-148`, `:322-323`).
             _ => continue,
         }
 
@@ -291,7 +309,7 @@ async fn edit_round(
 }
 
 /// `clearscr(); moveto(1, 1); prints(message); press_any_key();` — the notice of `:129-132`, the
-/// two of `:139-142` and `:299-302`, and the closing line of `:180-183` and `:350-353`.
+/// two of `:139-142` and `:304-307`, and the closing line of `:185-188` and `:360-363`.
 async fn notice(term: &mut Terminal, message: &str) {
     screen::clearscr(term);
     term.moveto(1, 1);
@@ -438,7 +456,7 @@ mod tests {
     }
 
     /// The tenth line closes the text with the newline that gives the eleventh, which `:127` and
-    /// `:297` count against their limit of ten.
+    /// `:302` count against their limit of ten.
     #[tokio::test]
     async fn a_tenth_line_is_the_empty_one_after_it() {
         let ten = "行1234567890\n".repeat(10);
@@ -455,11 +473,11 @@ mod tests {
         );
     }
 
-    /// `data_file_mgr.c:201` has a `if (SYS_server_exit) goto cleanup;` before its writes and
-    /// `user_info_update.c` has none: a loop the shutdown ends between two rounds still reaches
-    /// its `UPDATE`, with the text the last save filled — the rejected over-length one, here.
+    /// `data_file_mgr.c:201` was the model for the guard `user_info_update.c:154-157` now has of
+    /// its own. The loop itself still hands the last saved text out — the rejected over-length
+    /// one, here — and it is the caller that no longer believes it.
     #[tokio::test]
-    async fn a_shutdown_between_rounds_still_writes_the_last_text() {
+    async fn a_shutdown_between_rounds_hands_the_last_text_to_the_caller() {
         let ten = "行1234567890\n".repeat(10);
         let (client, server) = Pipe::new();
         let mut term = Terminal::new(ByteIo::Pipe(server));
@@ -495,11 +513,10 @@ mod tests {
         assert_eq!(outcome, Outcome::Update(ten.as_bytes().to_vec()));
     }
 
-    /// The same fall-out with nothing behind it is C's read of an uninitialised `intro`, whose
-    /// escaped length is zero: the update carries no text, which is why the port starts from an
-    /// empty `Vec` rather than refusing to write.
+    /// The same fall-out with nothing behind it: C's `intro` was never written to, so the loop
+    /// reports an empty save. `:154-157` is what keeps that empty text out of the column.
     #[tokio::test]
-    async fn a_shutdown_before_the_first_round_writes_an_empty_text() {
+    async fn a_shutdown_before_the_first_round_saves_nothing() {
         let (client, server) = Pipe::new();
         let mut term = Terminal::new(ByteIo::Pipe(server));
         let mut session = crate::session::offline_session();
@@ -518,6 +535,24 @@ mod tests {
         drop(client);
 
         assert_eq!(outcome, Outcome::Update(Vec::new()));
+        assert_eq!(
+            kept_for_writing(&session, Vec::new()),
+            None,
+            "and the caller drops it"
+        );
+    }
+
+    /// The two callers' one shared line of arithmetic: while the daemon is running the saved
+    /// text reaches the `UPDATE`, and once it is going down nothing does.
+    #[tokio::test]
+    async fn only_a_running_daemon_writes_the_text() {
+        let session = crate::session::offline_session();
+        assert_eq!(
+            kept_for_writing(&session, b"line one\n".to_vec()).as_deref(),
+            Some(&b"line one\n"[..])
+        );
+        session.state.exit();
+        assert_eq!(kept_for_writing(&session, b"line one\n".to_vec()), None);
     }
 
     /// The save buffer of `:109` is the same 4 KB as the column, and a text past it is the `-3`
@@ -572,7 +607,7 @@ mod tests {
         std::fs::remove_file(&dict).unwrap();
     }
 
-    /// The number gate of `user_sign_edit` (`:213-220`) stands in front of every query, which is
+    /// The number gate of `user_sign_edit` (`:218-225`) stands in front of every query, which is
     /// what makes the two negative returns tellable apart on a session with no database: `-1` is
     /// the number, `-2` the query.
     #[tokio::test]
@@ -628,7 +663,7 @@ mod tests {
         assert!(!screen.contains("再编辑"), "{screen}");
     }
 
-    /// `:215-220` reads the number with `atoi`, so anything that is not one of three names no
+    /// `:220-225` reads the number with `atoi`, so anything that is not one of three names no
     /// slot: the empty answer a timeout leaves, a negative, and a number past the list.
     #[test]
     fn only_three_numbers_are_slots() {

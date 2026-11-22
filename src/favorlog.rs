@@ -31,7 +31,7 @@ use crate::db::Db;
 /// `MAX_FAVOR_AID_INC_CNT` (`include/article_favor.h:18`): toggles buffered before a flush.
 pub const MAX_FAVOR_AID_INC_CNT: usize = 1000;
 
-/// `MAX_FAVOR_AID_BASE_CNT` (`include/article_favor.h:16`), recorded for the comment in
+/// `MAX_FAVOR_AID_BASE_CNT` (`include/article_favor.h:17`), recorded for the comment in
 /// [`FavorLog::merge_inc`] about why C's merge could discard aids.
 pub const MAX_FAVOR_AID_BASE_CNT: usize = 10000;
 

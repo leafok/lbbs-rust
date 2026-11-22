@@ -321,7 +321,7 @@ impl MenuSet {
         self.screens.get(menu.screen_id?)
     }
 
-    /// The pool `bbs_net.c:93-121` builds with `calloc` instead of reading a config file: one
+    /// The pool `bbs_net.c:94-116` builds with `calloc` instead of reading a config file: one
     /// menu with no title and no `%SCREEN` body, and every item at its own row and column.
     /// C sizes the item pool to the maximum the screen can hold and counts up what it reads;
     /// here the items are exactly the ones the reader kept, which is the same list.

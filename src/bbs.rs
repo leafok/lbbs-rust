@@ -220,7 +220,7 @@ impl ActiveBoard {
     }
 }
 
-/// `bbs_main.c:178`'s `time(NULL) - t_last_action >= 10`: the gap between two panel rotations.
+/// `bbs_main.c:179`'s `time(NULL) - t_last_action >= 10`: the gap between two panel rotations.
 const PANEL_TICK_SECS: i64 = 10;
 
 /// `bbs_menu.choose_step == 0 && time(NULL) - t_last_action >= 10`. The rotation belongs to the
@@ -488,8 +488,9 @@ pub fn bbs_do_choice<'a>(
                 }
                 MenuReturn::Redraw
             }
-            // The remaining handlers arrive with their own tasks; until then an item that resolves to
-            // one reports itself instead of looking like a hung key.
+            // Of the twenty names `Action::TABLE` holds, only `M_FAVOR_SECTION` has no arm here: the menu
+            // asks it per row and `Session::filter_allows` answers, so it is never dispatched. The wildcard
+            // keeps the match total and lets an unwired action report itself instead of looking like a hung key.
             _ => {
                 tracing::error!("Action {}({param}) is not implemented", action.name());
                 MenuReturn::Redraw

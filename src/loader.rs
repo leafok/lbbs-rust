@@ -23,6 +23,14 @@
 //! board's write lock that C holds while it writes the file. C answers a failed render by
 //! breaking out of the batch (`ret = -4`); a cache file here is derived from rows the pool
 //! already has, so one is logged and the rest of the batch is still rendered.
+//!
+//! The C batch carries the board it is holding in `last_sid` and releases it twice: after each
+//! hand-over (`:287`, `:468`) and once more for the last board of the loop (`:342`, `:658`). Both
+//! of those pairs were wrong until `27ffdde` cleared the id when the unlock left nothing held and
+//! added the `p_section != NULL` the release was missing. The port has no handle to go stale:
+//! [`append_articles_into`] and [`apply_ops`] are handed a `&mut Board` by a caller that locked
+//! that one board for the whole batch, so the id, the hand-over and the final release are all
+//! gone rather than ported.
 
 use std::error::Error;
 use std::fmt;
@@ -233,7 +241,7 @@ pub fn load_section_config_into(
 /// every enabled board whose `section_config.ex_menu_tm` moved past the one the pool holds.
 ///
 /// C runs it only from `main.c:389` and the reload `net_server.c:871`, never from the article
-/// loop's `section_list_loader.c:751`, which in the port is [`Loader::load_section_config`] — the
+/// loop's `section_list_loader.c:755`, which in the port is [`Loader::load_section_config`] — the
 /// only caller, for all three of those passes go through it.
 ///
 /// A menu that will not read or will not parse is unloaded and the timestamp is left where it
@@ -306,7 +314,7 @@ pub fn append_articles_into(board: &mut Board, rows: &[ArticleRow]) -> Result<us
 /// cache file the loader writes is measured at the fixed-width default.
 pub const CACHE_FIXED_WIDTH: bool = true;
 
-/// `article_cache_generate` for the posts a load pass appended (`section_list_loader.c:331`).
+/// `article_cache_generate` for the posts a load pass appended (`section_list_loader.c:333`).
 ///
 /// `rows` is the batch trimmed to what the pool took, in the `AID` order the query returns. The
 /// article is rebuilt from its row rather than read back out of the arena: the render wants the
@@ -360,7 +368,7 @@ pub fn generate_caches_from_rows(
     rendered
 }
 
-/// `article_cache_generate` for the `'M'` ops a replay got through (`section_list_loader.c:546`).
+/// `article_cache_generate` for the `'M'` ops a replay got through (`section_list_loader.c:550`).
 ///
 /// C renders from `p_article` after it has assigned the new `CID`, and the port reads the same
 /// article back out of the arena, so the file lands under the new name and the one the modify
@@ -698,7 +706,7 @@ impl Loader {
     }
 
     /// `user_list_pool_reload(0)`: rebuild the roster and publish it, which is the buffer
-    /// index swap of `:1044` expressed as an [`std::sync::Arc`].
+    /// index swap of `:662-668` expressed as an [`std::sync::Arc`].
     pub async fn reload_roster(&self) -> Result<(), LoaderError> {
         let rows = self.state.db.roster().await?;
         self.state.publish_roster(Roster::load(&rows));
@@ -707,7 +715,7 @@ impl Loader {
 
     /// `user_list_pool_reload(1)`, whose query filters on `BBS_user_off_line` (`:331`). The pass
     /// is both queries and one publish: C loads the list, then `user_login_count_load` (`:370`),
-    /// and reaches its index swap (`:650-657`) only if neither failed — so the online roster a
+    /// and reaches its index swap (`:655-661`) only if neither failed — so the online roster a
     /// user sees and the 累计访问人次 beside it always come from the same pass.
     pub async fn reload_online(&self) -> Result<(), LoaderError> {
         let rows = self.state.db.online(USER_OFF_LINE_SECS).await?;
@@ -725,11 +733,9 @@ impl Loader {
     /// cannot run without the board's database.
     fn publish_online_pass(&self, online: OnlineList, count: Option<i32>) {
         self.state.publish_online(online);
-        // `:394` assigns only when a row came back; an empty `user_login_log` leaves the previous
-        // count standing rather than reporting the site has never been visited.
-        if let Some(count) = count {
-            self.state.set_login_count(count);
-        }
+        // `:394-401` assigns in both branches, so a `user_login_log` with no rows resets the
+        // total to 0 instead of leaving the previous pass standing.
+        self.state.set_login_count(count.unwrap_or(0));
     }
 
     /// `user_stat_update`, which the C loader calls right after the roster because the
@@ -763,7 +769,7 @@ impl Loader {
         Ok(())
     }
 
-    /// `section_list_loader.c:751-758`: a config pass answers with exactly one line, the success
+    /// `section_list_loader.c:755-762`: a config pass answers with exactly one line, the success
     /// one on the common stream (`log_common("Reload section config successfully")`) and the
     /// failure one on the error stream.
     fn report_config_pass(result: Result<(), LoaderError>) {
@@ -1087,7 +1093,7 @@ mod tests {
         assert!(board.article_by_aid(1).unwrap().visible);
     }
 
-    /// `section_list_loader.c:751-758`: the loader child prints one line per config pass, and the
+    /// `section_list_loader.c:755-762`: the loader child prints one line per config pass, and the
     /// success line is `log_common()` — the only C message the port routes to `bbs.log`.
     #[test]
     fn a_config_pass_announces_itself_once() {
@@ -1114,9 +1120,9 @@ mod tests {
     }
 
     /// `user_list_pool_reload(1)` publishes the list and the visit total from one swap
-    /// (`user_list.c:620-628` then `:650-657`), and the total only moves when the second query
-    /// returned a row (`:394`): an empty `user_login_log` does not report a site nobody has ever
-    /// visited, and a failed one leaves the previous pass standing.
+    /// (`user_list.c:624-632` then `:655-661`), and the total always comes from that same pass:
+    /// `:394-401` writes `atoi(row[0])` when a row came back and `0` when none did, so an empty
+    /// `user_login_log` is published as an empty total rather than left at the previous value.
     #[tokio::test]
     async fn the_online_pass_publishes_the_visit_total_with_the_list() {
         let session = crate::session::offline_session();
@@ -1127,11 +1133,7 @@ mod tests {
         assert_eq!(state.login_count(), 123_456);
 
         loader.publish_online_pass(OnlineList::default(), None);
-        assert_eq!(
-            state.login_count(),
-            123_456,
-            "no row means the total is left alone"
-        );
+        assert_eq!(state.login_count(), 0, "no row means the total is 0");
     }
 
     /// Only a cursor makes a pass reach the op log: `watermark` is `None` until the startup pass
@@ -1440,11 +1442,14 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// The shape the daemon uses: `root.join(VAR_ARTICLE_CACHE_DIR)` as a string, whose trailing
+    /// separator a Windows `PathBuf` does not keep. Appending one here made every `dir_entries`
+    /// assertion below true whether or not the file landed inside the directory.
     fn temp_cache_dir(name: &str) -> String {
         let dir = std::env::temp_dir().join(format!("lbbs-loader-cache-{name}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        format!("{}/", dir.to_str().unwrap())
+        dir.to_string_lossy().into_owned()
     }
 
     fn dir_entries(dir: &str) -> Vec<String> {
@@ -1466,7 +1471,7 @@ mod tests {
         }
     }
 
-    const SITE: &str = "枫林在线";
+    const SITE: &str = "MyBBS";
     const SERVER: &str = "www.bbs.test";
 
     #[test]
@@ -1506,12 +1511,12 @@ mod tests {
 
         // C opens the file read-only and returns without writing; a second pass that found a
         // body already rendered must not touch it, only report nothing as new.
-        std::fs::write(format!("{dir}33"), b"sentinel").unwrap();
+        std::fs::write(cache::path(&dir, 33), b"sentinel").unwrap();
         assert_eq!(
             generate_caches_from_rows(&dir, SITE, SERVER, &board, &rows),
             0
         );
-        assert_eq!(std::fs::read(format!("{dir}33")).unwrap(), b"sentinel");
+        assert_eq!(std::fs::read(cache::path(&dir, 33)).unwrap(), b"sentinel");
     }
 
     #[test]

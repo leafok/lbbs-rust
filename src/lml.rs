@@ -21,7 +21,7 @@ pub const TAG_PARAM_BUF_LEN: usize = 256;
 pub const TAG_OUTPUT_BUF_LEN: usize = 1024;
 /// `LML_TAG_QUOTE_MAX_LEVEL` — deeper nesting stops incrementing the colour index.
 pub const TAG_QUOTE_MAX_LEVEL: i64 = 10;
-/// `ARTICLE_CONTENT_MAX_LEN` (`article_cache.h:17`), the body buffer `cache::generate` renders into.
+/// `ARTICLE_CONTENT_MAX_LEN` (`article_cache.h:18`), the body buffer `cache::generate` renders into.
 pub const ARTICLE_CONTENT_MAX_LEN: usize = 1024 * 1024 * 4;
 
 const QUOTE_COLORS: [&[u8]; 3] = [b"\x1b[33m", b"\x1b[32m", b"\x1b[35m"];

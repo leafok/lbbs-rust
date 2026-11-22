@@ -177,7 +177,7 @@ fn main() -> ExitCode {
         tracing::error!("mkdir({VAR_SECTION_AID_LOC_DIR}) error: {err}");
         return code(EXIT_STARTUP);
     }
-    // The chicken records and the one log they share (`chicken.c:30-31`); without the directory
+    // The chicken records and the one log they share (`chicken.c:31-32`); without the directory
     // `create_a_egg` cannot write its egg and `chicken_main` answers its `-2`.
     if let Err(err) = create_dir(&root.join(VAR_CHICKEN_DIR)) {
         tracing::error!("mkdir({VAR_CHICKEN_DIR}) error: {err}");
