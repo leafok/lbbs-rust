@@ -120,6 +120,11 @@ impl Roster {
     /// because a sort of 100000 entries is not free in a 200-process server; rebuilding it
     /// every load costs microseconds here and cannot go stale, so the port always does.
     pub fn load(rows: &[UserRow]) -> Self {
+        // `:225`: the query answered with more accounts than the pool holds, and the tail is
+        // dropped on the floor.
+        if rows.len() > MAX_USER_COUNT {
+            tracing::error!("Too many users, exceed limit {MAX_USER_COUNT}");
+        }
         let users: Vec<UserInfo> = rows
             .iter()
             .enumerate()
@@ -134,6 +139,13 @@ impl Roster {
             })
             .collect();
         index_uid.sort_by(|a, b| a.uid.cmp(&b.uid).then(a.id.cmp(&b.id)));
+        // `:243` and `:248`: the two lines that say what the sort covered.
+        let last_uid = users.last().map(|u| u.uid).unwrap_or_default();
+        tracing::debug!(
+            "Rebuild index of {} users, last_uid={last_uid}",
+            users.len()
+        );
+        tracing::debug!("Loaded {} users", users.len());
         Self { users, index_uid }
     }
 
@@ -288,7 +300,8 @@ impl OnlineList {
                 last_tm: row.last_tm.unwrap_or(0),
             });
             if users.len() >= MAX_USER_ONLINE_COUNT {
-                // `Too many online users, exceed limit %d`
+                // `:342`: the list stops at the pool's limit and says so.
+                tracing::error!("Too many online users, exceed limit {MAX_USER_ONLINE_COUNT}");
                 break;
             }
         }
@@ -494,6 +507,23 @@ mod tests {
             user_row(12, "annabelle"),
             user_row(20, "bob"),
         ])
+    }
+
+    /// `user_list.c:243` and `:248`: the load reports what it sorted and how many it kept. Both
+    /// are `log_debug()`, which is the error stream here.
+    #[test]
+    fn the_load_reports_the_user_count_and_the_last_uid() {
+        let (common, error) = crate::log::captured(|| {
+            let roster = roster();
+            assert_eq!(roster.count(), 5);
+        });
+
+        assert!(
+            error.contains("Rebuild index of 5 users, last_uid=20\n"),
+            "{error}"
+        );
+        assert!(error.contains("Loaded 5 users\n"), "{error}");
+        assert_eq!(common, "", "{common}");
     }
 
     #[test]

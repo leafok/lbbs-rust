@@ -158,26 +158,26 @@ differently from C, read the deviations section first — the reason is written 
 | Rust file | Lines | Original C | Responsibility | Status |
 | --- | ---:| --- | --- | --- |
 | [src/paths.rs](src/paths.rs) | 118 | `include/bbs.h` etc. | screen size, field lengths, path names | done |
-| [src/daemon.rs](src/daemon.rs) | 427 | `src/main.c`, `src/daemon.c` | command line, `--help`/`--version`, `fork` into background | done |
+| [src/daemon.rs](src/daemon.rs) | 480 | `src/main.c`, `src/daemon.c` | command line, `--help`/`--version`, `fork` into background | done |
 | [src/config.rs](src/config.rs) | 394 | `src/init.c` | reads `conf/bbsd.conf` | done |
-| [src/log.rs](src/log.rs) | 513 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
+| [src/log.rs](src/log.rs) | 542 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
 | [src/text.rs](src/text.rs) | 362 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
 | [src/term/mod.rs](src/term/mod.rs) | 812 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
 | [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | turns ESC sequences into key codes | done |
 | [src/screen.rs](src/screen.rs) | 1151 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
 | [src/db.rs](src/db.rs) | 1580 | `src/database.c` etc. | MySQL queries through sqlx | done |
-| [src/board.rs](src/board.rs) | 1553 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
+| [src/board.rs](src/board.rs) | 1602 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
 | [src/browse.rs](src/browse.rs) | 3371 | `src/section_list_display.c`, `src/section_list_loader.c`, `src/menu_proc.c` (the two digest items) | the article list, its keys, reading a post, the saved reading position, and a board's digest tree | done |
 | [src/editor.rs](src/editor.rs) | 1853 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
-| [src/post.rs](src/post.rs) | 1617 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, the article's web link, and the transaction each write runs in | done |
+| [src/post.rs](src/post.rs) | 1640 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, the article's web link, and the transaction each write runs in | done |
 | [src/viewlog.rs](src/viewlog.rs) | 369 | `src/article_view_log.c` | which posts this user has read | done |
 | [src/favorlog.rs](src/favorlog.rs) | 452 | `src/article_favor.c` | which posts this user starred | done |
 | [src/favorlist.rs](src/favorlist.rs) | 785 | `src/article_favor_display.c`, `src/article_favor.c` (the page query), `src/menu_proc.c` (the `FAVOR_TOPIC` item) | the 我收藏的主题 list: two name columns, the star removed in place, and the board each row opens | done |
-| [src/roster.rs](src/roster.rs) | 705 | `src/user_list_loader.c` | the online-user roster and the article counters | done |
+| [src/roster.rs](src/roster.rs) | 735 | `src/user_list_loader.c` | the online-user roster and the article counters | done |
 | [src/userinfo.rs](src/userinfo.rs) | 954 | `src/user_info_display.c`, `src/user_list_display.c` (the search), `src/bbs.c` (the level and sign tables) | one user's profile page, and the name search that reaches it | done |
 | [src/user_info_update.rs](src/user_info_update.rs) | 642 | `src/user_info_update.c`, `src/menu_proc.c` (the two profile items) | the 说明档 and 签名档 editors: one `user_pubinfo` column through the editor, masked, counted and written back | done |
 | [src/userlist.rs](src/userlist.rs) | 1053 | `src/user_list_display.c`, `src/menu_proc.c` (the two roster items) | the 线上使用者 and 已注册用户 pages: titles, columns, paging, and the keys between them | done |
-| [src/loader.rs](src/loader.rs) | 1603 | `src/section_list_loader.c` | the incremental refresh task, the article cache files it writes, and each board's digest menu | done |
+| [src/loader.rs](src/loader.rs) | 1684 | `src/section_list_loader.c` | the incremental refresh task, the article cache files it writes, and each board's digest menu | done |
 | [src/state.rs](src/state.rs) | 410 | the shared-memory segments | what the loader publishes and a session reads | done |
 | [src/cache.rs](src/cache.rs) | 650 | `src/article_cache.c` | render and load `var/articles/<CID>` with its line index | done |
 | [src/data_file_mgr.rs](src/data_file_mgr.rs) | 452 | `src/data_file_mgr.c`, `src/bbs_cmd.c` (the `DATAMGR` entry) | the `@DATAMGR` list: pick one of the eight site texts by number, edit it, preview it, and write the result to both the packaged file and its `.user` copy | done |
@@ -191,10 +191,10 @@ differently from C, read the deviations section first — the reason is written 
 | [src/bbsnet.rs](src/bbsnet.rs) | 1890 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
 | [src/chicken.rs](src/chicken.rs) | 2289 | `utils/game/chicken.c` | 电子小鸡: one line of fourteen numbers and a name, the naming prompt, the nine things you do with a chicken, and the death that hatches the next egg | done |
 | [src/money.rs](src/money.rs) | 243 | `utils/game/money.c` | 糖糖: the balance a session caches, the deposit that stops at the cap, and the withdrawal that is all or nothing | done |
-| [src/bbs.rs](src/bbs.rs) | 973 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | menu loop done, and every action `conf/menu.conf` binds has a handler (the favourites filter is a menu filter, not an action) |
-| [src/net.rs](src/net.rs) | 358 | `src/net_server.c` | accept, connection limits, graceful drain | done |
+| [src/bbs.rs](src/bbs.rs) | 1126 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | menu loop done, and every action `conf/menu.conf` binds has a handler (the favourites filter is a menu filter, not an action) |
+| [src/net.rs](src/net.rs) | 469 | `src/net_server.c` | accept, connection limits, graceful drain | done |
 | [src/ssh.rs](src/ssh.rs) | 504 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
-| [src/main.rs](src/main.rs) | 555 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
+| [src/main.rs](src/main.rs) | 580 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
 | [src/batch.rs](src/batch.rs) | 383 | `utils/lib/db_open.inc.php` + the lines the three scripts repeat | one generator's life: arguments, server root, `conf/bbsd.conf`, database, the PHP's own stdout text and exit bytes | done |
 | [src/section_list.rs](src/section_list.rs) | 149 | `utils/lib/section_list.inc.php` | the class/board hierarchy the generators walk, with the caller's per-board values | done |
 | [src/gen_top.rs](src/gen_top.rs) | 306 | `utils/bin/gen_top.php` | `var/bbs_top.txt` and `var/bbs_top_menu.conf`: the ten hottest posts of the week | done |
@@ -202,8 +202,8 @@ differently from C, read the deviations section first — the reason is written 
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 424 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-36 358 lines in total, the tests included (they live in the modules they test). There are 524 tests: 518 in the
-library and 6 in the binary. 510 of them need nothing but the checked-out tree; the other 14 are ignored because
+36 912 lines in total, the tests included (they live in the modules they test). There are 537 tests: 531 in the
+library and 6 in the binary. 523 of them need nothing but the checked-out tree; the other 14 are ignored because
 they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
@@ -382,6 +382,38 @@ that does not run is described as if it did.
    the database refuses leaves the chicken unsold with `无法存钱，放弃交易！`, and two hundred and one grams dies.
    Death is `呜...小鸡挂了....`, a line in `var/chicken/log`, the record unlinked and a new egg hatched in the middle
    of the action that asked for the kill — named from the same prompt that starts out holding `宝宝`.
+30. **The two clocks of the idle loops** — the 活跃版块 panel that rotates underneath the top menu
+    ([`bbs::bbs_center`](src/bbs.rs)) and the 十大热门榜 that `w` opens
+    ([`bbs::show_top10_menu`](src/bbs.rs)). Both are gated by the same rule C wrote twice: any key but
+    `KEY_NULL`/`KEY_TIMEOUT` refreshes `BBS_last_access_tm`, and a timeout only leaves when the clock has run
+    `BBS_max_user_idle_time` seconds ([`net::IDLE_LIMIT`](src/net.rs), `include/bbs.h:36`); before that it repaints
+    (`bbs_main.c:169-206`, `menu_proc.c:295-330`). The panel has one more condition: it belongs to the root menu
+    alone, and only moves ten seconds after the last key (`bbs_main.c:178`), so an open submenu stops the rotation
+    instead of repainting it under the submenu's own screen.
+31. **累计访问人次** — the visit total the welcome page quotes, which C loads in the same pass as the online list
+    and not on its own schedule ([`user_list.c:370`](../lbbs/src/user_list.c), reached from `:616-657`). The
+    reload queries the list, then `SELECT ID FROM user_login_log ORDER BY ID DESC LIMIT 1`, and publishes the two
+    together ([`loader::Loader::reload_online`](src/loader.rs)); an empty log leaves the previous total in place
+    rather than announcing a site nobody has visited, as `:394` only assigns when a row came back.
+32. **What the command surface prints** — `bbsd -h` quotes the literal `bbsd` the way `arg_usage()` does
+    ([`daemon::PROG_NAME`](src/daemon.rs)), not the path the shell started it from; `bbsd -C` lands every bracketed
+    answer on column 24 the way C's tab stops do ([`daemon::flag_line`](src/daemon.rs)); and `@RELOADCONF` answers
+    on the screen with `已发送指令` before it returns to the menu
+    ([`bbs::Action::ReloadConf`](src/bbs.rs), `menu_proc.c:150-180`), instead of asking a key press of nobody.
+33. **The lines the load paths write** — the pool loads report themselves as C reported them: the roster's
+    `Rebuild index of %d users, last_uid=%d` and `Loaded %d users` (`user_list.c:243`/`:248`), the two
+    `Inconsistent state found: article %d …` answers a sticky list gives when the flags and the index disagree
+    (`section_list.c:1104`/`:1147`), `Count of page exceed limit in section %d` (`section_list.c:1384`), and
+    `Reload section config successfully` on the common stream when a config pass comes back
+    (`section_list_loader.c:757`). The loader's own counts are formatted into the message rather than passed as
+    tracing fields, because the C log has one string per line — see
+    [`log::format_line`](src/log.rs) and the test that pins it.
+34. **Two limits that follow their configuration** — the accept gate compares the live session count with the
+    `bbs_max_client` the reload just published ([`net::Gateway::reserve_total`](src/net.rs)), which is what
+    `SYS_child_process_count - 1 < BBS_max_client` (`net_server.c:961`) does on every accept; a connection refused
+    for its address hands the total slot back rather than leaking one per rejection. And a reply's title buffer is
+    the size C's array is ([`post::TITLE_REPLY_BUF_LEN`](src/post.rs)): `BBS_article_title_max_len + sizeof("Re: ")`
+    counts the terminator twice over (`article_post.c:761`), so 165 bytes, not the 161 of a new post (`:44`).
 
 ### 6.2 Verified against the live board database
 
@@ -454,14 +486,14 @@ wired and unit-tested". The first account that really posts should do it against
 ```bash
 cd lbbs-rust
 cargo build            # compile the library and the binary
-cargo test             # 510 tests that need no database (14 more are opt-in, see 7.2)
+cargo test             # 523 tests that need no database (14 more are opt-in, see 7.2)
 cargo fmt              # the tree is rustfmt-clean; run it before you commit
 ```
 
 A healthy run looks like this:
 
 ```
-test result: ok. 504 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
+test result: ok. 517 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
@@ -729,6 +761,9 @@ The cells that are still ⬜ are the screens behind those keys — see §6.3.
 | `srand((unsigned) time(NULL))` then `rand() % 3` inside every game of 猜拳 (`chicken.c:697-698`) | [`chicken::opponent`](src/chicken.rs) mixes the same one-second seed | glibc's additive-feedback generator is a property of libc, not of this game, and a port that replayed it would be a second libm to keep in step. The seed still changes once per second and still has three answers, so two guesses inside one second are still the same hand — which is the part the player sees. |
 | The chicken record is read with `fscanf` of fourteen `%d` and one `%s` (`chicken.c:111-112`) | [`Chicken::parse`](src/chicken.rs) splits the line and reads each field with [`c_atoi`](src/config.rs) | the count C tested against `15` is the count reported here, and a field C leaves unread reads as `0` — the two agree on every line `save_chicken` and `create_a_egg` wrote |
 | An edit into a document that already fills the [`MAX_EDITOR_DATA_LINES`](src/paths.rs) rows loses whatever needs a row the array has not got: the touched line is cut short with a `'\n'` glued to its last kept row (`:366-387`) and, for an edit further up, the row at the very end of the array is trimmed to one cell short (`:447-458`) | same, at the cap | the first port refused the edit instead, so a full article accepted nothing more; a real edit there now silently truncates the tail exactly as C does. One case is not reproduced: deleting the last row of a full array leaves C counting one row more than the document has — a tail entry it no longer maintains, which paints blank where the port paints the row that is really there. The saved bytes agree either way. |
+| `SO_REUSEADDR` **and** `SO_REUSEPORT` on every listening socket (`net_server.c:634-645`) | `SO_REUSEADDR` only ([`net::bind`](src/net.rs)) | the second option exists so several processes can bind one port and have the kernel split the connections between them; with `fork()` gone there is exactly one listener, so setting it would only turn "another `bbsd` is still running" from a refused bind into two daemons quietly sharing the port. A restart fails loudly instead. |
+| A parent that counts its children in `SYS_child_process_count` and compares it to `BBS_max_client` on each accept (`net_server.c:961`) | [`net::Gateway::reserve_total`](src/net.rs) compares the live task count to the limit the reload published | the first port sized a semaphore once at startup, which is the number the C process could never be: raise or lower `bbs_max_client` and the gate now moves on the next accept, as C's does. |
+| `arg_usage()` prints the literal `bbsd` (`main.c:83`) | the same literal ([`daemon::PROG_NAME`](src/daemon.rs)) | `argv[0]` is what the shell typed, so a start through a path or a symlink would print a usage line the C server never prints; the server root still comes from `argv[0]`, as `main.c:217` has it. |
 
 ### 10.2 C quirks we reproduced on purpose
 
@@ -901,6 +936,7 @@ next key, and page with space.
 | next | one real post end to end against a **test** database, then the same reply/modify/delete | the web site shows what the Rust server wrote, with the header and cache files C would have produced |
 | done | the menu actions left: the two profile editors (§6.1 item 28), and finding out what `M_FAVOR_SECTION` is — a menu filter, already ported | the top menu has no key that only logs |
 | done | the two `libgame.so` entries `@RunMBEM` names: 电子小鸡 and the 糖糖 it spends (§6.1 item 29) | the chicken page, its nine actions and its death run against a record file, with no database write outside a money transaction |
+| done | the C behaviours the first pass left out: the two connection limits read at each accept, the `-h`/`-C` command surface, `@RELOADCONF`, the load-path log lines, the menu clocks and the panel rotation (§6.1 items 30–34) | each of them has an offline test, and `bbsd -C` answers the six configure keys on column 24 |
 | last | a side-by-side comparison with C over the whole phase-1 surface | the same actions produce the same screen |
 
 ---

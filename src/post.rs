@@ -289,6 +289,15 @@ pub async fn article_excerption_set(
 /// `TITLE_INPUT_MAX_LEN` (`article_post.c:31`): the display columns the title prompt holds.
 const TITLE_INPUT_MAX_LEN: usize = 72;
 
+/// `char title_input[BBS_article_title_max_len + 1]` (`article_post.c:44`).
+const TITLE_POST_BUF_LEN: usize = crate::paths::ARTICLE_TITLE_MAX_LEN + 1;
+
+/// `char title_input[BBS_article_title_max_len + sizeof("Re: ")]` (`article_post.c:761`). The
+/// array the reply title is typed into is sized with the *string literal*, whose `sizeof` counts
+/// its terminator, so a reply keeps the four prefix columns and the terminator byte a new post
+/// has: 165, not 164.
+const TITLE_REPLY_BUF_LEN: usize = crate::paths::ARTICLE_TITLE_MAX_LEN + "Re: ".len() + 1;
+
 /// `article_post` (`article_post.c:36-437`): a new root article, from the title menu through
 /// [`editor::editor_display`] to one transaction. `Ok(true)` is C's `ret = 1`, which is what
 /// tells the board list to re-query the page; anything that left the database alone — the
@@ -370,7 +379,7 @@ pub async fn article_post(
                 KEY_NULL | KEY_TIMEOUT => return Ok(false),
                 KEY_CR => {}
                 KEY_T => {
-                    let buf_len = crate::paths::ARTICLE_TITLE_MAX_LEN + 1;
+                    let buf_len = TITLE_POST_BUF_LEN;
                     let Some(typed) = screen::get_data(
                         term,
                         24,
@@ -787,7 +796,7 @@ pub async fn article_reply(
                 KEY_NULL | KEY_TIMEOUT => return Ok(false),
                 KEY_CR => {}
                 KEY_T => {
-                    let buf_len = crate::paths::ARTICLE_TITLE_MAX_LEN + 4;
+                    let buf_len = TITLE_REPLY_BUF_LEN;
                     let Some(typed) = screen::get_data(
                         term,
                         24,
@@ -1077,6 +1086,20 @@ async fn notice(term: &mut Terminal, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The two `char title_input[...]` arrays, sized the way C declared them: `sizeof` a string
+    /// literal carries its terminator, which is the byte the reply buffer has and the new-post
+    /// buffer does not.
+    #[test]
+    fn the_title_buffers_are_the_c_arrays() {
+        assert_eq!(TITLE_POST_BUF_LEN, 161);
+        assert_eq!(TITLE_REPLY_BUF_LEN, 165);
+        assert_eq!(
+            TITLE_REPLY_BUF_LEN,
+            TITLE_POST_BUF_LEN + "Re: ".len(),
+            "a reply fits its prefix and keeps the terminator"
+        );
+    }
     use crate::config::{Config, DbConfig};
     use crate::state::AppState;
     use crate::term::{ByteIo, Pipe, Terminal};

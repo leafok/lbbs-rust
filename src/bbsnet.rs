@@ -64,7 +64,6 @@
 use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
-use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -72,6 +71,7 @@ use std::time::{Duration, Instant};
 use encoding_rs::{Decoder, GBK};
 use russh::keys::{PublicKey, PublicKeyOrCertificate, known_hosts};
 use russh::{Channel, ChannelMsg, ChannelReadHalf, ChannelWriteHalf};
+use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -415,28 +415,14 @@ async fn resolve_v4(host: &str, port: u16) -> io::Result<SocketAddr> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::AddrNotAvailable, "no IPv4 address"))
 }
 
-fn sockaddr_in(addr: SocketAddr) -> io::Result<libc::sockaddr_in> {
-    let SocketAddr::V4(v4) = addr else {
-        return Err(io::Error::new(io::ErrorKind::AddrNotAvailable, "not IPv4"));
-    };
-    Ok(libc::sockaddr_in {
-        // The BSD length byte, which Linux's `sockaddr_in` has no field for; C leaves it zero
-        // after `bzero`, but this is what the BSD kernels and `std` fill in.
-        #[cfg(any(
-            target_vendor = "apple",
-            target_os = "freebsd",
-            target_os = "dragonfly",
-            target_os = "openbsd",
-            target_os = "netbsd"
-        ))]
-        sin_len: std::mem::size_of::<libc::sockaddr_in>() as u8,
-        sin_family: libc::AF_INET as libc::sa_family_t,
-        sin_port: v4.port().to_be(),
-        sin_addr: libc::in_addr {
-            s_addr: u32::from(*v4.ip()).to_be(),
-        },
-        sin_zero: [0; 8],
-    })
+/// C's `hints.ai_family = AF_INET`, the `bind`/`connect` half of what `resolve_v4` already asked
+/// the resolver for. `SockAddr` builds the `sockaddr_in` — including the BSD length byte that
+/// Linux has no field for — on every platform, which is what this replaces.
+fn v4_only(addr: SocketAddr) -> io::Result<SockAddr> {
+    match addr {
+        SocketAddr::V4(_) => Ok(SockAddr::from(addr)),
+        SocketAddr::V6(_) => Err(io::Error::new(io::ErrorKind::AddrNotAvailable, "not IPv4")),
+    }
 }
 
 /// Why the socket could not be prepared (`:471-505`): the two `log_error` calls C makes for them
@@ -449,108 +435,74 @@ enum SocketError {
 
 /// `socket`/`bind`/`fcntl(O_NONBLOCK)` (`:471-505`), the socket left bound to the site's own
 /// address so that the station sees the connection coming from where the session came in.
-fn bound_socket(local: SocketAddr) -> Result<TcpStream, SocketError> {
-    let addr = sockaddr_in(local).map_err(SocketError::Bind)?;
-    // SAFETY: a fresh descriptor. Every failure path below closes it; from `from_raw_fd` on, the
-    // `std` stream owns it and drops it.
-    let fd = unsafe { libc::socket(libc::AF_INET, libc::SOCK_STREAM, libc::IPPROTO_TCP) };
-    if fd < 0 {
-        return Err(SocketError::Socket(io::Error::last_os_error()));
-    }
-    // SAFETY: `addr` is a `sockaddr_in` and its size is passed with it.
-    if unsafe {
-        libc::bind(
-            fd,
-            &addr as *const libc::sockaddr_in as *const libc::sockaddr,
-            std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
-        )
-    } < 0
-    {
-        let err = io::Error::last_os_error();
-        // SAFETY: `fd` is this function's own descriptor.
-        unsafe { libc::close(fd) };
+///
+/// The handle is still unregistered when this returns: C's first loop retries `connect()` on it
+/// before anything waits on the runtime, and `registered` moves it into the reactor afterwards.
+/// `Socket` owns the descriptor throughout, which is what the paired `libc::close` calls on each
+/// failure path used to do by hand.
+fn bound_socket(local: SocketAddr) -> Result<Socket, SocketError> {
+    let addr = v4_only(local).map_err(SocketError::Bind)?;
+    let sock = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+        .map_err(SocketError::Socket)?;
+    if let Err(err) = sock.bind(&addr) {
         return Err(SocketError::Bind(err));
     }
-    // SAFETY: `fd` is this function's own descriptor, and `F_SETFL` only reads back `F_GETFL`.
-    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL, 0) };
-    let blocked =
-        flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0;
-    if blocked {
-        let err = io::Error::last_os_error();
-        // SAFETY: `fd` is this function's own descriptor.
-        unsafe { libc::close(fd) };
+    set_lowdelay(&sock);
+    if let Err(err) = sock.set_nonblocking(true) {
         return Err(SocketError::NonBlocking(err));
     }
-
-    // SAFETY: `fd` is an open, non-blocking TCP socket that nothing else holds.
-    let std = unsafe { std::net::TcpStream::from_raw_fd(fd) };
-    TcpStream::from_std(std).map_err(SocketError::NonBlocking)
+    Ok(sock)
 }
 
-/// `connect()` in C's first loop (`:579-597`): `Ok` is the connection completing at once, and the
-/// `errno` of a failure is what the loop branches on.
-fn connect_now(fd: RawFd, remote: SocketAddr) -> Result<(), i32> {
-    let addr = sockaddr_in(remote).map_err(|_| libc::EINVAL)?;
-    // SAFETY: `fd` is this socket's descriptor and `addr` is a `sockaddr_in` of the right size.
-    if unsafe {
-        libc::connect(
-            fd,
-            &addr as *const libc::sockaddr_in as *const libc::sockaddr,
-            std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
-        )
-    } == 0
-    {
-        return Ok(());
-    }
-    Err(io::Error::last_os_error()
-        .raw_os_error()
-        .unwrap_or(libc::EIO))
+/// The `poll(POLLOUT)` of C's second loop (`:600-677`) waits through the runtime, which needs to
+/// own the registration; `set_nonblocking` above is what lets it take the socket.
+fn registered(sock: Socket) -> io::Result<TcpStream> {
+    TcpStream::from_std(std::net::TcpStream::from(sock))
 }
 
-/// `getsockopt(SO_ERROR)` (`:646-653`): what a non-blocking connect answered.
-fn so_error(fd: RawFd) -> io::Result<i32> {
-    let mut error = 0i32;
-    let mut len = std::mem::size_of::<i32>() as libc::socklen_t;
-    // SAFETY: an int and its size, written by the kernel for a descriptor this holds.
-    if unsafe {
-        libc::getsockopt(
-            fd,
-            libc::SOL_SOCKET,
-            libc::SO_ERROR,
-            &mut error as *mut i32 as *mut libc::c_void,
-            &mut len,
-        )
-    } < 0
-    {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(error)
+/// `connect()` in C's first loop (`:579-597`): `Ok` is the connection completing at once, and
+/// [`connect_pending`] decides whether a failure still means the loop should watch the socket.
+fn connect_now(sock: &Socket, remote: SocketAddr) -> io::Result<()> {
+    sock.connect(&v4_only(remote)?)
 }
 
-/// `netinet/ip.h`'s low-delay bit of the ToS byte. `libc` re-exports the `IPTOS_*` values only
-/// for the Linux-family targets, so the byte C reads from the header is spelled out here; it is
-/// the same on every platform, and `libc::IP_TOS` (3 on Darwin, 1 on Linux) is not it.
-const IPTOS_LOWDELAY: libc::c_int = 0x10;
+/// The `errno`s C's first loop reads as "the connect is still going": `EAGAIN`, `EALREADY` and
+/// `EINPROGRESS`.
+#[cfg(unix)]
+const CONNECT_PENDING: [i32; 3] = [libc::EAGAIN, libc::EALREADY, libc::EINPROGRESS];
+
+/// The same three as Winsock numbers — `WSAEWOULDBLOCK`, `WSAEINPROGRESS`, `WSAEALREADY`. A socket
+/// failure on Windows carries the Winsock code from `WSAGetLastError`, not the CRT `errno` values
+/// that `libc` re-exports there, which is why the `unix` list above cannot be reused.
+#[cfg(windows)]
+const CONNECT_PENDING: [i32; 3] = [10035, 10036, 10037];
+
+#[cfg(not(any(unix, windows)))]
+const CONNECT_PENDING: [i32; 0] = [];
+
+/// Whether a failed `connect()` only means the answer has not come back yet.
+///
+/// This compares the OS error code rather than the `io::ErrorKind` because no kind covers C's
+/// three: `ErrorKind` classifies `EINPROGRESS` as `InProgress`, leaves `EALREADY` uncategorised,
+/// and Windows files all three under codes `ErrorKind::WouldBlock` does not stand for.
+fn connect_pending(err: &io::Error) -> bool {
+    err.raw_os_error()
+        .is_some_and(|code| CONNECT_PENDING.contains(&code))
+}
+
+/// `netinet/in.h`'s low-delay bit of the ToS byte, spelled out because the value is the same on
+/// every platform and `libc::IP_TOS` (3 on Darwin, 1 on Linux) is not it. `set_tos_v4` applies it
+/// as the `IPPROTO_IP`/`IP_TOS` pair C uses.
+const IPTOS_LOWDELAY: u32 = 0x10;
 
 /// `setsockopt(IP_TOS, IPTOS_LOWDELAY)` (`:683-688`): a failure is only worth the log line C
 /// writes for it.
-fn set_lowdelay(fd: RawFd) {
-    let tos: libc::c_int = IPTOS_LOWDELAY;
-    // SAFETY: an int of the size passed, on a descriptor this holds.
-    if unsafe {
-        libc::setsockopt(
-            fd,
-            libc::IPPROTO_IP,
-            libc::IP_TOS,
-            &tos as *const libc::c_int as *const libc::c_void,
-            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-        )
-    } < 0
-    {
-        tracing::error!(
-            "setsockopt IP_TOS={tos} error ({})",
-            io::Error::last_os_error()
-        );
+///
+/// C sets it after the connect is confirmed. The option is per-socket and no traffic has been
+/// sent by then on either path, so the only difference is that the SYN carries the bit too.
+fn set_lowdelay(sock: &Socket) {
+    if let Err(err) = sock.set_tos_v4(IPTOS_LOWDELAY) {
+        tracing::error!("setsockopt IP_TOS={IPTOS_LOWDELAY} error ({err})");
     }
 }
 
@@ -818,8 +770,8 @@ async fn connect(term: &mut Terminal, session: &mut Session, station: &Station) 
             return -1;
         }
     };
-    let stream = match bound_socket(local) {
-        Ok(stream) => stream,
+    let sock = match bound_socket(local) {
+        Ok(sock) => sock,
         Err(SocketError::Socket(e)) => {
             tracing::error!("socket() error: {e}");
             return -1;
@@ -863,17 +815,17 @@ async fn connect(term: &mut Terminal, session: &mut Session, station: &Station) 
         if clock.tick(term).await {
             break;
         }
-        match connect_now(stream.as_raw_fd(), remote) {
+        match connect_now(&sock, remote) {
             Ok(()) => {
                 connected = true;
                 break;
             }
-            Err(errno) if matches!(errno, libc::EAGAIN | libc::EALREADY | libc::EINPROGRESS) => {
-                break;
-            }
-            Err(libc::EINTR) => continue,
-            Err(errno) => {
-                tracing::error!("connect(socket) error ({errno})");
+            Err(e) if connect_pending(&e) => break,
+            // `socket2` already restarts on `EINTR`, so this only fires where a retry is not
+            // possible; C's loop just calls `connect()` again.
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => {
+                tracing::error!("connect(socket) error: {e}");
                 term.print("\x1b[1;31m连接失败！\x1b[m\r\n");
                 screen::press_any_key(term).await;
                 return -1;
@@ -881,15 +833,26 @@ async fn connect(term: &mut Terminal, session: &mut Session, station: &Station) 
         }
     }
 
+    // C waits on the same descriptor in both loops; the runtime can only do the second one, so
+    // the socket is registered once the `connect()` retries are done.
+    let stream = match registered(sock) {
+        Ok(stream) => stream,
+        Err(e) => {
+            tracing::error!("poll(socket) error: {e}");
+            return -1;
+        }
+    };
+
     // C's second loop (`:600-677`): the socket becomes writable when the answer arrives, and a
     // bad answer leaves it writable but unconnected, which is why a refused station is only
     // reported when the budget runs out.
     while !connected && !session.state.is_exiting() && !clock.tick(term).await {
         let ready = tokio::time::timeout(POLL, stream.writable()).await;
         match ready {
-            Ok(Ok(())) => match so_error(stream.as_raw_fd()) {
-                Ok(0) => connected = true,
-                Ok(_) => {}
+            // `getsockopt(SO_ERROR)` (`:646-653`): what a non-blocking connect answered.
+            Ok(Ok(())) => match stream.take_error() {
+                Ok(None) => connected = true,
+                Ok(Some(_)) => {}
                 Err(e) => {
                     tracing::error!("getsockopt() error: {e}");
                     return -1;
@@ -914,7 +877,6 @@ async fn connect(term: &mut Terminal, session: &mut Session, station: &Station) 
         return -1;
     }
 
-    set_lowdelay(stream.as_raw_fd());
     // `getsockname` (`:690-703`): the port the kernel chose for the bound socket.
     let bound = match stream.local_addr() {
         Ok(addr) => addr,

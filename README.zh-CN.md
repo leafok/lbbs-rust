@@ -155,18 +155,18 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | 把 ESC 序列翻译成按键码 | 完成 |
 | [src/screen.rs](src/screen.rs) | 1151 | `src/screen.c` | 清屏、回显接管 `set_input_echo`、行输入 `str_input`、分页器 `display_data` | 完成 |
 | [src/db.rs](src/db.rs) | 1580 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
-| [src/board.rs](src/board.rs) | 1553 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
+| [src/board.rs](src/board.rs) | 1602 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
 | [src/browse.rs](src/browse.rs) | 3371 | `src/section_list_display.c`、`src/section_list_loader.c`、`src/menu_proc.c`（两个精华区入口） | 帖子列表、列表按键、阅读帖子、阅读位置文件，以及版块精华区树的浏览与树里读一篇帖子 | 完成 |
 | [src/editor.rs](src/editor.rs) | 1853 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
-| [src/post.rs](src/post.rs) | 1617 | `src/article_post.c`、`src/article_del.c`、`src/article_op.c` | 发帖、回复、修改、删除、精华标记、一篇帖子的网页链接，以及各个写入动作自己的事务 | 完成 |
+| [src/post.rs](src/post.rs) | 1640 | `src/article_post.c`、`src/article_del.c`、`src/article_op.c` | 发帖、回复、修改、删除、精华标记、一篇帖子的网页链接，以及各个写入动作自己的事务 | 完成 |
 | [src/viewlog.rs](src/viewlog.rs) | 369 | `src/article_view_log.c` | 记录该用户读过哪些帖子 | 完成 |
 | [src/favorlog.rs](src/favorlog.rs) | 452 | `src/article_favor.c` | 记录该用户收藏了哪些帖子 | 完成 |
 | [src/favorlist.rs](src/favorlist.rs) | 785 | `src/article_favor_display.c`、`src/article_favor.c`（取页）、`src/menu_proc.c`（`FAVOR_TOPIC` 菜单项） | 我收藏的主题列表：两个名称栏目、就地取消收藏，以及每行通向的看板 | 完成 |
-| [src/roster.rs](src/roster.rs) | 705 | `src/user_list_loader.c` | 在线用户列表与发帖数统计 | 完成 |
+| [src/roster.rs](src/roster.rs) | 735 | `src/user_list_loader.c` | 在线用户列表与发帖数统计 | 完成 |
 | [src/userinfo.rs](src/userinfo.rs) | 954 | `src/user_info_display.c`、`src/user_list_display.c`（查找）、`src/bbs.c`（等级与星座表） | 一个用户的资料页，以及通向它的用户名查找 | 完成 |
 | [src/user_info_update.rs](src/user_info_update.rs) | 642 | `src/user_info_update.c`、`src/menu_proc.c`（那两个资料条目） | 说明档与签名档两个编辑器：取 `user_pubinfo` 的一列走一遍编辑器，过敏感词、数行数，再写回去 | 完成 |
 | [src/userlist.rs](src/userlist.rs) | 1053 | `src/user_list_display.c`、`src/menu_proc.c`（两个花名册入口） | 线上使用者与已注册用户两页：标题、栏目、翻页，以及在两页之间走动的按键 | 完成 |
-| [src/loader.rs](src/loader.rs) | 1603 | `src/section_list_loader.c` | 增量刷新任务、它顺带写出的文章缓存文件，以及每个版块那棵精华区菜单 | 完成 |
+| [src/loader.rs](src/loader.rs) | 1684 | `src/section_list_loader.c` | 增量刷新任务、它顺带写出的文章缓存文件，以及每个版块那棵精华区菜单 | 完成 |
 | [src/cache.rs](src/cache.rs) | 650 | `src/article_cache.c` | 渲染与读取 `var/articles/<CID>` 及其行偏移表 | 完成 |
 | [src/data_file_mgr.rs](src/data_file_mgr.rs) | 452 | `src/data_file_mgr.c`、`src/bbs_cmd.c`（`DATAMGR` 那条） | `@DATAMGR` 列表：按编号选一份站点固定文字，编辑、预览，再把结果同时写回安装的那份和它的 `.user` 副本 | 完成 |
 | [src/menu.rs](src/menu.rs) | 2440 | `src/menu.c` | `menu.conf` 解析与页面跳转 | 解析/跳转完成，功能本体未完成 |
@@ -180,9 +180,9 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/chicken.rs](src/chicken.rs) | 2289 | `utils/game/chicken.c` | 电子小鸡：一行十四个数字加一个名字、取名那一问、对一只小鸡能做的九件事，以及孵出下一颗蛋的那次死亡 | 完成 |
 | [src/money.rs](src/money.rs) | 243 | `utils/game/money.c` | 糖糖：会话缓存的余额、到上限就停住的存钱，以及要么全给要么不给的取钱 | 完成 |
 | [src/bbs.rs](src/bbs.rs) | 973 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序（含回显接管）、`bbs_center` | 菜单循环完成，`conf/menu.conf` 绑定的每个动作都有处理函数（收藏目录那个是菜单过滤条件，不是动作） |
-| [src/net.rs](src/net.rs) | 358 | `src/net_server.c` | accept、连接数限制、优雅退出 | 完成 |
+| [src/net.rs](src/net.rs) | 469 | `src/net_server.c` | accept、连接数限制、优雅退出 | 完成 |
 | [src/ssh.rs](src/ssh.rs) | 504 | `src/net_server.c`（libssh 那一半） | 宿主密钥、密码认证、会话通道 | 完成 |
-| [src/main.rs](src/main.rs) | 555 | `src/main.c`、`src/net_server.c` | 启动顺序、信号处理、`SIGHUP` 重载、退出 | 完成 |
+| [src/main.rs](src/main.rs) | 580 | `src/main.c`、`src/net_server.c` | 启动顺序、信号处理、`SIGHUP` 重载、退出 | 完成 |
 | [src/batch.rs](src/batch.rs) | 383 | `utils/lib/db_open.inc.php` + 三个脚本里反复出现的那几行 | 一个生成工具的完整一生：参数、服务器根目录、`conf/bbsd.conf`、数据库，以及脚本自己的 stdout 文字与退出码 | 完成 |
 | [src/section_list.rs](src/section_list.rs) | 149 | `utils/lib/section_list.inc.php` | 生成工具要走的那棵分类/版块树，附带调用方自己的每版数据 | 完成 |
 | [src/gen_top.rs](src/gen_top.rs) | 306 | `utils/bin/gen_top.php` | `var/bbs_top.txt` 与 `var/bbs_top_menu.conf`：本周十篇最热帖子 | 完成 |
@@ -190,9 +190,9 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 424 | `utils/bin/gen_ex_list.php` | 被守护进程标了记的每个版块，各写出一个 `var/gen_ex/<SID>` 精华区树 | 完成 |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs)、[gen_section_menu.rs](src/bin/gen_section_menu.rs)、[gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | `php utils/bin/*.php` 那几行 crontab | 三个可执行文件：调用三个生成工具，把脚本的退出码原样交回给 shell | 完成 |
 
-另有 [src/daemon.rs](src/daemon.rs)（427 行，命令行与后台化）、[src/log.rs](src/log.rs)（513 行，两个日志文件）、[src/state.rs](src/state.rs)（410 行，加载器发布、会话读取的共享状态）。
+另有 [src/daemon.rs](src/daemon.rs)（480 行，命令行与后台化）、[src/log.rs](src/log.rs)（542 行，两个日志文件）、[src/state.rs](src/state.rs)（410 行，加载器发布、会话读取的共享状态）。
 
-合计 36,358 行（含测试，测试就写在被测模块里）。共 524 个测试：库 518 个、可执行文件 6 个。其中 510 个只读代码
+合计 36,912 行（含测试，测试就写在被测模块里）。共 537 个测试：库 531 个、可执行文件 6 个。其中 523 个只读代码
 仓库里的东西，另外 14 个默认跳过，因为它们要连真实数据库、读真实生成的文件。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
@@ -338,6 +338,34 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
     拒收的那笔存款会让鸡卖不掉、留下 `无法存钱，放弃交易！`，两百零一克就死。死了是 `呜...小鸡挂了....`，
     `var/chicken/log` 里多一行，记录文件被 unlink，然后在要求杀鸡的那个动作中间孵出一颗新蛋——用的还是那个开头写着
     `宝宝` 的取名提示。
+30. **两个空转循环各自的时钟**——顶级菜单底下那块 活跃版块 面板（[`bbs::bbs_center`](src/bbs.rs)），以及 `w`
+    打开的 十大热门榜（[`bbs::show_top10_menu`](src/bbs.rs)）。两者的走法受 C 写了两次是同一条规则约束：任何按键——
+    除了 `KEY_NULL`/`KEY_TIMEOUT`——都刷新 `BBS_last_access_tm`，而一次超时只有在时钟已经走过
+    `BBS_max_user_idle_time` 秒之后才离开（[`net::IDLE_LIMIT`](src/net.rs)、`include/bbs.h:36`），在那之前只是重画
+    （`bbs_main.c:169-206`、`menu_proc.c:295-330`）。面板还多一个条件：它只属于顶级菜单，而且距上一次按键十秒之后
+    才挪（`bbs_main.c:178`），所以子菜单打开时它是停下来，而不是在子菜单自己的画面底下重画一遍。
+31. **累计访问人次**——欢迎页引用的那个访问总数，C 是在取在线列表的那一趟里读的，并没有自己的日程
+    （[`user_list.c:370`](../lbbs/src/user_list.c)，从 `:616-657` 走过去）。重载先查在线列表，再
+    `SELECT ID FROM user_login_log ORDER BY ID DESC LIMIT 1`，两个数一起发布出去
+    （[`loader::Loader::reload_online`](src/loader.rs)）；日志表是空的就留着上一个总数，不去宣布一个没人来过的站，
+    这和 `:394` 只在查到行时才赋值是一致的。
+32. **命令行那几样各打印什么**——`bbsd -h` 报的是 `arg_usage()` 报的字面 `bbsd`
+    （[`daemon::PROG_NAME`](src/daemon.rs)），不是 shell 敲进来那条路径；`bbsd -C` 每个方括号里的答案都落在第 24 列，
+    与 C 的制表位一致（[`daemon::flag_line`](src/daemon.rs)）；`@RELOADCONF` 在屏幕上回一句 `已发送指令` 再回菜单
+    （[`bbs::Action::ReloadConf`](src/bbs.rs)、`menu_proc.c:150-180`），而不是向没人按的按键发问。
+33. **加载路径写下的那几行**——池子装载完，报出来的就是 C 报的样子：花名册的
+    `Rebuild index of %d users, last_uid=%d` 和 `Loaded %d users`（`user_list.c:243`/`:248`）、置顶链表和标记不一致时
+    那两句 `Inconsistent state found: article %d …`（`section_list.c:1104`/`:1147`）、
+    `Count of page exceed limit in section %d`（`section_list.c:1384`），以及一趟配置重载成功时写在 common 流上的
+    `Reload section config successfully`（`section_list_loader.c:757`）。加载器自己的计数是格式化进消息本身的，
+    没有当作 tracing 字段传，因为 C 的一行日志就是一个字符串——见
+    [`log::format_line`](src/log.rs) 和钉住这一点的测试。
+34. **两个跟着配置走的限制**——accept 那道关卡拿当前活着的会话数与重载刚发布的
+    `bbs_max_client` 比较（[`net::Gateway::reserve_total`](src/net.rs)），这正是 `net_server.c:961` 每次 accept 都做一遍的
+    `SYS_child_process_count - 1 < BBS_max_client`；因为地址被拒的那条连接会把总名额交回去，不会每拒一次漏一个。
+    回复的标题缓冲也按 C 的数组来（[`post::TITLE_REPLY_BUF_LEN`](src/post.rs)）：
+    `BBS_article_title_max_len + sizeof("Re: ")` 把结尾那个 `'\0'` 多算了一遍（`article_post.c:761`），所以是 165 字节，
+    不是新发帖的 161（`:44`）。
 
 ### 6.2 在真实论坛数据库上验证过
 
@@ -402,14 +430,14 @@ Rust 源码里出现的每一个 `file.c:NNN` 引用都对准上面这个修订�
 ```bash
 cd lbbs-rust
 cargo build            # 编译库和可执行文件
-cargo test             # 510 个不需要数据库的测试（另有 14 个见 7.2）
+cargo test             # 523 个不需要数据库的测试（另有 14 个见 7.2）
 cargo fmt              # 全树已经是 rustfmt 干净的，提交前跑一次
 ```
 
 正常情况长这样：
 
 ```
-test result: ok. 504 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
+test result: ok. 517 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
@@ -656,6 +684,9 @@ Rust 里这些路径集中放在 [src/paths.rs](src/paths.rs)，
 | 事务一直开着，靠 `mysql_close` 收尾 | 每条路径显式 `commit` / `rollback` | 连接池里带着未结束的事务还回去，会坑到下一个使用者 |
 | `setenv("TZ", ...)` + `tzset()` | 记录在 `Session::user_tz` | 改进程环境会泄漏到其他会话 |
 | 用 `SIGUSR1` 刷新内存池 | `Loader::run` 周期性刷新 | 用任务替代信号 |
+| 每个监听套接字同时设 `SO_REUSEADDR` **和** `SO_REUSEPORT`（`net_server.c:634-645`） | 只设 `SO_REUSEADDR`（[`net::bind`](src/net.rs)） | 后一个选项是让好几个进程绑同一个端口、由内核把连接分给他们；`fork()` 去掉之后监听的就一个，设上它只会把“另一个 `bbsd` 还在跑”从一次失败的 bind 变成两个守护进程悄悄共用一个端口。现在重启会响亮地失败，而不是并行着互相抢连接。 |
+| 父进程在 `SYS_child_process_count` 里数自己的子进程，每次 accept 拿它和 `BBS_max_client` 比（`net_server.c:961`） | [`net::Gateway::reserve_total`](src/net.rs) 拿当前活着的会话数与重载刚发布的上限比 | 最早的移植在启动时就把信号量定死了，而那恰恰是 C 那个数永远不可能做到的事：把 `bbs_max_client` 调大调小，下一次的 accept 关卡就跟着动，和 C 一样。 |
+| `arg_usage()` 打印的是字面量 `bbsd`（`main.c:83`） | 同样是字面量（[`daemon::PROG_NAME`](src/daemon.rs)） | `argv[0]` 是 shell 敲进来的那条路径，照它打印就会输出 C 从来不会打印的 usage；服务器根目录仍然由 `argv[0]` 推出来，与 `main.c:217` 一致。 |
 | `editor.c` 每次编辑只重新拆分改动的那条数据行，再挪动显示指针数组 | 同样只重排那一行（[`EditorData::recount_line`](src/editor.rs)） | 最早的移植每敲一个字符就把整个文档重排一遍，黏贴长帖时开销随长度平方增长、把一个 CPU 核跑满，而 C 几乎不耗 CPU |
 | 每一局猜拳里的 `srand((unsigned) time(NULL))` 加 `rand() % 3`（`chicken.c:697-698`） | [`chicken::opponent`](src/chicken.rs) 混的是同一颗以秒为单位的种子 | glibc 的加法反馈发生器是 libc 的性质而不是这个游戏的性质，照搬过来等于多维护一个 libm。种子仍然一秒变一次、仍然只有三个答案，所以一秒之内猜两次碰到的还是同一只手——这才是玩家看得见的那部分。 |
 | 小鸡记录用 `fscanf` 读：十四个 `%d` 加一个 `%s`（`chicken.c:111-112`） | [`Chicken::parse`](src/chicken.rs) 把这一行切开，逐格交给 [`c_atoi`](src/config.rs) | C 拿去和 `15` 比较的格数这里照样报得出来，C 读不到的那一格这里读成 `0`——凡是 `save_chicken` 与 `create_a_egg` 写过的行，两边结果一致 |
@@ -821,6 +852,7 @@ hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用�
 | 下一步 | 在**测试库**上完整走一遍真实发帖，再依次验证回复/修改/删除 | 网页端能看到移植版写出的帖子，头信息与缓存文件和 C 一致 |
 | 已完成 | 剩下的菜单条目：资料编辑那两个编辑器（见 6.1 第 28 条），以及弄清 `M_FAVOR_SECTION` 到底是什么——它是一个菜单过滤条件，早就移植过了 | 上位菜单里不再有“只写日志”的按键 |
 | 已完成 | `@RunMBEM` 点名的 `libgame.so` 两个入口：电子小鸡，和它花的糖糖（见 6.1 第 29 条） | 小鸡那一屏、它的九个动作与它的死亡都对着一个记录文件跑过，除了糖糖事务之外不写数据库 |
+| 已完成 | 第一轮漏掉的 C 行为：每次 accept 现读的那两个连接数限制、`-h`/`-C` 那条命令面、`@RELOADCONF`、加载路径上的几行日志、两个空转循环的时钟与面板轮转（见 6.1 第 30–34 条） | 每一条都有一个不需要数据库的测试，`bbsd -C` 的六个 configure 答案都落在第 24 列 |
 | 最后 | 与 C 版就 Phase 1 的全部界面对比 | 同样操作得到同样的画面 |
 
 ---

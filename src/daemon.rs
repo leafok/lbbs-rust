@@ -34,6 +34,11 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+/// What `arg_usage()` prints as the program name (`main.c:83`): the literal string, not
+/// `argv[0]`, so a call through a path or a symlink still reads the way the C help does. The
+/// server root, by contrast, really is derived from `argv[0]` (`main.c:217`).
+pub const PROG_NAME: &str = "bbsd";
+
 /// `arg_options` (`main.c:60-67`), in order and with the same descriptions.
 pub const OPTIONS: [(&str, &str, &str); 6] = [
     ("-f", "--foreground", "Run in foreground"),
@@ -170,8 +175,22 @@ pub fn compile_config() -> String {
         // The pools are Arc<RwLock> in one process instead of shm segments.
         ("--with-sysv", "no"),
     ] {
-        out.push_str(&format!("{key}\t\t[{value}]\n"));
+        out.push_str(&flag_line(key, value));
     }
+    out
+}
+
+/// One `arg_compile_info()` row. C wrote the paddings into its format string — `\t\t` after every
+/// name but `\t` after `--enable-systemd` — and what that lands on is the column the eight-column
+/// tab stops put the bracket in: 24.
+fn flag_line(key: &str, value: &str) -> String {
+    let mut column = key.len();
+    let mut out = String::from(key);
+    while column < 24 {
+        column += 8 - (column % 8);
+        out.push('\t');
+    }
+    out.push_str(&format!("[{value}]\n"));
     out
 }
 
@@ -226,11 +245,20 @@ pub fn enter_server_root(argv0: &str) -> Result<PathBuf, RootError> {
 /// `main.c:231-238`: the locale C installs, and refuses to start without. It is the locale
 /// libc's `strftime` writes an article cache header in, which is the one place the port hands a
 /// formatted string rather than a byte it copied.
+#[cfg(unix)]
 pub fn apply_locale() -> Result<(), &'static str> {
     let name = c"en_US.UTF-8";
     if unsafe { libc::setlocale(libc::LC_ALL, name.as_ptr()) }.is_null() {
         return Err("setlocale(LC_ALL, en_US.UTF-8) error");
     }
+    Ok(())
+}
+
+/// There is no locale to install on Windows: `strftime` is not what formats the header there (see
+/// [`crate::cache`]), and the UCRT rejects `en_US.UTF-8` as a name, which would otherwise fail the
+/// check above and stop the daemon at startup for a reason that no longer applies.
+#[cfg(not(unix))]
+pub fn apply_locale() -> Result<(), &'static str> {
     Ok(())
 }
 
@@ -247,6 +275,7 @@ fn errno(err: &std::io::Error) -> i32 {
 ///
 /// The tokio runtime is built only after this returns, which is what keeps `fork()` away from
 /// the runtime's worker threads.
+#[cfg(unix)]
 pub fn init_daemon() -> Result<(), DaemonError> {
     match unsafe { fork() } {
         Err(err) => return Err(err),
@@ -273,6 +302,14 @@ pub fn init_daemon() -> Result<(), DaemonError> {
     Ok(())
 }
 
+/// Windows has no `fork`, no session to leave and no `umask`, so `-d` keeps the process in the
+/// foreground on the console it was started from. That is what a service wrapper or a scheduled
+/// task wants in any case, and the failures this function could report are all detaching failures.
+#[cfg(not(unix))]
+pub fn init_daemon() -> Result<(), DaemonError> {
+    Ok(())
+}
+
 /// `init_daemon()` failed; `main.c` ignored the code and carried on, which is the one place the
 /// port refuses to do the same.
 #[derive(Debug)]
@@ -286,6 +323,7 @@ impl std::fmt::Display for DaemonError {
 
 impl std::error::Error for DaemonError {}
 
+#[cfg(unix)]
 unsafe fn fork() -> Result<i32, DaemonError> {
     let pid = unsafe { libc::fork() };
     if pid == -1 {
@@ -356,7 +394,9 @@ mod tests {
 
     #[test]
     fn the_usage_block_aligns_the_descriptions() {
-        let text = usage("bbsd");
+        let text = usage(PROG_NAME);
+        // The literal name, so the block C prints is what the port prints.
+        assert_eq!(PROG_NAME, "bbsd");
         assert!(text.starts_with("Usage: bbsd [-fhvC] [...]\n\n"), "{text}");
         // The two %*s paddings put every description at column 8 + 24, whether or not the option
         // has a short argument.
@@ -376,6 +416,9 @@ mod tests {
         );
     }
 
+    /// C wrote its paddings as literal tabs in the format string, which lines the six answers up
+    /// on the 24th column; the row count is what the terminal shows, so the test expands the tab
+    /// stops instead of matching a tab count.
     #[test]
     fn the_compile_config_answers_the_six_configure_keys() {
         let text = compile_config();
@@ -387,7 +430,17 @@ mod tests {
             "--with-mariadb",
             "--with-sysv",
         ] {
-            assert!(text.contains(&format!("{key}\t\t[")), "{text}");
+            let line = text
+                .lines()
+                .find(|line| line.starts_with(key))
+                .unwrap_or_else(|| panic!("{key} must be answered: {text}"));
+            let answer = line.find('[').expect("a bracketed answer");
+            let column = line[..answer].chars().fold(0usize, |col, ch| match ch {
+                '\t' => col + (8 - col % 8),
+                _ => col + 1,
+            });
+            assert_eq!(column, 24, "{line:?}");
+            assert!(line.ends_with(']'), "{line:?}");
         }
         assert!(text.starts_with(&app_info()), "{text}");
     }

@@ -32,6 +32,7 @@
 
 use std::fs::OpenOptions;
 use std::io::{self, Write};
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
@@ -78,6 +79,7 @@ const SUB_DT_MAX_LEN: usize = 50;
 /// without parsing anything. [`crate::daemon::apply_locale`] pins that locale to the
 /// `en_US.UTF-8` C installs at startup, because the glibc `C` locale's `%c` puts the year last
 /// and every header would otherwise differ from the file the C loader wrote for the same post.
+#[cfg(unix)]
 fn submission_time(sub_dt: i64) -> String {
     unsafe {
         let when = sub_dt as libc::time_t;
@@ -95,6 +97,31 @@ fn submission_time(sub_dt: i64) -> String {
         );
         String::from_utf8_lossy(&buf[..len.min(buf.len() - 1)]).into_owned()
     }
+}
+
+/// The Windows build has no `strftime`, so nothing here reads the process locale: `chrono` spells
+/// the layout out by hand instead. `%a %b %e %H:%M:%S %Y` is the `%c` the fixtures under
+/// `tests/fixtures/articles` were cut with, and the zone is appended the only way `chrono` can name
+/// a `Local` one — as a UTC offset, since the abbreviation needs a zone database it does not query.
+/// So a post cached on Windows reads `Wed Nov 15 06:13:20 2023 +0800` where the same post cached on
+/// a Unix station reads `Wed Nov 15 06:13:20 2023 CST`. Nothing in the port parses this field, but
+/// the two spellings do differ, which is why the byte-for-byte check against the C fixtures is a
+/// Unix-only test.
+#[cfg(not(unix))]
+fn submission_time(sub_dt: i64) -> String {
+    use chrono::{Local, TimeZone};
+
+    Local
+        .timestamp_opt(sub_dt, 0)
+        .single()
+        .map(|when| {
+            when.format("%a %b %e %H:%M:%S %Y %Z")
+                .to_string()
+                .chars()
+                .take(SUB_DT_MAX_LEN)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The `发布者:` block, cut to the C buffer and then to the display-line limit by the caller.
@@ -157,12 +184,13 @@ pub fn generate(
         return Ok(false);
     }
 
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o640)
-        .open(&data_file)?;
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    // The mode C passes to `open`, which has no Windows counterpart; the ACL a fresh file
+    // inherits from its directory stands in for it there.
+    #[cfg(unix)]
+    options.mode(0o640);
+    let mut file = options.open(&data_file)?;
 
     let mut header = header(article, section, bbs_name, &submission_time(article.sub_dt));
     let mut footer = footer(article, bbs_name, bbs_server, sub_ip);
@@ -484,6 +512,10 @@ mod tests {
         assert!(load(&dir, 9).unwrap().is_none());
     }
 
+    /// The fixtures are the bytes the C generator wrote, and its `strftime("%c %Z")` spells the
+    /// zone `CST` where [`submission_time`] can only write a UTC offset on Windows. Everything
+    /// except that token is meant to agree on both platforms, so this stays a Unix-only check.
+    #[cfg(unix)]
     #[test]
     fn generates_the_same_bytes_the_c_generator_does() {
         let dir = temp_dir("generate");

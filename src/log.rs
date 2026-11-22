@@ -371,32 +371,37 @@ fn message_of(event: &Event<'_>) -> Option<String> {
     visitor.0
 }
 
+/// Both streams captured into memory, for the tests that assert on what a module logs. The
+/// subscriber becomes the thread default, so an `async` body would have to stay on one thread;
+/// the C log has no equivalent to this — the lines simply went into `log/bbs.log`.
+#[cfg(test)]
+pub(crate) fn captured(body: impl FnOnce()) -> (String, String) {
+    let common = Arc::new(Mutex::new(Vec::new()));
+    let error = Arc::new(Mutex::new(Vec::new()));
+    let sink = LogSink {
+        common: buffered(&common, "test-common"),
+        error: buffered(&error, "test-error"),
+    };
+    tracing::subscriber::with_default(sink, body);
+    (text(&common), text(&error))
+}
+
+#[cfg(test)]
+fn buffered(lines: &Arc<Mutex<Vec<u8>>>, name: &str) -> Arc<Stream> {
+    Arc::new(Stream {
+        path: PathBuf::from(name),
+        target: Mutex::new(Target::Buffered(Arc::clone(lines))),
+    })
+}
+
+#[cfg(test)]
+fn text(lines: &Arc<Mutex<Vec<u8>>>) -> String {
+    String::from_utf8_lossy(&locked(lines)).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tracing::subscriber::with_default;
-
-    /// The two streams' contents after logging `body` into a throw-away subscriber.
-    fn captured(body: impl FnOnce()) -> (String, String) {
-        let common = Arc::new(Mutex::new(Vec::new()));
-        let error = Arc::new(Mutex::new(Vec::new()));
-        let sink = LogSink {
-            common: buffered(&common, "test-common"),
-            error: buffered(&error, "test-error"),
-        };
-        with_default(sink, body);
-        (
-            String::from_utf8_lossy(&locked(&common)).to_string(),
-            String::from_utf8_lossy(&locked(&error)).to_string(),
-        )
-    }
-
-    fn buffered(lines: &Arc<Mutex<Vec<u8>>>, name: &str) -> Arc<Stream> {
-        Arc::new(Stream {
-            path: PathBuf::from(name),
-            target: Mutex::new(Target::Buffered(Arc::clone(lines))),
-        })
-    }
 
     #[test]
     fn info_goes_to_the_common_stream_only() {
@@ -423,6 +428,30 @@ mod tests {
         // WARN has no C counterpart and rides the error stream.
         assert!(error.contains("[WARN] "), "{error}");
         assert_eq!(error.matches('\n').count(), 3, "{error}");
+    }
+
+    /// The visitor takes the message and nothing else, which is only sound while every value
+    /// sits inside that message the way C's format string held it. A count passed as a field
+    /// would vanish from the line without failing anything, so the counts the loader reports are
+    /// formatted in — and this is what would silently disappear if they were not.
+    #[test]
+    fn a_value_carried_as_a_field_never_reaches_the_line() {
+        let count = 4_096;
+        let (inline, _) = captured(|| {
+            tracing::info!("initially loaded {count} articles (last_aid=101)");
+        });
+        assert!(
+            inline.contains("[INFO] initially loaded 4096 articles (last_aid=101)\n"),
+            "{inline}"
+        );
+
+        let (dropped, _) = captured(|| {
+            tracing::info!(count, "initially loaded articles");
+        });
+        assert!(
+            !dropped.contains("4096"),
+            "the field form is what the call sites must not use: {dropped}"
+        );
     }
 
     #[test]

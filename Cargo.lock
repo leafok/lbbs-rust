@@ -1172,6 +1172,7 @@ dependencies = [
  "libc",
  "regex",
  "russh",
+ "socket2",
  "sqlx",
  "tokio",
  "tracing",

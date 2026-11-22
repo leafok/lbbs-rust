@@ -65,12 +65,15 @@ const EXIT_CONFIG: u8 = 254;
 
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().collect();
-    let prog = argv.first().cloned().unwrap_or_else(|| "bbsd".to_string());
+    let argv0 = argv
+        .first()
+        .cloned()
+        .unwrap_or_else(|| daemon::PROG_NAME.to_string());
 
     // main.c:188-208, handlers applied in argument order, so the first printing option wins.
     let flags = match daemon::parse(&argv) {
         Args::Help => {
-            daemon::print_stderr(&daemon::usage(&prog));
+            daemon::print_stderr(&daemon::usage(daemon::PROG_NAME));
             return code(EXIT_OK);
         }
         Args::Version => {
@@ -87,7 +90,7 @@ fn main() -> ExitCode {
         }
         Args::Invalid => {
             daemon::print_stderr("Invalid arguments\n");
-            daemon::print_stderr(&daemon::usage(&prog));
+            daemon::print_stderr(&daemon::usage(daemon::PROG_NAME));
             return code(EXIT_USAGE);
         }
         Args::Run(flags) => flags,
@@ -103,7 +106,7 @@ fn main() -> ExitCode {
     }
 
     // main.c:217-229: chdir(dirname(argv[0])) and then chdir("..").
-    let root = match daemon::enter_server_root(&prog) {
+    let root = match daemon::enter_server_root(&argv0) {
         Ok(root) => root,
         Err(err) => {
             daemon::print_stderr(&format!("{err}\n"));
@@ -404,9 +407,16 @@ fn file_mtime(path: &Path) -> Option<i64> {
 
 /// `mkdir(path, 0750)`, which the original tolerated `EEXIST` and nothing else.
 fn create_dir(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
     use std::os::unix::fs::DirBuilderExt;
 
-    match std::fs::DirBuilder::new().mode(0o750).create(path) {
+    // `mode` is the only reason this needs to be mut, and it only exists on Unix.
+    #[cfg_attr(not(unix), allow(unused_mut))]
+    let mut builder = std::fs::DirBuilder::new();
+    // No mode to ask for on Windows, where the directory inherits its ACL.
+    #[cfg(unix)]
+    builder.mode(0o750);
+    match builder.create(path) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
         Err(err) => Err(err),
@@ -415,6 +425,7 @@ fn create_dir(path: &Path) -> std::io::Result<()> {
 
 /// The `sigaction` table of `main.c:418-448`, as tasks.
 fn spawn_signal_handlers(state: std::sync::Arc<AppState>, sink: LogSink) {
+    #[cfg(unix)]
     tokio::spawn(async move {
         use tokio::signal::unix::{SignalKind, signal};
 
@@ -443,6 +454,20 @@ fn spawn_signal_handlers(state: std::sync::Arc<AppState>, sink: LogSink) {
             }
         }
     });
+
+    // Windows delivers none of those: there is no SIGHUP to reload on and no SIGUSR1 to reopen the
+    // logs with, which leaves the sink above with nothing to do. What it does deliver, the console
+    // control events, all arrive through `ctrl_c`, and C had no handler for the ^C they stand for
+    // beyond the default kill — the orderly exit above is the port's gentler version of it.
+    #[cfg(not(unix))]
+    {
+        let _ = &sink;
+        tokio::spawn(async move {
+            while tokio::signal::ctrl_c().await.is_ok() {
+                state.exit();
+            }
+        });
+    }
 }
 
 /// A startup failure, in the words `main.c` wrote to the log before its `return`.

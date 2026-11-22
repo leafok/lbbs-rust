@@ -27,6 +27,7 @@
 
 use std::fs::OpenOptions;
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
@@ -208,13 +209,11 @@ async fn notice(term: &mut Terminal, message: &str) {
 /// two messages and the path as the list spells it. A file that is already there keeps the mode
 /// it has — `open`'s mode argument is only used on create in C too.
 fn write_copy(file: &Path, name: &str, data: &[u8]) -> Result<(), String> {
-    let mut handle = match OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o640)
-        .open(file)
-    {
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    options.mode(0o640);
+    let mut handle = match options.open(file) {
         Ok(handle) => handle,
         Err(err) => return Err(format!("open({name}) error ({err})")),
     };
@@ -340,10 +339,12 @@ mod tests {
     /// copies and says a reload is what makes it count.
     #[tokio::test]
     async fn a_saved_edit_lands_on_both_copies() {
+        #[cfg(unix)]
         use std::os::unix::fs::PermissionsExt;
 
         let root = root("save");
         std::fs::write(root.join(DATA_WELCOME), "欢迎回来\n").unwrap();
+        #[cfg(unix)]
         std::fs::set_permissions(
             root.join(DATA_WELCOME),
             std::fs::Permissions::from_mode(0o600),
@@ -389,7 +390,9 @@ mod tests {
         // The mode `0640` is what C asks `open` for, and a mode argument only counts on create:
         // the packaged file that was already there keeps the `0600` it was given, and the `.user`
         // copy the page creates is the one that answers `0640` — minus whatever the harness umask
-        // takes off it, which is why the world bits are what the test asks for.
+        // takes off it, which is why the world bits are what the test asks for. There is no mode
+        // to ask on Windows, so only the copies above are checked there.
+        #[cfg(unix)]
         assert_eq!(
             std::fs::metadata(root.join(DATA_WELCOME))
                 .unwrap()
@@ -398,6 +401,7 @@ mod tests {
                 & 0o777,
             0o600
         );
+        #[cfg(unix)]
         assert_eq!(
             std::fs::metadata(root.join(format!("{DATA_WELCOME}.user")))
                 .unwrap()

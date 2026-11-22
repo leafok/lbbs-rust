@@ -373,9 +373,11 @@ mod tests {
         // The directory the C daemon assumes already exists: `var/gen_ex/`.
         let missing = dir.join("no-such-dir").join("18");
         let error = write_file(&missing, "").unwrap_err();
+        // `write_file` prints the path as the platform spells it — backslashes on Windows — so the
+        // prefix is read off the same `Path` instead of hand-joining it with a `/`.
         assert!(error.message.starts_with(&format!(
-            "file_put_contents({}/no-such-dir/18): Failed to open stream: ",
-            dir.display()
+            "file_put_contents({}): Failed to open stream: ",
+            missing.display()
         )));
         assert_eq!(error.code, EXIT_FATAL);
         std::fs::remove_dir_all(&dir).unwrap();

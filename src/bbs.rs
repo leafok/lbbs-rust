@@ -220,6 +220,16 @@ impl ActiveBoard {
     }
 }
 
+/// `bbs_main.c:178`'s `time(NULL) - t_last_action >= 10`: the gap between two panel rotations.
+const PANEL_TICK_SECS: i64 = 10;
+
+/// `bbs_menu.choose_step == 0 && time(NULL) - t_last_action >= 10`. The rotation belongs to the
+/// root menu alone — [`MenuNav::depth`] is 0 there and 1 as soon as a submenu is open — so a user
+/// reading a board list never has the rows under the menu repainted.
+fn panel_due(depth: usize, since_last_tick: i64) -> bool {
+    depth == 0 && since_last_tick >= PANEL_TICK_SECS
+}
+
 /// `bbs_center` (`bbs_main.c:153-234`), the menu loop a user lives in.
 pub async fn bbs_center(term: &mut Terminal, session: &mut Session) {
     let menus = session.state.menus();
@@ -241,8 +251,7 @@ pub async fn bbs_center(term: &mut Terminal, session: &mut Session) {
             // tracing::debug!("Debug: BBS_last_access_tm is updated");
         }
 
-        // `bbs_menu.choose_step == 0` is the root menu: only there does the panel tick.
-        if nav.depth() == 1 && session::now() - last_action >= 10 {
+        if panel_due(nav.depth(), session::now() - last_action) {
             last_action = session::now();
             // `bbs_center` ignores the return, so a `data/active_board.txt` that cannot be
             // read leaves the panel rows empty rather than ending the session.
@@ -357,9 +366,14 @@ pub fn bbs_do_choice<'a>(
                 MenuReturn::Redraw
             }
             Action::ReloadConf => {
-                // `reload_bbs_conf`'s `kill(getppid(), SIGHUP)`: the daemon owns the reload, so a
-                // session only asks for it.
+                // `menu_proc.c:156-174`: the ask is announced on screen and paid for with a key
+                // press, because the reload lands under the menu the user is looking at.
+                screen::clearscr(term);
+                // C's `发送指令失败` branch is `kill(getppid(), SIGHUP) < 0`. Here the ask is a
+                // flag on the shared state, which has no failure to report.
                 session.state.request_reload();
+                term.print("已发送指令\r\n");
+                screen::press_any_key(term).await;
                 MenuReturn::Redraw
             }
             Action::ListSection => {
@@ -507,13 +521,28 @@ pub(crate) async fn show_top10_menu(term: &mut Terminal, session: &mut Session) 
     while !session.state.is_exiting() {
         let key = term.read_key(MENU_KEY_TIMEOUT).await;
 
+        // `menu_proc.c:299-302`: the nested loop keeps the same idle clock `bbs_center` does, so
+        // a key typed here counts as activity for the whole session.
+        if key != KEY_NULL && key != KEY_TIMEOUT {
+            session.last_access_tm = session::now();
+        }
+
         if let Err(e) = session.online_update(Some("TOP10_MENU")).await {
             tracing::error!("user_online_update(TOP10_MENU) error: {e}");
         }
 
         match key {
             KEY_NULL => break,
-            KEY_TIMEOUT => continue,
+            // `:315-322`: a timeout leaves the menu standing until the idle clock runs out, and
+            // then closes it — otherwise the screen sat here for as long as the client stayed
+            // connected, holding a slot of `MaxClient` with nobody at the keyboard.
+            KEY_TIMEOUT => {
+                if session::now() - session.last_access_tm >= IDLE_LIMIT {
+                    tracing::debug!("User input timeout");
+                    break;
+                }
+                continue;
+            }
             _ => {}
         }
 
@@ -626,6 +655,29 @@ mod tests {
     /// `clearscr` then `moveto(1, 1)` then the question with the `N` it starts out holding.
     const PROMPT: &str = "\x1b[1;1H真的要关闭系统吗[y/N]? N";
 
+    /// The panel rotates at the root only. The three depths are the ones a session actually
+    /// holds there: `MenuNav::new` is the root, and every `@LIST`/submenu entry is one deeper.
+    #[test]
+    fn the_active_board_panel_rotates_only_at_the_root_menu() {
+        assert!(panel_due(0, PANEL_TICK_SECS));
+        assert!(panel_due(0, PANEL_TICK_SECS + 1));
+        assert!(!panel_due(0, PANEL_TICK_SECS - 1));
+        for depth in 1..=3 {
+            for elapsed in [0, PANEL_TICK_SECS, PANEL_TICK_SECS + 60] {
+                assert!(!panel_due(depth, elapsed), "depth {depth} never rotates");
+            }
+        }
+    }
+
+    /// The menu a user spends their time in is the one `bbs_center` builds, so the root the
+    /// gate tests has to be the root the cursor moves on.
+    #[test]
+    fn a_fresh_nav_is_at_the_depth_the_panel_gate_ticks_at() {
+        let menus = crate::menu::MenuSet::default();
+        let nav = MenuNav::new(&menus);
+        assert!(panel_due(nav.depth(), PANEL_TICK_SECS));
+    }
+
     fn screen_of(painted: &[u8]) -> String {
         String::from_utf8_lossy(painted).into_owned()
     }
@@ -681,6 +733,35 @@ mod tests {
                 screen_of(&painted)
             );
         }
+    }
+
+    /// `@RELOADCONF` says what it did and takes a key for it, then still hands the menu back —
+    /// and the ask itself stays standing for the daemon's reload loop.
+    #[tokio::test]
+    async fn reload_conf_confirms_on_screen_before_it_returns_to_the_menu() {
+        let (mut client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        let mut session = crate::session::offline_session();
+
+        let (ret, ()) = tokio::join!(
+            bbs_do_choice(&mut term, &mut session, Action::ReloadConf, "", false),
+            async {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                client.push(b" ");
+            }
+        );
+
+        assert_eq!(ret, MenuReturn::Redraw);
+        assert!(
+            session.state.take_reload_request(),
+            "the reload is still asked for"
+        );
+        let screen = screen_of(&client.take_available());
+        assert!(
+            screen.starts_with("\x1b[2J\x1b[1;1H已发送指令\r\n"),
+            "{screen}"
+        );
+        assert!(screen.contains("按任意键继续"), "{screen}");
     }
 
     /// An erased answer is an empty one — `buf[0]` is the terminator `get_data` left there,
@@ -909,6 +990,78 @@ mod tests {
         let mut client = keyed.await.unwrap();
         let painted = String::from_utf8_lossy(&client.take_available()).into_owned();
         assert!(painted.contains("没有可选项"), "{painted}");
+    }
+
+    /// The other half of `menu_proc.c:295-330`: a menu that *does* open a read loop closes it on
+    /// the idle clock, exactly like `bbs_center` does. The timeout alone did not end the visit —
+    /// only a timeout with `BBS_max_user_idle_time` gone by since the last key does — and a loop
+    /// that never ends holds one of `MaxClient` slots with nobody at the keyboard.
+    #[tokio::test]
+    async fn the_top10_menu_closes_when_the_idle_clock_runs_out() {
+        let set = crate::menu::MenuSet::parse(
+            "%S_TOP\none\n%\n%menu M_TOP10\nscreen 0, 0, S_TOP\n\
+              @LIST_ONLINE_USER 0, 0, 0, 0, \"\", \"在线看板\"\n%\n"
+                .as_bytes(),
+        )
+        .unwrap();
+        let mut session = crate::session::offline_session();
+        session.state.publish_top10(set);
+        // The clock is already past its limit, so the first timeout has to close the screen; the
+        // client is never asked for a key.
+        session.last_access_tm = session::now() - IDLE_LIMIT;
+
+        let (_client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        let closed = tokio::time::timeout(
+            Duration::from_secs(2),
+            show_top10_menu(&mut term, &mut session),
+        )
+        .await;
+        assert!(closed.is_ok(), "the idle timeout must end the visit");
+    }
+
+    /// A key typed inside the menu restarts that clock, which is what keeps an active reader at
+    /// the top-ten list: five seconds of age is nothing against the limit, and the press has to
+    /// be what pulls the clock back.
+    #[tokio::test]
+    async fn a_key_inside_the_top10_menu_keeps_it_open() {
+        let set = crate::menu::MenuSet::parse(
+            "%S_TOP\none\n%\n%menu M_TOP10\nscreen 0, 0, S_TOP\n\
+              @LIST_ONLINE_USER 0, 0, 0, 0, \"\", \"在线看板\"\n%\n"
+                .as_bytes(),
+        )
+        .unwrap();
+        let mut session = crate::session::offline_session();
+        session.state.publish_top10(set);
+        let stale = session::now() - 5;
+        session.last_access_tm = stale;
+
+        let (client, server) = Pipe::new();
+        let mut term = Terminal::new(ByteIo::Pipe(server));
+        // The menu opens, so the item it drew is on the wire; the Down key that follows is
+        // activity, which moves `last_access_tm` up from the back-dated value.
+        let keyed = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            client.push(b"\x1b[B");
+            client
+        });
+
+        let _ = tokio::time::timeout(
+            Duration::from_millis(600),
+            show_top10_menu(&mut term, &mut session),
+        )
+        .await;
+        let mut client = keyed.await.unwrap();
+        let painted = String::from_utf8_lossy(&client.take_available()).into_owned();
+        assert!(
+            painted.contains("在线看板"),
+            "the menu must be open: {painted}"
+        );
+        assert!(
+            session.last_access_tm > stale,
+            "the key has to refresh the idle clock, left at {}",
+            session.last_access_tm
+        );
     }
 
     /// What C's `kill(0, SIGTERM)` achieved: the flag was raised, every child's key wait answered

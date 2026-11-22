@@ -616,7 +616,7 @@ impl Loader {
 
         let count = self.append_new_articles().await?;
         let last_aid = self.state.board().last_aid();
-        tracing::info!(count, last_aid, "initially loaded articles");
+        tracing::info!("initially loaded {count} articles (last_aid={last_aid})");
 
         self.update_stats().await
     }
@@ -627,16 +627,14 @@ impl Loader {
     pub async fn tick(&mut self) {
         if self.reload_config {
             self.reload_config = false;
-            if let Err(e) = self.load_section_config().await {
-                tracing::warn!("section config reload failed: {e}");
-            }
+            Self::report_config_pass(self.load_section_config().await);
         }
 
         match self.append_new_articles().await {
             Ok(0) => {}
             Ok(count) => {
                 let last_aid = self.state.board().last_aid();
-                tracing::info!(count, last_aid, "incrementally loaded articles");
+                tracing::info!("incrementally loaded {count} articles (last_aid={last_aid})");
             }
             Err(e) => {
                 tracing::warn!("article load failed: {e}");
@@ -650,7 +648,8 @@ impl Loader {
         match self.replay_ops().await {
             Ok(0) => {}
             Ok(count) => {
-                tracing::info!(count, last_mid = ?self.watermark, "proceeded article logs")
+                let last_mid = self.watermark;
+                tracing::info!("proceeded {count} article logs (last_mid={last_mid:?})")
             }
             Err(e) => {
                 tracing::warn!("article op replay failed: {e}");
@@ -706,12 +705,31 @@ impl Loader {
         Ok(())
     }
 
-    /// `user_list_pool_reload(1)`, whose query filters on `BBS_user_off_line` (`:331`).
+    /// `user_list_pool_reload(1)`, whose query filters on `BBS_user_off_line` (`:331`). The pass
+    /// is both queries and one publish: C loads the list, then `user_login_count_load` (`:370`),
+    /// and reaches its index swap (`:650-657`) only if neither failed — so the online roster a
+    /// user sees and the 累计访问人次 beside it always come from the same pass.
     pub async fn reload_online(&self) -> Result<(), LoaderError> {
         let rows = self.state.db.online(USER_OFF_LINE_SECS).await?;
-        let roster = self.state.roster();
-        self.state.publish_online(OnlineList::load(&rows, &roster));
+        let online = {
+            let roster = self.state.roster();
+            OnlineList::load(&rows, &roster)
+        };
+        let count = self.state.db.login_count().await?;
+        self.publish_online_pass(online, count);
         Ok(())
+    }
+
+    /// The publish half of [`Loader::reload_online`]: one swap carrying both results, so the
+    /// pair a user sees is always a pair from the same pass. Split out because the queries
+    /// cannot run without the board's database.
+    fn publish_online_pass(&self, online: OnlineList, count: Option<i32>) {
+        self.state.publish_online(online);
+        // `:394` assigns only when a row came back; an empty `user_login_log` leaves the previous
+        // count standing rather than reporting the site has never been visited.
+        if let Some(count) = count {
+            self.state.set_login_count(count);
+        }
     }
 
     /// `user_stat_update`, which the C loader calls right after the roster because the
@@ -743,6 +761,16 @@ impl Loader {
         load_section_config_into(&mut board, &rows, &master_lists)?;
         load_gen_ex_menus_into(&mut board, &rows, &self.gen_ex_dir);
         Ok(())
+    }
+
+    /// `section_list_loader.c:751-758`: a config pass answers with exactly one line, the success
+    /// one on the common stream (`log_common("Reload section config successfully")`) and the
+    /// failure one on the error stream.
+    fn report_config_pass(result: Result<(), LoaderError>) {
+        match result {
+            Ok(()) => tracing::info!("Reload section config successfully"),
+            Err(e) => tracing::warn!("section config reload failed: {e}"),
+        }
     }
 
     /// `append_articles_from_db(last_aid + 1, 0, LOAD_ARTICLE_COUNT_LIMIT)`, run until a batch
@@ -801,7 +829,7 @@ impl Loader {
         let rendered =
             generate_caches_from_rows(&dir, &config.bbs_name, &config.bbs_server, &board, rows);
         if rendered > 0 {
-            tracing::debug!(rendered, "article cache files generated");
+            tracing::debug!("generated {rendered} article cache files");
         }
     }
 
@@ -824,7 +852,7 @@ impl Loader {
             applied,
         );
         if rendered > 0 {
-            tracing::debug!(rendered, "article cache files generated");
+            tracing::debug!("generated {rendered} article cache files");
         }
     }
 
@@ -1057,6 +1085,53 @@ mod tests {
         // Only the first op went through, so the lock is on and the delete never was.
         assert!(board.article_by_aid(1).unwrap().lock);
         assert!(board.article_by_aid(1).unwrap().visible);
+    }
+
+    /// `section_list_loader.c:751-758`: the loader child prints one line per config pass, and the
+    /// success line is `log_common()` — the only C message the port routes to `bbs.log`.
+    #[test]
+    fn a_config_pass_announces_itself_once() {
+        let (ok_common, ok_error) = crate::log::captured(|| {
+            Loader::report_config_pass(Ok(()));
+        });
+        assert!(
+            ok_common.contains("Reload section config successfully\n"),
+            "{ok_common}"
+        );
+        assert_eq!(ok_error, "", "{ok_error}");
+
+        // The failure line names the reason, which is the message a live board's log is read
+        // for when a rename does not show up.
+        let (bad_common, bad_error) = crate::log::captured(|| {
+            Loader::report_config_pass(Err(LoaderError::UnknownSection));
+        });
+        assert_eq!(bad_common, "", "{bad_common}");
+        assert!(bad_error.contains("[WARN] "), "{bad_error}");
+        assert!(
+            bad_error.contains("section config reload failed: "),
+            "{bad_error}"
+        );
+    }
+
+    /// `user_list_pool_reload(1)` publishes the list and the visit total from one swap
+    /// (`user_list.c:620-628` then `:650-657`), and the total only moves when the second query
+    /// returned a row (`:394`): an empty `user_login_log` does not report a site nobody has ever
+    /// visited, and a failed one leaves the previous pass standing.
+    #[tokio::test]
+    async fn the_online_pass_publishes_the_visit_total_with_the_list() {
+        let session = crate::session::offline_session();
+        let state = &session.state;
+        let loader = Loader::new(state.clone(), std::path::Path::new("/srv/lbbs"));
+
+        loader.publish_online_pass(OnlineList::default(), Some(123_456));
+        assert_eq!(state.login_count(), 123_456);
+
+        loader.publish_online_pass(OnlineList::default(), None);
+        assert_eq!(
+            state.login_count(),
+            123_456,
+            "no row means the total is left alone"
+        );
     }
 
     /// Only a cursor makes a pass reach the op log: `watermark` is `None` until the startup pass
@@ -1574,6 +1649,12 @@ mod tests {
             posted += i32::from(board.user_article_count(user.uid).unwrap_or_default() > 0);
         }
         assert!(posted > 0);
+        // The visit total the top page prints, from `user_login_count_load` (`:370`) — a board
+        // that has logins recorded has a highest `ID`, and `initial_load` runs the online pass.
+        assert!(
+            state.login_count() > 0,
+            "the online pass publishes 累计访问人次"
+        );
         let newest_cid = board
             .article_by_aid(board.last_aid())
             .map(|article| article.cid);

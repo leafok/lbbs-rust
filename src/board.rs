@@ -424,7 +424,12 @@ impl Section {
             while i < self.ontop.len() {
                 let other = articles[self.ontop[i]].aid;
                 if other == aid {
-                    return Ok(()); // already listed; the C original logs the inconsistency
+                    // `:1104`: the pool says the article is stuck and the list already holds it.
+                    tracing::error!(
+                        "Inconsistent state found: article {aid} already ontop in section {}",
+                        self.sid
+                    );
+                    return Ok(());
                 } else if other > aid {
                     break;
                 }
@@ -441,8 +446,17 @@ impl Section {
             } else {
                 self.ontop.insert(i, art);
             }
-        } else if let Some(i) = self.ontop.iter().position(|&x| articles[x].aid == aid) {
-            self.ontop.remove(i);
+        } else {
+            let stuck = self.ontop.iter().position(|&x| articles[x].aid == aid);
+            if let Some(i) = stuck {
+                self.ontop.remove(i);
+            } else {
+                // `:1147`: the flag is off but the list still holds the aid.
+                tracing::error!(
+                    "Inconsistent state found: article {aid} not ontop in section {}",
+                    self.sid
+                );
+            }
         }
 
         Ok(())
@@ -631,8 +645,8 @@ impl Section {
                 page_head_set = false;
 
                 if page >= PAGE_INDEX_CAPACITY {
-                    // `Count of page exceed limit in section %d`, and the rest of the board
-                    // stays out of the index.
+                    // The rest of the board stays out of the index, as in C.
+                    tracing::error!("Count of page exceed limit in section {}", self.sid);
                     break;
                 }
             }
@@ -1257,6 +1271,41 @@ mod tests {
             visited.iter().map(|&i| articles[i].aid).collect::<Vec<_>>(),
             vec![100, 101, 102]
         );
+    }
+
+    /// `section_list.c:1104` and `:1147`: a sticky list that has lost step with the article
+    /// flags is reported rather than quietly corrected.
+    #[test]
+    fn a_sticky_list_out_of_step_with_the_flags_is_logged() {
+        let mut board = board();
+        board
+            .append_article(&Article {
+                ontop: true,
+                ..post(100, 1)
+            })
+            .unwrap();
+        let stuck = board.articles.len() - 1;
+        board.append_article(&post(200, 1)).unwrap();
+        let plain = board.articles.len() - 1;
+
+        let (common, error) = crate::log::captured(|| {
+            // Both calls re-run the op for an article whose flag already says what the list
+            // says, which is the state C treats as inconsistent.
+            board.update_article_ontop(1, stuck).unwrap();
+            board.update_article_ontop(1, plain).unwrap();
+        });
+
+        assert!(
+            error.contains("Inconsistent state found: article 100 already ontop in section 1\n"),
+            "{error}"
+        );
+        assert!(
+            error.contains("Inconsistent state found: article 200 not ontop in section 1\n"),
+            "{error}"
+        );
+        // Both are `log_error()` calls; nothing reaches the common stream.
+        assert_eq!(common, "", "{common}");
+        assert_eq!(error.matches('\n').count(), 2, "{error}");
     }
 
     #[test]

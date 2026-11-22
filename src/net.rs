@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::Mutex;
 
 use crate::bbs;
 use crate::session::{clamp_bytes, sid_for};
@@ -46,9 +46,9 @@ const SID_MAX_LEN: usize = 32;
 
 /// The two accept limits and the live counts they are checked against.
 ///
-/// The semaphore is the total: `acquire_owned` both checks and reserves, so two connections
-/// arriving at once cannot both be told they are the last one. C had that race too — it read
-/// `SYS_child_process_count` in the parent, but only ever one accept ran at a time. The
+/// The count is the total: [`Gateway::reserve_total`] both checks and reserves, so two
+/// connections arriving at once cannot both be told they are the last one. C had that race too —
+/// it read `SYS_child_process_count` in the parent, but only ever one accept ran at a time. The
 /// per-IP map is behind a [`Mutex`] for the same reason the counter was not atomic: it is two
 /// lookups and an update.
 pub struct Gateway {
@@ -56,8 +56,8 @@ pub struct Gateway {
     /// The directory `data/` and `var/` hang off, as in `main.c:217-229`.
     pub root: std::path::PathBuf,
     limits: Mutex<PerIp>,
-    total: Arc<Semaphore>,
-    /// `SYS_child_process_count - 1`, kept beside the permits so the drain can watch it fall.
+    /// `SYS_child_process_count - 1`, the number the total gate compares against the limit the
+    /// config reload published, and what the drain watches fall.
     live: Arc<AtomicUsize>,
     /// The `user_online.SID` sequence: `getpid()` for C, a counter per process here.
     next_sid: AtomicU64,
@@ -71,11 +71,7 @@ struct PerIp {
 
 impl Gateway {
     pub fn new(state: Arc<AppState>, root: std::path::PathBuf) -> Arc<Self> {
-        let (max_client, _) = state.limits();
         Arc::new(Gateway {
-            // The reload path can raise or lower the limit; the permit count is what startup
-            // read, and a reload that changes it is reported by `crate::daemon`'s caller.
-            total: Arc::new(Semaphore::new(max_client.max(1))),
             limits: Mutex::new(PerIp::default()),
             live: Arc::new(AtomicUsize::new(0)),
             next_sid: AtomicU64::new(1),
@@ -96,30 +92,51 @@ impl Gateway {
         clamp_bytes(&sid_for(id), SID_MAX_LEN)
     }
 
+    /// `SYS_child_process_count - 1 < BBS_max_client`, checked and reserved in one compare-exchange
+    /// so two connections cannot both take the last slot. The limit is the one the config reload
+    /// published, which is the value C read on every accept; a semaphore sized at startup would
+    /// keep letting `bbs_max_client` connections through after the file said fewer.
+    fn reserve_total(&self, max_client: usize) -> bool {
+        let mut live = self.live.load(Ordering::Acquire);
+        loop {
+            if live >= max_client {
+                return false;
+            }
+            match self.live.compare_exchange_weak(
+                live,
+                live + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return true,
+                Err(next) => live = next,
+            }
+        }
+    }
+
     /// The `SYS_child_process_count - 1 < BBS_max_client` and
     /// `j < BBS_max_client_per_ip` tests, in the order the original ran them, so a connection
     /// that breaks both is reported for the total as C reported it.
     async fn admit(self: &Arc<Self>, addr: SocketAddr) -> Admission {
         let (max_client, max_per_ip) = self.state.limits();
-        let permit = match Arc::clone(&self.total).try_acquire_owned() {
-            Ok(permit) => permit,
-            Err(_) => {
-                return Admission::Rejected(Reject::Total(self.live(), max_client));
-            }
-        };
-        // The C comparison is against the limit *before* this connection, which is what the
-        // semaphore's `live()` reports while the permit is in flight.
-        let mut per_ip = self.limits.lock().await;
-        let same_ip = per_ip.by_addr.get(&addr.ip()).copied().unwrap_or(0);
-        if same_ip >= max_per_ip {
-            return Admission::Rejected(Reject::PerIp(same_ip, max_per_ip));
+        if !self.reserve_total(max_client) {
+            return Admission::Rejected(Reject::Total(self.live(), max_client));
         }
-        per_ip.by_addr.insert(addr.ip(), same_ip + 1);
-        drop(per_ip);
 
-        self.live.fetch_add(1, Ordering::Relaxed);
+        let same_ip = {
+            let mut per_ip = self.limits.lock().await;
+            let same_ip = per_ip.by_addr.get(&addr.ip()).copied().unwrap_or(0);
+            if same_ip >= max_per_ip {
+                // The C code refused this connection before it forked, so the slot taken for it
+                // goes back before the rejection is reported.
+                self.live.fetch_sub(1, Ordering::Release);
+                return Admission::Rejected(Reject::PerIp(same_ip, max_per_ip));
+            }
+            per_ip.by_addr.insert(addr.ip(), same_ip + 1);
+            same_ip
+        };
+
         Admission::Accepted(Admitted {
-            _permit: permit,
             gateway: Arc::clone(self),
             addr,
             same_ip,
@@ -137,7 +154,7 @@ impl Gateway {
                 per_ip.by_addr.remove(&addr);
             }
         }
-        self.live.fetch_sub(1, Ordering::Relaxed);
+        self.live.fetch_sub(1, Ordering::Release);
     }
 
     /// `while (!SYS_server_exit || SYS_child_process_count > 0)` in the parent: the two
@@ -204,10 +221,9 @@ pub(crate) enum Reject {
     PerIp(usize, usize),
 }
 
-/// A connection that holds a slot: the permit keeps the total reserved and the `Drop` gives
-/// both counts back, whether the session ran, failed to start, or was never polled.
+/// A connection that holds a slot: the `Drop` gives both counts back, whether the session ran,
+/// failed to start, or was never polled.
 pub(crate) struct Admitted {
-    _permit: OwnedSemaphorePermit,
     pub(crate) gateway: Arc<Gateway>,
     pub(crate) addr: SocketAddr,
     /// `j`, the number from the same address before this one.
@@ -356,3 +372,98 @@ impl std::fmt::Display for BindError {
 }
 
 impl std::error::Error for BindError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn addr(ip: &str) -> SocketAddr {
+        format!("{ip}:2323").parse().unwrap()
+    }
+
+    /// The accepted slot, kept alive by the caller until it is dropped.
+    fn accepted(admission: Admission) -> Admitted {
+        match admission {
+            Admission::Accepted(admitted) => admitted,
+            Admission::Rejected(Reject::Total(live, max)) => {
+                panic!("refused for the total ({live} >= {max})")
+            }
+            Admission::Rejected(Reject::PerIp(count, max)) => {
+                panic!("refused per IP ({count} >= {max})")
+            }
+        }
+    }
+
+    /// `SYS_child_process_count - 1 < BBS_max_client`, read against the limit the config holds
+    /// now: raising `bbs_max_client` opens a slot immediately, which a gate sized at startup
+    /// would not.
+    #[tokio::test]
+    async fn the_total_gate_follows_the_reloaded_limit() {
+        let session = crate::session::offline_session();
+        let state = session.state.clone();
+        state.publish_limits(2, 10);
+        let gateway = Gateway::new(state.clone(), std::path::PathBuf::from("/srv/lbbs"));
+
+        let mut held = vec![
+            accepted(gateway.admit(addr("10.0.0.1")).await),
+            accepted(gateway.admit(addr("10.0.0.2")).await),
+        ];
+        assert_eq!(gateway.live(), 2);
+
+        let refused = gateway.admit(addr("10.0.0.3")).await;
+        assert!(
+            matches!(refused, Admission::Rejected(Reject::Total(2, 2))),
+            "the third connection is over the limit the config still holds"
+        );
+
+        state.publish_limits(3, 10);
+        held.push(accepted(gateway.admit(addr("10.0.0.3")).await));
+        assert_eq!(gateway.live(), 3);
+
+        // The lower limit takes effect on the next accept, without waiting for the sessions
+        // that are already running to leave.
+        state.publish_limits(2, 10);
+        assert!(matches!(
+            gateway.admit(addr("10.0.0.4")).await,
+            Admission::Rejected(Reject::Total(3, 2))
+        ));
+
+        drop(held);
+        assert_eq!(gateway.live(), 0, "a dropped slot is a counted release");
+    }
+
+    /// C tested the total before the per-IP limit, so a connection refused for its address had
+    /// already taken the parent's slot; the port hands that reservation back rather than leaking
+    /// one per refused connection.
+    #[tokio::test]
+    async fn a_per_ip_rejection_gives_the_total_slot_back() {
+        let session = crate::session::offline_session();
+        let state = session.state.clone();
+        state.publish_limits(5, 1);
+        let gateway = Gateway::new(state.clone(), std::path::PathBuf::from("/srv/lbbs"));
+
+        let first = accepted(gateway.admit(addr("10.0.0.1")).await);
+        let second = accepted(gateway.admit(addr("10.0.0.2")).await);
+
+        let refused = gateway.admit(addr("10.0.0.1")).await;
+        assert!(
+            matches!(refused, Admission::Rejected(Reject::PerIp(1, 1))),
+            "the second connection from one address is refused for that address"
+        );
+        assert_eq!(
+            gateway.live(),
+            2,
+            "the refused connection must not keep the slot it reserved"
+        );
+
+        drop(first);
+        // One address is free again, so its next connection is admitted even though the count
+        // for the map entry was cleared with it.
+        let again = accepted(gateway.admit(addr("10.0.0.1")).await);
+        assert_eq!(again.same_ip, 0);
+        assert_eq!(gateway.live(), 2);
+        drop(second);
+        drop(again);
+        assert_eq!(gateway.live(), 0);
+    }
+}
