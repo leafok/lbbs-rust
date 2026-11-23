@@ -14,6 +14,11 @@
 //! Parsing is all-or-nothing, as in the original: a syntax error, an overlong field, a
 //! depleted screen buffer, or a name the post-pass cannot resolve aborts the whole file,
 //! because `main.c:350` treats a failed `load_menu` as a reason not to start.
+//!
+//! Two of the guards C added to this layer are structural here instead of code: a menu id
+//! reaches its entry through [`MenuSet::menu`] and a menu name through the name dictionary, so
+//! neither lookup can return anything but a valid menu, and a reload replaces the `Arc` holding
+//! the [`MenuSet`] rather than reusing the table the old one was built in.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -477,7 +482,7 @@ impl<'a> MenuNav<'a> {
 
         // The saved position keeps its place when the layout can still show it, which is what
         // lets a parent menu hold the item you entered a submenu from after you back out of it
-        // (`menu.c:1117-1123`). Only a position that has since been hidden moves, and the loop
+        // (`menu.c:1124-1130`). Only a position that has since been hidden moves, and the loop
         // below gives it the first visible item.
         let cursor = self.cursor();
         if cursor > 0 && cursor < count {
@@ -661,9 +666,12 @@ impl<'a> MenuNav<'a> {
                     return MenuFlow::NoRedraw;
                 };
                 if !self.push(dest) {
-                    // C writes past the end of `menu_id_path` here; the port treats the depth it
-                    // cannot record the way it treats a refused draw.
-                    return self.back(term).await;
+                    // `menu.c:1264-1269` (`99c5e32`): the path arrays keep one entry per level, so
+                    // C refuses the level, names it in the error log, and leaves the screen as it
+                    // was. Before that commit it wrote past the end of `menu_id_path`.
+                    let name = self.current_menu().map_or("", |menu| menu.name.as_str());
+                    error!("Menu [{name}] is nested past {MAX_MENU_DEPTH} levels");
+                    return MenuFlow::NoRedraw;
                 }
                 if self.draw(term, view).await == Draw::Empty {
                     return self.back(term).await;
@@ -677,8 +685,10 @@ impl<'a> MenuNav<'a> {
             KEY_HOME => self.jump(term, view, true),
             KEY_END => self.jump(term, view, false),
             _ => {
-                // C asks `isalnum` of the raw key, so only a printable ASCII byte selects a hot
-                // key; the arrow and function codes were handled above.
+                // `menu.c:1462-1464` (`99c5e32`) now tests `key >= 32 && key <= 126` before
+                // `isalnum`, because the extended key codes are past the range the ctype tables
+                // cover. A Rust `u8` ASCII check is the same gate, and the arrow and function
+                // codes were already handled above.
                 if key < 0x80 && (key as u8).is_ascii_alphanumeric() {
                     self.hotkey(term, view, key as u8);
                 }
@@ -743,11 +753,9 @@ impl<'a> MenuNav<'a> {
             }
             pos -= 1;
         }
-        // With no public item C stores -1 and then reads `items[-1]`; the port leaves the
-        // cursor where it was.
-        if let Some(pos) = found {
-            self.set_cursor(pos);
-        }
+        // `menu.c:1320-1325` (`99c5e32`): with nothing both public and displayed the stored
+        // position falls back to item 0, which keeps it a valid index into this menu's items.
+        self.set_cursor(found.unwrap_or(0));
         self.draw_cursor(term, true);
         MenuFlow::NoRedraw
     }
@@ -768,7 +776,10 @@ impl<'a> MenuNav<'a> {
         }
         let page_id = self.page_at(self.cursor());
         let mut pos = self.cursor() as i32;
-        loop {
+        // `menu.c:1335-1337` and `:1373-1375` (`99c5e32`) count the steps off `item_count`: one
+        // full turn of the items is enough, because a menu with nothing displayed would otherwise
+        // wrap around for ever. The cursor lands on the last position scanned.
+        for _ in 0..count {
             pos += delta;
             if pos < 0 {
                 pos = count - 1;
@@ -1468,6 +1479,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::term::key::{KEY_CONTROL, KEY_F1, KEY_INS, KEY_NULL};
     use crate::term::{ByteIo, Pipe};
     use std::time::Duration;
 
@@ -2141,6 +2153,63 @@ mod tests {
         );
     }
 
+    /// `99c5e32` bounded the two scans by `item_count`: before that a menu in which nothing is
+    /// displayed wrapped for ever, so the key looked like a hung session.
+    /// The other half of the `99c5e32` left-key fix: the stored position has to stay a valid
+    /// index, so a root whose items are all private falls back to the first one.
+    #[tokio::test]
+    async fn the_left_key_falls_back_to_the_first_item_when_none_is_public() {
+        let data = one_menu(&[(0, 0, 1, 0, "p1"), (1, 0, 1, 0, "p2"), (2, 0, 1, 0, "p3")]);
+        let set = MenuSet::parse(data.as_bytes()).unwrap();
+        let (mut term, _client) = pair();
+        let mut nav = MenuNav::new(&set);
+        let view = Levels {
+            priv_mask: 1,
+            ..Levels::default()
+        };
+        nav.draw(&mut term, &view).await;
+        nav.control(&mut term, &view, KEY_END).await;
+        assert_eq!(nav.cursor(), 2, "the items are displayed");
+
+        assert_eq!(
+            nav.control(&mut term, &view, KEY_LEFT).await,
+            MenuFlow::NoRedraw
+        );
+        assert_eq!(
+            nav.cursor(),
+            0,
+            "none of them is public, so the scan gives item 0"
+        );
+    }
+
+    #[tokio::test]
+    async fn stepping_through_a_menu_with_nothing_displayed_stops() {
+        let data = one_menu(&[
+            (0, 0, 0, 9, "hidden1"),
+            (1, 0, 0, 9, "hidden2"),
+            (2, 0, 0, 9, "hidden3"),
+        ]);
+        let set = MenuSet::parse(data.as_bytes()).unwrap();
+        let (mut term, client) = pair();
+        let keyed = push_key_later(client, b"\r");
+        let mut nav = MenuNav::new(&set);
+        assert_eq!(nav.draw(&mut term, &Levels::default()).await, Draw::Empty);
+        let _client = keyed.await.unwrap();
+        assert_eq!(nav.cursor(), 0);
+
+        for key in [KEY_DOWN, KEY_UP, KEY_PGDN, KEY_PGUP] {
+            assert_eq!(
+                nav.control(&mut term, &Levels::default(), key).await,
+                MenuFlow::NoRedraw,
+                "the {key} walk over hidden items returns"
+            );
+            assert!(
+                nav.cursor() < 3,
+                "the {key} walk still lands on an item of this menu"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn a_letter_key_jumps_to_the_item_with_that_initial() {
         let data = one_menu(&[(4, 1, 0, 0, "Goodbye"), (0, 0, 0, 0, "agree")]);
@@ -2169,6 +2238,28 @@ mod tests {
         nav.control(&mut term, &Levels::default(), u32::from(b'h'))
             .await;
         assert_eq!(nav.cursor(), 0, "the wide name was not matched");
+    }
+
+    /// C's `99c5e32` guard rejects the key before `isalnum` reads past the ctype tables; the
+    /// port never reaches `is_ascii_alphanumeric` with a byte it cannot name.
+    #[tokio::test]
+    async fn only_a_printable_ascii_key_selects_a_hot_key() {
+        let data = one_menu(&[(0, 0, 0, 0, "a"), (1, 0, 0, 0, "b")]);
+        let set = MenuSet::parse(data.as_bytes()).unwrap();
+        let (mut term, _client) = pair();
+        let mut nav = MenuNav::new(&set);
+        nav.draw(&mut term, &Levels::default()).await;
+
+        for key in [KEY_F1, KEY_INS, KEY_NULL, KEY_CONTROL] {
+            assert_eq!(
+                nav.control(&mut term, &Levels::default(), key).await,
+                MenuFlow::NoRedraw
+            );
+            assert_eq!(nav.cursor(), 0, "the {key} code is not a hot key");
+        }
+        nav.control(&mut term, &Levels::default(), u32::from(b'b'))
+            .await;
+        assert_eq!(nav.cursor(), 1, "a printable letter still is");
     }
 
     #[tokio::test]
@@ -2267,9 +2358,178 @@ mod tests {
         assert_eq!(MenuReturn::from_code(1234), MenuReturn::NoRedraw);
     }
 
+    /// `test_menu.c` #7: every config fragment the reference program loads, with the verdict it
+    /// gives. `build_conf` wraps a body in the screen block and the one menu the rest of the file
+    /// assumes, so most of the fragments here are bodies.
+    #[test]
+    fn the_parser_answers_the_reference_grammar_table() {
+        let build_conf = |text: &str| format!("%S\nscreen text\n%\n%menu MENU1\n{text}%\n");
+        let item = |fields: &str| format!("screen 0, 0, S\n!.. {fields}\n");
+
+        let mut cases: Vec<(String, bool)> = Vec::new();
+        for (text, ok) in [
+            (item("0, 0, 0, 0, \"N\", \"t\""), true),
+            ("screen 0, 0, S\n".to_string(), true),
+            (String::new(), false),
+            (
+                "screen 0, 0, NOPE\n!.. 0, 0, 0, 0, \"N\", \"t\"\n".to_string(),
+                false,
+            ),
+            (
+                "screen 0, 0, S\n!NOSUCHMENU 0, 0, 0, 0, \"N\", \"t\"\n".to_string(),
+                false,
+            ),
+            (
+                "screen 0, 0, S\n@NOHANDLER 0, 0, 0, 0, \"N\", \"t\"\n".to_string(),
+                false,
+            ),
+            (
+                "screen 0, 0, S\n!.. 0, 0, 0, 0, \"N\", \"t\\\n".to_string(),
+                false,
+            ),
+            (
+                "screen 0, 0, S\nuse_filter\n!.. 0, 0, 0, 0, \"N\", \"t\"\n".to_string(),
+                false,
+            ),
+            ("screen 0, 0, S\nuse_filter yes\n".to_string(), false),
+            (
+                "screen 0, 0, S\n!SU!B 0, 0, 0, 0, \"N\", \"t\"\n".to_string(),
+                false,
+            ),
+            ("screen 0, 0, S\ntitle 0, 0\n".to_string(), false),
+            ("screen 0, 0, S\ntitle 0, 0, T\n".to_string(), false),
+            (
+                "screen 0, 0, S\ntitle 0, 0, \"T\" junk\n".to_string(),
+                false,
+            ),
+            ("title 0, 0, \"T\"\nscreen 0\n".to_string(), false),
+            ("screen 0, x, S\n".to_string(), false),
+            ("screen 0, 0, S\npage 1, 2\n".to_string(), false),
+            ("screen 0, 0, S\npage 1, 2, x\n".to_string(), false),
+            (item("0, 0, 0, 0, \"N\""), false),
+            (item("0, 0, 0, \"N\", \"t\""), false),
+            (item("x, 0, 0, 0, \"N\", \"t\""), false),
+            (item("-1, 0, 0, 0, \"N\", \"t\""), false),
+            (item("0, 0, 0, 0, 0, \"t\""), false),
+            (item("0, 0, 0, 0, \"N t\", \"t\""), false),
+            (item("0, 0, 0, 0, \"N, \"t\""), false),
+            (item("0, 0, 0, 0, \"N\", t"), false),
+            (item("0, 0, 0, 0, \"N\", \"t\" junk"), false),
+        ] {
+            cases.push((build_conf(&text), ok));
+        }
+
+        // The whole-file cases: the order of the blocks, the `%` markers on their own, and a
+        // file that ends while a block is still open.
+        for (text, ok) in [
+            (
+                "%menu MENU1\nscreen 0, 0, S\n!.. 0, 0, 0, 0, \"N\", \"t\"\n%\n%S\nscreen text\n%\n",
+                true,
+            ),
+            ("bogus 1, 2\n%menu MENU1\nscreen 0, 0, S\n%\n", false),
+            ("%menu\n%\n", false),
+            ("%menu B$D\n%\n", false),
+            ("%menu MENU1 EXTRA\n%\n", false),
+            (
+                "%S\nscreen text\n%\n%menu MENU1\nscreen 0, 0, S\n!.. 0, 0, 0, 0, \"N\", \"t\"\n",
+                true,
+            ),
+            (
+                "%menu MENU1\nscreen 0, 0, S\n!.. 0, 0, 0, 0, \"N\", \"t\"\n%\n%S\nfirst\nsecond\n",
+                true,
+            ),
+        ] {
+            cases.push((text.to_string(), ok));
+        }
+
+        // The name and text fields stop at the size of the buffer they fill.
+        for (fill, ch, ok) in [
+            (MAX_MENU_NAME_LENGTH - 1, 'M', true),
+            (MAX_MENU_NAME_LENGTH, 'M', false),
+            (MAX_MENUITEM_NAME_LENGTH - 1, 'n', true),
+            (MAX_MENUITEM_NAME_LENGTH, 'n', false),
+            (MAX_MENUITEM_TEXT_LENGTH - 1, 't', true),
+            (MAX_MENUITEM_TEXT_LENGTH, 't', false),
+        ] {
+            let long = ch.to_string().repeat(fill);
+            let conf = match ch {
+                // A menu name and the action that points at it, both at the field's own limit:
+                // the menu the action asks for is there, so only its size can refuse the line.
+                'M' if ok => format!(
+                    "%S\nscreen text\n%\n%menu {long}\nscreen 0, 0, S\n%\n%menu MENU1\nscreen 0, 0, S\n!{long} 0, 0, 0, 0, \"N\", \"t\"\n%\n"
+                ),
+                'M' => format!(
+                    "%S\nscreen text\n%\n%menu MENU1\nscreen 0, 0, S\n!{long}M 0, 0, 0, 0, \"N\", \"t\"\n%\n"
+                ),
+                'n' => build_conf(&item(&format!("0, 0, 0, 0, \"{long}\", \"t\""))),
+                _ => build_conf(&item(&format!("0, 0, 0, 0, \"N\", \"{long}\""))),
+            };
+            cases.push((conf, ok));
+        }
+
+        let wrong: Vec<&(String, bool)> = cases
+            .iter()
+            .filter(|(conf, ok)| MenuSet::parse(conf.as_bytes()).is_ok() != *ok)
+            .collect();
+        assert!(
+            wrong.is_empty(),
+            "{} of {} fragments answer the other way: {wrong:?}",
+            wrong.len(),
+            cases.len()
+        );
+    }
+
+    /// `test_menu.c` #8: the pools the reference file is capped at, and the screen buffer that
+    /// holds every body at once.
+    #[test]
+    fn the_pools_stop_where_the_reference_caps_them() {
+        let grid = |menus: usize, items: usize| {
+            let mut data = String::from("%S\nscreen text\n%\n");
+            for menu in 0..menus {
+                data.push_str(&format!("%menu M{menu}\nscreen 0, 0, S\n"));
+                for item in 0..items {
+                    data.push_str(&format!("!.. {}, 0, 0, 0, \"N\", \"t\"\n", item % 20));
+                }
+                data.push_str("%\n");
+            }
+            data
+        };
+
+        for (menus, items, ok) in [
+            (1, MAX_ITEMS_PER_MENU, true),
+            (1, MAX_ITEMS_PER_MENU + 1, false),
+            (MAX_MENUITEMS / MAX_ITEMS_PER_MENU, MAX_ITEMS_PER_MENU, true),
+            (
+                MAX_MENUITEMS / MAX_ITEMS_PER_MENU + 1,
+                MAX_ITEMS_PER_MENU,
+                false,
+            ),
+            (MAX_MENUS, 0, true),
+            (MAX_MENUS + 1, 0, false),
+        ] {
+            assert_eq!(
+                MenuSet::parse(grid(menus, items).as_bytes()).is_ok(),
+                ok,
+                "{menus} menus of {items} items"
+            );
+        }
+
+        for screens in [MAX_MENUS, MAX_MENUS + 1] {
+            let data: String = (0..screens)
+                .map(|i| format!("%S{i:03}\nscreen text\n%\n"))
+                .collect();
+            assert_eq!(
+                MenuSet::parse(data.as_bytes()).is_ok(),
+                screens == MAX_MENUS,
+                "{screens} screen records"
+            );
+        }
+    }
+
     #[test]
     fn a_deeper_nest_than_the_path_holds_refuses_the_jump() {
-        // C writes past `menu_id_path`; the port refuses the depth it cannot record.
+        // C counts the level off `MAX_MENU_DEPTH` too (`menu.c:1264-1269`); the port refuses the
+        // depth it cannot record the same way.
         let mut data = String::from("%S_ONE\n%\n");
         for depth in 0..=MAX_MENU_DEPTH {
             data.push_str(&format!("%menu M{depth}\nscreen 0, 0, S_ONE\n"));
@@ -2288,6 +2548,50 @@ mod tests {
         }
         assert_eq!(nav.depth(), MAX_MENU_DEPTH - 1);
         assert!(!nav.push(1));
+    }
+
+    /// The same limit driven through `menu_control` with C's ring of menus (`test_menu.c` #9):
+    /// every menu points at the next, so only the path arrays stop the walk, and the levels it
+    /// refuses draw nothing.
+    #[tokio::test]
+    async fn a_jump_past_the_depth_limit_answers_without_redrawing() {
+        let ring = MAX_MENU_DEPTH + 5;
+        let mut data = String::from("%S_ONE\n%\n");
+        for menu in 0..ring {
+            data.push_str(&format!(
+                "%menu M{menu}\nscreen 0, 0, S_ONE\n!M{} 0, 0, 0, 0, \"n\", \"next\"\n%\n",
+                (menu + 1) % ring
+            ));
+        }
+        let set = MenuSet::parse(data.as_bytes()).unwrap();
+        let (mut term, mut client) = pair();
+        let mut nav = MenuNav::new(&set);
+        let view = Levels::default();
+
+        for _ in 0..ring {
+            assert_eq!(
+                nav.control(&mut term, &view, CR).await,
+                MenuFlow::NoRedraw,
+                "the walk answers the key it was given"
+            );
+        }
+        assert_eq!(
+            nav.depth(),
+            MAX_MENU_DEPTH - 1,
+            "the last level the path can record is the one it stops on"
+        );
+        assert_eq!(nav.current_menu().unwrap().name, "M49");
+
+        term.flush().await.unwrap();
+        client.take_available();
+        for _ in 0..3 {
+            assert_eq!(nav.control(&mut term, &view, CR).await, MenuFlow::NoRedraw);
+        }
+        term.flush().await.unwrap();
+        assert!(
+            client.take_available().is_empty(),
+            "a level the path cannot hold draws nothing"
+        );
     }
 
     #[tokio::test]

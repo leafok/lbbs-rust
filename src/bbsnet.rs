@@ -6,7 +6,7 @@
 //! `:63-233`, `progress_bar` at `:253-294`, `connect_timeout` at `:296-329`, `bbsnet_connect` at
 //! `:331-1426`, `bbsnet_refresh` at `:1428-1449`, `bbsnet_selchange` at `:1453-1474`, and the
 //! key loop of `bbs_net` at `:1476-1573` — together with `exec_mbem`, the `@mod:` dispatcher
-//! `menu.c:1267` reaches with the item's name (`src/menu_proc.c:53-121`, item
+//! `menu.c:1281` reaches with the item's name (`src/menu_proc.c:53-121`, item
 //! `conf/menu.conf:129`).
 //!
 //! The screen comes out of [`MenuSet::hand_built`] and [`MenuNav`], because C builds its

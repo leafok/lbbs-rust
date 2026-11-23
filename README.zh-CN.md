@@ -15,8 +15,8 @@
 | 项目 | 内容 |
 | --- | --- |
 | 名称 | LBBS (Leaflet BBS Daemon) |
-| 版本 | 1.7.13 —— 即 `main` 分支上的 `9193e5c`（`416ea61` 是改版本号那个提交；`main` 上没有 `v1.7.13` 标签） |
-| 语言 | C（该修订下 `src/*.c` 加 `include/*.h` 共 31,235 行：服务器 27,251 行，其余是它自己的测试程序） |
+| 版本 | 1.8.0 |
+| 语言 | C（`src/*.c` 加 `include/*.h` 共 37,364 行：服务器 27,427 行，其余是它自己的测试程序） |
 | 许可证 | GPL-3.0-or-later |
 | 原作者 | Leaflet &lt;leaflet@leafok.com&gt; |
 | 与本项目同级的参考副本 | `../lbbs` —— 只读；**我们不会修改它** |
@@ -24,19 +24,14 @@
 LBBS 是一个**用纯文本终端访问的论坛（BBS）服务器**。用户通过 telnet 或 SSH 连上来，按菜单键看版块、发帖。
 没有鼠标，也没有图片：画面完全由文字加上**终端控制序列**（形如 `ESC[...H` 的字符串，用来设置颜色和光标位置）画出来。
 
-另一个关键点：**LBBS 并不自己保管数据。** 帖子正文和附件是磁盘上的文件，而用户、版块、帖子的索引导在一个
+另一个关键点：**LBBS 并不自己保管数据。** 帖子正文和附件是磁盘上的文件，而用户、版块、帖子的索引存在一个
 **MySQL 数据库**里。本站的**网页版论坛**读的是同一个数据库。所以 LBBS 实际上是 *那个网页版论坛的终端前端*，
 这带来一条硬约束：**不能擅自改数据库结构。**
 
-参考端的 1.7.13 是 `v1.7.11..9193e5c`：三十一个提交、32 个文件、+1564/−85 行。`main` 就在 `9193e5c`，它与
-`27ffdde`（最后一个改动服务器代码的修订）相比只多了三个测试程序：`src/test_*` 之外的每一个 `src/*.c` 与
-`include/*.h` 在这两个修订上逐字节相同，所以第 10.4 节的行号对照没有移动。Rust 源码里出现的每一个
-`file.c:NNN` 引用都对准这个修订号，也就是说 `git -C ../lbbs show 9193e5c:src/<文件>`（游戏是
-`…:utils/game/chicken.c`）打印出来的，正是那条注释所描述的内容；引用指向已提交的修订，从不指向参考端的工作区——
-那是作者自己的目录，会随他动。[第 10.3 节](#103-1712-这一轮参考端的修改在-rust-版里对应什么)与[第
-10.4 节](#104-1713-这一轮参考端的修改在-rust-版里对应什么)记录两轮修改在这里落在何处，10.4 还说明参考端新加的
-测试对本项目意味着什么。`v1.7.11`、`v1.7.12` 两个标签指向的提交不在 `main` 的历史上，所以上面的区间都按
-修订号来写。
+C 原程序还在继续开发，所以一处代码引用只有说清修订才有意义。Rust 源码里出现的每一个 `file.c:NNN`
+引用都指向 `../lbbs` 里**已提交**的某个修订，从不指向它的工作区——那是作者自己的目录，会随他动，也常常带着
+没提交的改动。`git -C ../lbbs show HEAD:src/<文件>`（游戏是 `…:utils/game/chicken.c`）打印出来的，正是那条
+注释所描述的内容。上游的发布标签并不全在 `main` 的历史上，所以参考端按修订来称呼，而不按标签。
 
 ### 1.2 本项目（lbbs-rust）
 
@@ -164,7 +159,7 @@ LBBS 是一个**用纯文本终端访问的论坛（BBS）服务器**。用户�
 | [src/db.rs](src/db.rs) | 1581 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
 | [src/board.rs](src/board.rs) | 1602 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
 | [src/browse.rs](src/browse.rs) | 3371 | `src/section_list_display.c`、`src/section_list_loader.c`、`src/menu_proc.c`（两个精华区入口） | 帖子列表、列表按键、阅读帖子、阅读位置文件，以及版块精华区树的浏览与树里读一篇帖子 | 完成 |
-| [src/editor.rs](src/editor.rs) | 1853 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
+| [src/editor.rs](src/editor.rs) | 2600 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
 | [src/post.rs](src/post.rs) | 1677 | `src/article_post.c`、`src/article_del.c`、`src/article_op.c` | 发帖、回复、修改、删除、精华标记、一篇帖子的网页链接，以及各个写入动作自己的事务 | 完成 |
 | [src/viewlog.rs](src/viewlog.rs) | 369 | `src/article_view_log.c` | 记录该用户读过哪些帖子 | 完成 |
 | [src/favorlog.rs](src/favorlog.rs) | 452 | `src/article_favor.c` | 记录该用户收藏了哪些帖子 | 完成 |
@@ -174,9 +169,9 @@ LBBS 是一个**用纯文本终端访问的论坛（BBS）服务器**。用户�
 | [src/user_info_update.rs](src/user_info_update.rs) | 677 | `src/user_info_update.c`、`src/menu_proc.c`（那两个资料条目） | 说明档与签名档两个编辑器：取 `user_pubinfo` 的一列走一遍编辑器，过敏感词、数行数，再写回去 | 完成 |
 | [src/userlist.rs](src/userlist.rs) | 1053 | `src/user_list_display.c`、`src/menu_proc.c`（两个花名册入口） | 线上使用者与已注册用户两页：标题、栏目、翻页，以及在两页之间走动的按键 | 完成 |
 | [src/loader.rs](src/loader.rs) | 1689 | `src/section_list_loader.c` | 增量刷新任务、它顺带写出的文章缓存文件，以及每个版块那棵精华区菜单 | 完成 |
-| [src/cache.rs](src/cache.rs) | 732 | `src/article_cache.c` | 渲染与读取 `var/articles/<CID>` 及其行偏移表 | 完成 |
+| [src/cache.rs](src/cache.rs) | 1849 | `src/article_cache.c` | 渲染与读取 `var/articles/<CID>` 及其行偏移表 | 完成 |
 | [src/data_file_mgr.rs](src/data_file_mgr.rs) | 456 | `src/data_file_mgr.c`、`src/bbs_cmd.c`（`DATAMGR` 那条） | `@DATAMGR` 列表：按编号选一份站点固定文字，编辑、预览，再把结果同时写回安装的那份和它的 `.user` 副本 | 完成 |
-| [src/menu.rs](src/menu.rs) | 2440 | `src/menu.c` | `menu.conf` 解析与页面跳转 | 解析/跳转完成，功能本体未完成 |
+| [src/menu.rs](src/menu.rs) | 2744 | `src/menu.c` | `menu.conf` 解析与页面跳转 | 解析/跳转完成，功能本体未完成 |
 | [src/lml.rs](src/lml.rs) | 720 | `src/lml.c` | LML 标记渲染 | 完成 |
 | [src/bwf.rs](src/bwf.rs) | 242 | `src/trie_dict.c` 等 | 违禁词匹配与遮蔽 | 完成 |
 | [src/ipmask.rs](src/ipmask.rs) | 109 | `src/ip_mask.c` | IP 地址掩码（`202.38.64.x`） | 完成 |
@@ -199,7 +194,7 @@ LBBS 是一个**用纯文本终端访问的论坛（BBS）服务器**。用户�
 
 另有 [src/daemon.rs](src/daemon.rs)（480 行，命令行与后台化）、[src/log.rs](src/log.rs)（542 行，两个日志文件）、[src/state.rs](src/state.rs)（410 行，加载器发布、会话读取的共享状态）。
 
-合计 37,728 行（含测试，测试就写在被测模块里）。共 553 个测试：库 547 个、可执行文件 6 个。其中 533 个只读代码
+合计 39,896 行（含测试，测试就写在被测模块里）。共 587 个测试：库 581 个、可执行文件 6 个。其中 567 个只读代码
 仓库里的东西，另外 14 个默认跳过，因为它们要连真实数据库、读真实生成的文件。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
@@ -264,10 +259,14 @@ LBBS 是一个**用纯文本终端访问的论坛（BBS）服务器**。用户�
     `https://<BBS_server>/bbs/view_article.php?id=<AID>#<AID>`，然后等一个键。C 在它返回负值时才记的那条
     `log_error` 永远走不到——这个函数只会返回 `0`——移植过去也就没有需要报告的东西。
 19. **全屏编辑器**（`editor.c`）：插入与改写、行与窗口的行列运算、`Ctrl-K`/`Ctrl-Y` 删除、退格合并行、
-    宽字符整体删除、`Ctrl-W`/`Ctrl-X` 不重绘直接退出、状态行，以及 `MAX_EDITOR_DATA_LINES` 上限。
+    宽字符整体删除、`Ctrl-W`/`Ctrl-X` 不重绘直接退出、状态行，以及 `MAX_EDITOR_DATA_LINES` 上限。决定一次
+    按键要不要拆行、一次合并要不要并行的那两处判断，还要问这一行的末尾是不是换行符；`Ctrl-K` 也留下那个换行符，
+    不再把它一起带走。加载器自己也会这么切：塞不进那一块 1,024 字节的文本行在块边界处断开，切口留下一个换行符。
 20. **生成文章缓存。** [`cache::generate`](src/cache.rs) 与 C 的
     `article_cache_generate` 逐字节一致，加载器在每收录一帖、每重放一个 `'M'` 之后都会调用它
     （`section_list_loader.c:333`、`:550`），所以 `var/articles/<CID>` 会自己出现——帖子落库后一秒之内，与 C 相同。
+    参考端自己的那套缓存测试（`src/test_article_cache.c`）在这里由十个测试复演：写同样的文章，再拿本项目
+    自己的一套终端模型把文件读回来对。
 21. **两张花名册页面和它们身后的资料页**——`user_list_display(1)` 与 `user_list_display(0)`
     （[`userlist::user_list_display`](src/userlist.rs)），只从主菜单的
     线上使用者、已注册用户两项进来。两页是同一个页面换一面旗子：标题行、栏头、一页 20 行，加上 `k`/`j`/`p`/`n`/
@@ -337,7 +336,7 @@ LBBS 是一个**用纯文本终端访问的论坛（BBS）服务器**。用户�
     所以过得了十行检查的最长存档是九行。写回时 C 转义拼接的地方这里用绑定参数，说明档末尾那行引用的是花名册自己的
     60 秒刷新间隔，装不进 4 KB 缓冲的文字就是 C 的 `-3`：记一条日志，然后丢掉。曾和这两个名字并列的第三个
     `M_FAVOR_SECTION` 其实从来不是一个动作：C 是在问它的处理函数收藏夹子菜单的每一行可不可见
-    （`menu.c:1141-1143`、`menu_proc.c:196-201`），这件事 [`Session::filter_allows`](src/session.rs) 已经做了。
+    （`menu.c:1148-1150`、`menu_proc.c:196-201`），这件事 [`Session::filter_allows`](src/session.rs) 已经做了。
 29. **电子小鸡**——`chicken_main`（[`chicken::chicken_main`](src/chicken.rs)），入口是上位菜单的
     `【 电子小鸡 】`（`conf/menu.conf:238`），进入的方式与 C 完全相同：`@RunMBEM` 配
     `C@mod:game/so/libgame.so#chicken_main`，`#` 后面就是入口名；它花的糖糖走同一个 `libgame.so` 的另一半
@@ -415,7 +414,7 @@ LBBS 是一个**用纯文本终端访问的论坛（BBS）服务器**。用户�
 1. **Phase 2 的收尾**：GBK 的边角情况、SSH 的窗口大小（有意忽略，理由见 `src/ssh.rs` 文件头），
    以及与 C 就 Phase 1 全部界面做逐屏对照。
 
-2026-11-21 有两条从这份清单上划掉，而它们都不是还等着做的活。说明档/签名档编辑器是上面第 28 条。原先和它们并列
+有两条从这份清单上划掉，而它们都不是还等着做的活。说明档/签名档编辑器是上面第 28 条。原先和它们并列
 写着的“统计页”只是 `src/user_stat.c` 的一个叫法，而它根本不是一屏界面、也没有菜单键：它是资料页那个 发文 数字背后
 的内存发帖计数器，已经作为 [`roster::UserStatMap`](src/roster.rs) 移植、由
 [`userinfo::user_info_display`](src/userinfo.rs) 读取。`M_FAVOR_SECTION` 走的是同一条路——菜单逐行问的过滤条件，
@@ -443,14 +442,14 @@ LBBS 是一个**用纯文本终端访问的论坛（BBS）服务器**。用户�
 ```bash
 cd lbbs-rust
 cargo build            # 编译库和可执行文件
-cargo test             # 533 个不需要数据库的测试（另有 14 个见 7.2）
+cargo test             # 567 个不需要数据库的测试（另有 14 个见 7.2）
 cargo fmt              # 全树已经是 rustfmt 干净的，提交前跑一次
 ```
 
 正常情况长这样：
 
 ```
-test result: ok. 533 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
+test result: ok. 567 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
@@ -734,122 +733,9 @@ Rust 里这些路径集中放在 [src/paths.rs](src/paths.rs)，
 | 取名的提示**开头本来就带着 `宝宝`**（`chicken.c:175`），而 `get_data` 把这段预填当作行首来计数（`screen.c:326`）：单按回车小鸡就叫 宝宝，敲进来的名字也接在它后面——先 `宝宝` 再敲 `新鸡`，收下的名字是 `宝宝新鸡` | [`chicken::create_a_egg`](src/chicken.rs) | 同一块缓冲也拿现名去预填 `改名字` 那一问，所以一个会清掉预填的编辑器会把小鸡改成主人从没输入过的名字 |
 | `chictime` **只读、从不赋值**：`show_chicken`（`chicken.c:221-229`）在它超过 200 时让小鸡变瘦变脏，而 `chicken.c` 没有任何一行给它赋值，所以 C 描述的那个又饿又脏的鸡舍不会发生 | [`chicken::show_chicken`](src/chicken.rs) | 这是说明里有、代码里没实现的功能；替它补上实现就是改设计，字段留着只是为了记录仍然读得出同样那十四个数字 |
 
-有一条在 2026-11-21 离开了这张表，而且只因为参考端先动：权限列表的折半查找——版块加入的顺序一旦不是 `sid`
-序，已存下的权限就可能再也查不到；列表为空时它还会去看第 0 个槽位（即全局权限位）。这两处本项目都照搬下来并
-钉了测试。`../lbbs` 在 `9dd183a` 里把它们修掉了，还加上 `src/test_user_priv.c` 自证，于是本项目跟着参考端走，
-而不是自己判定 C 有错：[`privilege.rs`](src/privilege.rs) 现在是带 `found` 标志的 `left <= right` 循环，
-`boards_that_arrive_out_of_order_stay_reachable` 与 `every_insertion_order_leaves_the_list_sorted_and_findable`
-钉住列表有序、每个版块都查得到。网页端什么也不会变，因为 C 服务器算出的权限位与此相同。
-
-另有四条在 2026-11-22 因为同样的理由离开。资料编辑器缺的那个 `SYS_server_exit` 判断在 `9b9670f` 里补上了，于是
-[`user_info_update.rs`](src/user_info_update.rs) 现在和 `data_file_mgr.c` 一贯的做法一样在退出时跳过 `UPDATE`，
-由 `only_a_running_daemon_writes_the_text` 钉住。`c96f842` 一次带走三条小鸡的怪癖：年龄不再以十二个月回绕，
-负的跨度把年份加回来，而不是算出一个没有任何 `case` 画得出的图案（[`chicken::load_chicken`](src/chicken.rs)，
-由 `the_age_is_the_calendar_subtraction_of_load_chicken` 钉住）；被过滤词命中的名字在重问之前会被清空，
-于是第二次回车不会再交上 `宝宝***蛋`（由 `a_masked_name_is_emptied_and_asked_again` 钉住）；`save_chicken`
-把记录剪到刚写入的长度，改短的名字不再把长名字的尾巴留在用户的文件里（由
-`a_shorter_record_cuts_the_tail_of_the_longer_one` 钉住）。
-
 这也正是这张表的规矩：条目只能因为参考端先离开而离开，不能因为我们觉得 C 是错的。
 
 真要对上述任何一条做修复，应当与数据、网页端一起作为一次协同变更，绝不能在移植里悄悄改掉。
-
-### 10.3 1.7.12 这一轮参考端的修改在 Rust 版里对应什么
-
-`v1.7.11..bfa86c5` 一共二十一个提交——二十处改动加一个版本号。逐 hunk 对照之后的结论是：**二十处里只有
-`9dd183a` 和 `bfa86c5` 需要在 Rust 里改功能**（前者修的正是 10.2 里那条刻意复现的怪癖；后者给查不到行的
-访问总数一个要发布的值），其余都只需要核对。它们泄漏、忘了解锁、少算边界、把用户文本当成 `printf` 格式，
-而这些代码在本项目里是 owned buffer、RAII guard
-和绑定参数；`49805a5` 加的日志本项目也早已有了对应物。每个修复*说明*了什么，已经写进对应 C 文件的替代
-模块，下表只是索引。
-
-| 参考端提交 | C 里的问题 | Rust 版在哪儿交代了 |
-| --- | --- | --- |
-| `6012565` | `io.c` 往 `char tmp[]` 里累积 ESC 序列却没有上界，修复后停在 `sizeof(tmp) - 1` | [`term/mod.rs`](src/term/mod.rs) —— 解码器消费 `Vec<u8>`，不完整就报 partial，没有会被写爆的定长累加器 |
-| `de5fa0f` | `article_cache.c` 的错误路径漏掉 `render_len`、一个 `fd` 和两次映射 | [`cache.rs`](src/cache.rs) —— `File` 与 `Vec` 在任何 return 上都会自行释放 |
-| `a2f6c10` | `article_post.c:276`、`:1149`：`len_content` 累加的是 `snprintf` *想*写的长度；`article_reply` 忽略 `lml_render` 的负返回 | [`post.rs`](src/post.rs) 头部的“页脚”那一条 |
-| `37dfc47` | `screen.c` 用 `sizeof(MENU_ITEM)` 走 screen 池，上限也误用 `menu_item_count` | [`menu.rs`](src/menu.rs) —— `set.screens.len() >= MAX_MENUS` 上方的注释 |
-| `c996502` | `lml.c:482-486` 把长度等于 `LML_TAG_PARAM_BUF_LEN` 的参数拷进同样长度的缓冲区，覆盖掉调用方的 NUL | [`lml.rs`](src/lml.rs) —— 参数拷贝处的钳制 |
-| `a02a212`、`c6444e2` | `db_open` 有三条失败路径没 `mysql_close`；`data_file_mgr.c` 对 `MAP_FAILED` 调了 `munmap` | [`db.rs`](src/db.rs)（连接池没有句柄可漏）、[`state.rs`](src/state.rs) 与 [`data_file_mgr.rs`](src/data_file_mgr.rs)（根本没有映射） |
-| `b2e764c` | `bwf.c` 把零长度的行当成空行；`user_list.c` 读 `row[3][0]` 少了邻居都有的 NULL 判断 | [`bwf.rs`](src/bwf.rs) —— 空行跳过处的注释；[`db.rs`](src/db.rs#L334) —— `gender` 解码成不可能为 NULL 的 `String`，因为该列是 `char(1) NOT NULL DEFAULT 'M'` |
-| `51b1c7f` | 两处 `prints(buffer)` 让用户文本里的 `%` 被当成格式 | [`Terminal::print`](src/term/mod.rs) —— Rust 的 `print` 根本不接收格式 |
-| `d7f2f5d` | `section_list_loader.c:145-152` 跳出版块循环时仍持着写锁 | [`loader.rs`](src/loader.rs) —— `load_section_config` 的文档；这里的 guard 不可能活过一趟刷新 |
-| `0e5224a` | `editor.c` 清 `p_display_lines[]` 时每个指针只清 1 字节，回收来的池节点因此留着 7/8 的脏行 | [`editor.rs`](src/editor.rs) —— `recount()` 由数据行重算显示行，脏尾巴撑不过一次编辑 |
-| `336b670` | `str_process.c` 先写第 `line_offsets_count` 行的宽度、后判边界，行号多的文件会写越偏移数组 | [`text.rs`](src/text.rs) —— `split_data_lines` 先判后截，由 `wrapped_respects_line_cap` 钉住 |
-| `038dd6b` | 版本号 | 本节 |
-| `4553b19` | `article_favor.c:145`、`:211` 往 `sql_del` 里写前缀却按 `sizeof(sql_add)` 计长——确实是笔误，只因两个缓冲区同为 `SQL_BUFFER_LEN` 才没出事 | [`db.rs`](src/db.rs#L772) —— `QueryBuilder` 直接把前缀拼出来，没有“拿错变量的缓冲区大小”这回事 |
-| `ebaa144` | 共享内存里跟在文本之后的 `long[]` 偏移表落在 `data_len + 1`，一般并不对齐；新增的 `shm_offsets_offset()` 把长度计算、写入端、读取端统一向上取整 | 本项目从不构造那种布局：[`state.rs`](src/state.rs) 存文件字节，[`screen.rs`](src/screen.rs) 按会话折行（`file_loader.c:88` 那两处引用正是被挪走的这一行） |
-| `37b0660` | `log.c:114-117`：`log_printf` 照级别挑一个 `FILE *` 就写，`log_begin()` 之前写日志就是空指针解引用；现在退回 `stderr` | [`log::begin`](src/log.rs#L276) 打开两个流，打不开就终止启动，`main.rs:134` 在任何会话或加载任务之前就把 subscriber 装好——这里没有“还没打开”的状态可退 |
-| `65ce0f7` | trie 字典自测对负的 `int64_t` 做左移（`TEST_VAL << i`），这在 C 里是 UB | Rust 里有定义，而 C 用 trie 存的那几张表在这里是 `HashMap`（[`board.rs`](src/board.rs)、[`roster.rs`](src/roster.rs)）；参考端那个自测没有对应物 |
-| `b7a8b16` | `editor.c:395-414`：三次 `memmove` 直接按 `display_line_total - last_display_line - 1` 平移显示行，计数一脏就变成巨大的 `size_t`，前后两头越界；修复要求 `display_line_total >= last_display_line + 1`，否则把这条意外记进日志 | [`editor.rs`](src/editor.rs) —— `EditorData::insert` 改数据行、`recount()` 重算显示行，没有需要平移的平行数组，那个负长度在这里没有形状 |
-| `9dd183a` | `user_priv.c`：`search_priv` 用 `while (left < right)`，末尾又拿 `sid == s_priv_list[left].sid` 当命中，`setpriv` 再从尾部线性扫一遍定位——插入点一旦落到别处，列表就不再有序，之后的查找会漏掉已存下的版块 | [`privilege.rs`](src/privilege.rs) —— `search` 照新写法带回 `found` 标志、循环改成 `left <= right`，`boards_that_arrive_out_of_order_stay_reachable` 与 `every_insertion_order_leaves_the_list_sorted_and_findable` 钉住；10.2 的表因此少了两行 |
-| `49805a5` | `user_priv.c`：`load_priv` 的四个阶段把超出 `BBS_max_section` 的权限静默丢掉；新增 `count_priv_dropped()`/`log_priv_dropped()`（`:119-138`）后，每阶段各报一条 | [`privilege.rs`](src/privilege.rs) —— `Dropped::default()` 加 `dropped.report(uid, "…")`，正是那段日志的对应物 |
-| `bfa86c5` | `user_list.c:370-405`：`user_login_count_load` 只在 `SELECT ID FROM user_login_log ORDER BY ID DESC LIMIT 1` 查到行时才赋值，空表就把上一趟量到的访问总数留在原地；新增的 `else` 写入 `0` | [`loader.rs`](src/loader.rs) —— `publish_online_pass` 收的是 `Option<i32>`，存的是 `count.unwrap_or(0)`，由 `the_online_pass_publishes_the_visit_total_with_the_list` 钉住 |
-
-**这最后七个，写那一轮的时候在 `../lbbs` 里还没提交；如今全部进了 `main`。** 其中两个会挪动引用里的行号：`b7a8b16` 在
-`editor_data_insert` 里加了八行，[`editor.rs`](src/editor.rs) 里那个
-hunk 之后的 `editor.c` 引用一律 +8；`ebaa144` 在文件分页器引用的 `split_data_lines` 之上加了七行，把它从
-`file_loader.c:81` 挪到 `:88`。这些都不是照算术改的：每个新行号都先确认它指着的 C 文本与旧行号一致——正因
-如此 `editor.c:345`、`:349-350` 原地不动，插入的判断之后那些才挪。脚本判不下来的只有 `file_loader.c` 那一行
-（它正落在改动的 hunk 里），按 `git show 49805a5:src/file_loader.c` 手工重定。`9dd183a` 与 `49805a5` 同样挪了
-`user_priv.c` 的行号：`search_priv` `:30` 起变成 `:31`，`setpriv` `:60` 变 `:63`，`getpriv` `:99` 变 `:103`，
-`load_priv` `:113` 变 `:141`，四个阶段的 `:130/:151/:173/:198/:233/:255` 也跟着后移到
-`:162/:183/:205/:237/:279/:308`。`bfa86c5` 在 `user_login_count_load` 里加了四行，于是 `user_list.c` 里
-`:398` 之下的引用原地不动，之上的全部 +4：`user_list_pool_reload` 的在线分支 `:616-657` 变 `:620-661`，
-用户表的交换 `:658-664` 变 `:662-668`，几个读取函数
-`:1031/:1058/:1087/:1114/:1243/:1309/:1470/:1561/:1619/:1629` 变成
-`:1035/:1062/:1091/:1118/:1247/:1313/:1474/:1565/:1623/:1633`——这些同样是逐行对着
-`git show bfa86c5:src/user_list.c` 确认的，落在 [`roster.rs`](src/roster.rs)、[`userlist.rs`](src/userlist.rs)、
-[`userinfo.rs`](src/userinfo.rs)、[`board.rs`](src/board.rs) 与 [`loader.rs`](src/loader.rs) 里。这些位移所针对的
-文件，在最新修订 `9193e5c` 里一个都没被改动——它只新增参考端自己的测试程序——所以上面每个行号从
-`git show 9193e5c:src/<文件>` 里读出来仍然相同。
-
-### 10.4 1.7.13 这一轮参考端的修改在 Rust 版里对应什么
-
-`bfa86c5..9193e5c` 一共十个提交、13 个文件、+947/−31 行。其中七个就是 `416ea61` 发布的 1.7.13，`39d89e9` 与
-`27ffdde` 是同一个版本号之后当天补上的两个修复，`9193e5c` 也在同一天——它没有改动任何服务器代码，列在这里只是
-因为它带来了测试。这一轮**有四处真的改变了这里的行为**：`9b9670f` 的退出判断、
-`d373719` 里 `last_login_dt != 0` 那一半，以及 `c96f842`、`39d89e9` 全部。`9e1eff6` 换来的是一个共用的常量名，
-而不是行为。其余几项核对下来本来就干净——因为这个端口有 owned buffer、RAII guard 和绑定参数；而“只有测试钉住
-才算干净”的那些，下面连同测试一起列出。
-
-| 参考端提交 | C 里的问题 | Rust 版在哪儿交代了 |
-| --- | --- | --- |
-| `9b9670f` | `user_info_update.c`：`line_offsets` 声明成 `[max_line + 1]`，两个调用方却按 `max_line + 2` 传计数；而且两个编辑器在 `UPDATE` 前都不看 `SYS_server_exit`，被中断的编辑于是会把刚被行数检查拒掉的那份文字写进去 | [`user_info_update.rs`](src/user_info_update.rs) —— 偏移量是同一次调用自己增长的 `Vec`，计数与容量不可能不一致；`:154-157`、`:329-332` 两处 `is_exiting()` 正是 `9b9670f` 的对应物，由 `only_a_running_daemon_writes_the_text` 钉住 |
-| `9e1eff6` | `user_info_display.c`：11 个元素的 `line_offsets` 对着 19 这个计数——同一条契约，差了八个 `long`；修复把计数命名为 `USER_INFO_MAX_LINE`，数组也照它声明 | [`userinfo.rs`](src/userinfo.rs) —— `USER_INFO_MAX_LINE` 就是同一个 `+ 9`（`:33`），也是数组与 `MIN` 共用的唯一数字（`:62`、`:183`），由 `assert_eq!(USER_INFO_MAX_LINE, 19, …)` 钉住 |
-| `8e02db3` | `user_stat.c`：`p_map->last_uid = uid_list[i - 1]`（修复前是 `:59`，如今带判断落在 `:63`）在 `i == 0` 时也照跑，读到栈数组下面四个字节，还把垃圾发布进共享内存 | [`roster.rs`](src/roster.rs) —— `UserStatMap::update` 只在水位线循环内部赋值，空窗口把水位留在原地，由 `an_empty_window_leaves_the_watermark_where_it_was` 钉住 |
-| `d373719` | `login.c:160-161`（修复前的写法）：对 `const char *` 形参求 `strnlen(password, sizeof(password))` 得到的是 8 而不是 12，长密码转义时被截短；`load_user_info`（`:437-448`）又直接解引用 `row[0..4]`，其中三列在库里可空；从没有登录过的账号拿 `0` 去和期限比，于是被判成过期 | [`login.rs`](src/login.rs) —— 凭据是作为绑定参数送到 MySQL 的（`db.rs`），根本没有需要定界的转义缓冲；[`pub_info`](src/db.rs) 把 `life`、`exp`、`user_timezone`、`nickname`、`last_login_dt` 解成 `Option`，默认值就是 `:439-448` 那五个判断的默认值；[`is_dead`](src/login.rs) 即 `:458-460` 的 `last_login_dt != 0` 规则（`immortal_accounts_have_no_deadline`、`the_deadline_is_the_accounts_own_lifetime_in_days`） |
-| `780e8ef` | `article_op.c`：`article_excerption_set` 里两条 `goto cleanup` 还持着版块写锁（`:221-224`、`:254-257`），于是这个版块一直锁到会话结束 | [`post.rs`](src/post.rs) —— 精华开关取的是任何 return 都会释放的 guard，由 `a_refused_digest_toggle_leaves_the_board_readable` 钉住 |
-| `c96f842` | `chicken.c`：`save_chicken` 从不检查就往可能是 NULL 的 `FILE *` 里 `fprintf`，也不截断，短名字因此把长名字的尾巴留在用户文件里；`load_chicken` 的年龄按十二个月回绕、还把减掉的月份重复数了一遍；`create_a_egg` 拿还留着 `***` 的缓冲重问，再按一次回车就收下 | [`chicken.rs`](src/chicken.rs) —— 四条都在 Deviations 里：检查过的打开（`:143-147`）与写完之后的 `set_len`（`:151-158`）、带年份的年龄（`:125-132`）与负跨度补回一年（`:129-132`）、先清空再重问（`:189`）；分别由 `a_record_that_cannot_be_opened_is_not_written`、`a_shorter_record_cuts_the_tail_of_the_longer_one`、`the_age_is_the_calendar_subtraction_of_load_chicken`、`a_masked_name_is_emptied_and_asked_again` 钉住 |
-| `416ea61` | 版本号 | 1.1 节 |
-| `39d89e9` | `chicken.c:107-111`：`load_chicken` 刚写下的蛋要用 `fopen(fname, "r")` 再打开读回来，而这个 NULL 从不判断，读不回来的蛋于是被当成空记录解析，游戏开在一份全零的记录上 | [`chicken.rs`](src/chicken.rs) —— 第二次打开会判断，游戏直接拒开（`load_chicken` 答 `None`，`chicken_main` 答它的 `-2`），由 `an_egg_that_cannot_be_read_back_refuses_the_game` 钉住 |
-| `27ffdde` | `section_list_loader.c`：循环已经解锁之后 `last_sid` 仍然指向那块版块（`:287`、`:468`），收尾那次释放（`:342`、`:658`）也可能作用在批次早已不再持有的 `p_section` 上 | [`loader.rs`](src/loader.rs) —— 头部那段说明：这里没有会陈旧的“当前持锁版块”，因为 [`append_articles_into`](src/loader.rs) 与 [`apply_ops`](src/loader.rs) 每次只拿到一块已加锁的 `&mut Board` |
-| `9193e5c` | 服务器代码一行未改。这一笔新增 `src/test_str_process.c`——`str_length`、`split_line`、`split_data_lines`、`str_filter` 四张用例表，调用方的偏移量与宽度数组两侧都放着金丝雀槽——和 `src/test_user_stat.c`：一张 uid 1/2/3/5、发帖数 0/5/0/7 的表，扫过 uid 1/1/2/3/4 的五篇文章，其中第二篇是隐藏的；另外还给 `src/test_section_list.c` 加了 99 行第 7 项，讲的是版块的读写信号量 | [`text.rs`](src/text.rs) —— `the_reference_str_length_table`、`the_reference_split_line_table`、`the_reference_split_capacity_table`、`the_reference_str_filter_table`；[`roster.rs`](src/roster.rs) —— `the_reference_lookup_table`、`the_reference_scan_table`，含那个不在表里的 uid 4、水位线之上的作者被跳过的那篇帖子，以及游标已经在文章块末尾时不再重算。第 7 项没有对应物：它约束的是本项目没有的共享内存信号量，见下面一段 |
-
-**这一轮有七个文件里的引用挪了位置。** 下面的位移是从 `git diff -U0` 的 hunk 头推出来的，并且逐一用 C 文本
-确认——把 `git show bfa86c5:utils/game/chicken.c` 与 `git show 9193e5c:utils/game/chicken.c` 对照，而不是照算术加：
-“`+N`”表示该行及其之后的引用都偏移 N。`utils/game/chicken.c` 因为 `c96f842` 加了 24 行、`39d89e9` 又加 5 行：
-`:18-119` +1、`:120` +3、`:121-127` +7、`:128-129` +8、`:130-131` +14、`:132-160` +23、`:161` 之后 +24，
-`39d89e9` 再让 `:106` 之上 +5——现在这个文件 886 行。`src/article_op.c` 在 `:219` 之后 +5、`:247` 之后再 +5（280 行）；
-`src/login.c` 在 `:458` 之后 +1（709 行）；`src/user_info_display.c` 在 `:32` 之后 +1（189 行）；
-`src/user_info_update.c` 在 `:153` 之后 +5、`:323` 之后再 +5（374 行）；`src/user_stat.c` 在 `:61` 之后 +3（185 行）；
-`src/section_list_loader.c` 在 `:286` 之后 +2、`:465` 之后再 +2（1366 行）。合计在 [`chicken.rs`](src/chicken.rs)
-里重定 308 处 `chicken.c` 引用，在 [`loader.rs`](src/loader.rs) 与 [`browse.rs`](src/browse.rs) 里重定 11 处
-`section_list_loader.c` 引用，每一处旧行号指着的 C 文本与新行号逐字节相同。
-
-**这份测试在这里值多少。** `test_str_process.c` 与 `test_user_stat.c` 是参考端替自己写的证明，对上的正是本项目的
-`text.rs` 和 `roster.rs` 里的发帖计数，所以这里逐条重放那两张表，而不是转述它们——一次就过，说明宽度、折行、计数
-这些规则本来就是端口在实现的那一套。C 那边的两条契约在 Rust 里是类型，断言因此换了写法：C 把两个由调用方定长
-的数组交给 `split_data_lines`，再用两侧的槽位当金丝雀守着；这里返回一个 `Wrapped`，它的 `offsets` 永远比 `count`
-多一项、`widths` 恰好 `count` 项，于是金丝雀变成了 `widths.len() == count()`、每个偏移都落在缓冲区之内且不早于
-前一个、窗口没用尽时最后一个偏移正好是 `buf.len()`——而 C 的 `count` 就是这里的 `max_lines + 1`。C 的
-`str_length` 靠读全局量 `UTF8_fixed_width` 在两种模式之间切换，这里把它换成 [`display_width`](src/text.rs) 的
-`fixed` 参数，一张表逐条设定，不再留一个进程级的开关；C 长度表里有一行看着像被截断的多字节序列，其实拼的是完整
-的 `中`。`test_section_list.c` 的第 7 项是这里唯一没有对应物的部分：它反复加锁、重入、释放一块版块的 System V
-读写信号量，检查无人持有时释放会被拒绝、一次被拒绝的释放之后版块仍可加锁、第二次嵌套的写锁会超时、两个读者都
-被准许而要等第三次释放才失败，还检查 `NULL` 不是“没有版块”，而是所有版块的锁都要经过的那个全局槽位
-（`get_section_index(NULL) == BBS_max_section`）。这些都是共享内存与池槽位的契约；端口没有信号量可守，
-[10.1 节](#101-有意改动机制层面)记下的是取而代之的 `Arc<RwLock<...>>`，所以这一条只记录、不测。
 
 ---
 

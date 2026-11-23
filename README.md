@@ -15,8 +15,8 @@ The sections build on each other, so reading top to bottom works.
 | Item | Value |
 | --- | --- |
 | Name | LBBS (Leaflet BBS Daemon) |
-| Version | 1.7.13 — revision `9193e5c` on `main` (`416ea61` is where the number was bumped; `main` carries no `v1.7.13` tag) |
-| Language | C (31,235 lines across `src/*.c` and `include/*.h` at that revision, 27,251 of them the server and the rest its own test programs) |
+| Version | 1.8.0 |
+| Language | C (37,364 lines across `src/*.c` and `include/*.h` — 27,427 of them the server, the rest its own test programs) |
 | License | GPL-3.0-or-later |
 | Author | Leaflet &lt;leaflet@leafok.com&gt; |
 | Reference copy, alongside this repo | `../lbbs` — read-only for us; **we never modify it** |
@@ -30,18 +30,11 @@ and the index of users, boards and posts lives in a **MySQL database**. The site
 that same database. So LBBS is really a *terminal front-end to that web board*, and that gives us a
 hard constraint: **we must not change the schema.**
 
-The reference 1.7.13 is `v1.7.11..9193e5c`: thirty-one commits, 32 files, +1,564/−85 lines. `main` is at
-`9193e5c`, and the only thing it adds over `27ffdde` — the revision that carries the last server change — is three
-test programs: every file in `src/*.c` and `include/*.h` outside `src/test_*` is byte-identical at the two, which
-is why the citations of section 10.4 did not move. Every `file.c:NNN` citation in the Rust sources is anchored to
-that one revision, so
-`git -C ../lbbs show 9193e5c:src/<file>` — or `…:utils/game/chicken.c` for the game — prints exactly the text the
-comment describes; a citation points at a committed revision, never at the reference working tree, which is the
-author's own and moves. [Section 10.3](#103-the-1712-round-what-each-reference-fix-means-here) and [section
-10.4](#104-the-1713-round-what-each-reference-fix-means-here) record how the two rounds are represented here, and
-§10.4 also says what the reference's new tests mean for the port. The
-`v1.7.11` and `v1.7.12` tags point at commits outside `main`'s history, which is why the ranges are written from
-a revision.
+The C original is still developed, so a code citation only means something if it names a revision. Every
+`file.c:NNN` comment in the Rust sources points into a **committed** revision of `../lbbs`, never into its
+working tree, which is the author's own and is often dirty; `git -C ../lbbs show HEAD:src/<file>` — or
+`…:utils/game/chicken.c` for the game — prints exactly the text the comment describes. Upstream's release tags
+are not all on `main`'s history, which is why the reference is named by revision rather than by tag.
 
 ### 1.2 This project (lbbs-rust)
 
@@ -178,7 +171,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/db.rs](src/db.rs) | 1581 | `src/database.c` etc. | MySQL queries through sqlx | done |
 | [src/board.rs](src/board.rs) | 1602 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
 | [src/browse.rs](src/browse.rs) | 3371 | `src/section_list_display.c`, `src/section_list_loader.c`, `src/menu_proc.c` (the two digest items) | the article list, its keys, reading a post, the saved reading position, and a board's digest tree | done |
-| [src/editor.rs](src/editor.rs) | 1853 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
+| [src/editor.rs](src/editor.rs) | 2600 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
 | [src/post.rs](src/post.rs) | 1677 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, the article's web link, and the transaction each write runs in | done |
 | [src/viewlog.rs](src/viewlog.rs) | 369 | `src/article_view_log.c` | which posts this user has read | done |
 | [src/favorlog.rs](src/favorlog.rs) | 452 | `src/article_favor.c` | which posts this user starred | done |
@@ -189,9 +182,9 @@ differently from C, read the deviations section first — the reason is written 
 | [src/userlist.rs](src/userlist.rs) | 1053 | `src/user_list_display.c`, `src/menu_proc.c` (the two roster items) | the 线上使用者 and 已注册用户 pages: titles, columns, paging, and the keys between them | done |
 | [src/loader.rs](src/loader.rs) | 1689 | `src/section_list_loader.c` | the incremental refresh task, the article cache files it writes, and each board's digest menu | done |
 | [src/state.rs](src/state.rs) | 410 | the shared-memory segments | what the loader publishes and a session reads | done |
-| [src/cache.rs](src/cache.rs) | 732 | `src/article_cache.c` | render and load `var/articles/<CID>` with its line index | done |
+| [src/cache.rs](src/cache.rs) | 1849 | `src/article_cache.c` | render and load `var/articles/<CID>` with its line index | done |
 | [src/data_file_mgr.rs](src/data_file_mgr.rs) | 456 | `src/data_file_mgr.c`, `src/bbs_cmd.c` (the `DATAMGR` entry) | the `@DATAMGR` list: pick one of the eight site texts by number, edit it, preview it, and write the result to both the packaged file and its `.user` copy | done |
-| [src/menu.rs](src/menu.rs) | 2440 | `src/menu.c` | `menu.conf` parsing and navigation | parsing/navigation done, feature bodies not |
+| [src/menu.rs](src/menu.rs) | 2744 | `src/menu.c` | `menu.conf` parsing and navigation | parsing/navigation done, feature bodies not |
 | [src/lml.rs](src/lml.rs) | 720 | `src/lml.c` | LML markup rendering | done |
 | [src/bwf.rs](src/bwf.rs) | 242 | `src/trie_dict.c` etc. | badword matching and masking | done |
 | [src/ipmask.rs](src/ipmask.rs) | 109 | `src/ip_mask.c` | address masking (`202.38.64.x`) | done |
@@ -212,9 +205,9 @@ differently from C, read the deviations section first — the reason is written 
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 424 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-37 728 lines in total, the tests included (they live in the modules they test). There are 553 tests: 547 in the
-library and 6 in the binary. 533 of them need nothing but the checked-out tree; the other 14 are ignored because
-they read the real database and files.
+39 896 lines in total, the tests included (they live in the modules they test). There are 587 tests: 581 in
+the library and 6 in the binary. 567 of them need nothing but the checked-out tree; the other 14 are ignored
+because they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
 
@@ -293,11 +286,16 @@ that does not run is described as if it did.
    answers `0` — so the port has nothing to report either.
 19. **The full-screen editor** (`editor.c`): insert and overwrite, the row and window arithmetic, `Ctrl-K` and
    `Ctrl-Y` deletes, backspace joining rows, wide characters deleted whole, `Ctrl-W`/`Ctrl-X` leaving without
-   repainting, the status row, and the `MAX_EDITOR_DATA_LINES` limit.
+   repainting, the status row, and the `MAX_EDITOR_DATA_LINES` limit. The two guards that decide whether a
+   keystroke splits a row or a merge joins one also ask whether the row they are looking at ends on a line feed,
+   and `Ctrl-K` leaves that line feed where it used to take it. The loader makes the same cut itself: a text
+   line that no longer fits its 1,024-byte block is broken at the boundary and keeps a line feed there.
 20. **Writing the article cache.** [`cache::generate`](src/cache.rs)
    is C's `article_cache_generate` down to the byte, and the loader calls it for every post a pass appends and
    every `'M'` a replay applies (`section_list_loader.c:333`, `:550`), so `var/articles/<CID>` appears on its
-   own — within a second of the post landing, the same as C.
+   own — within a second of the post landing, the same as C. The reference's own cache suite,
+   [`src/test_article_cache.c`](../lbbs/src/test_article_cache.c), is replayed here as ten tests that write the
+   same documents and read the files back through a terminal model of their own.
 21. **The two roster pages and the profile behind them** — `user_list_display(1)` and `user_list_display(0)`
     ([`userlist::user_list_display`](src/userlist.rs)), reached from the
     top menu's `线上使用者`/`已注册用户` items and from nothing else. Both are one screen with the other flag: the
@@ -385,7 +383,7 @@ that does not run is described as if it did.
    the roster's own 60-second interval, and a text that does not fit the 4 KB buffer is C's `-3`, logged and
    dropped. `M_FAVOR_SECTION`, the third name that used to be listed beside these two, turns out never to have
    been an action: C asks its handler whether each row of the favourites submenu is visible
-   (`menu.c:1141-1143`, `menu_proc.c:196-201`), which is what
+   (`menu.c:1148-1150`, `menu_proc.c:196-201`), which is what
    [`Session::filter_allows`](src/session.rs) already does.
 29. **电子小鸡** — `chicken_main` ([`chicken::chicken_main`](src/chicken.rs)) behind the top menu's
    `【 电子小鸡 】` item (`conf/menu.conf:238`), reached the same way C reaches it — `@RunMBEM` with
@@ -479,7 +477,7 @@ PHP and in `gen_top`'s `#[ignore]`-marked parity test to the same ten years (2 5
 1. **Phase 2 polish**: GBK corner cases, the SSH window size (deliberately ignored, see the header of
    `src/ssh.rs`), and a side-by-side comparison with C over the whole phase-1 surface.
 
-Two entries left this list on 2026-11-21, and neither of them was work waiting to be done. The 说明档/签名档
+Two entries left this list, and neither of them was work waiting to be done. The 说明档/签名档
 editors are item 28. The "statistics page" beside them was a name for `src/user_stat.c`, which is not a screen at
 all and has no menu key: it is the in-memory article counter behind a profile's 发文 figure, ported as
 [`roster::UserStatMap`](src/roster.rs) and read by [`userinfo::user_info_display`](src/userinfo.rs).
@@ -508,14 +506,14 @@ wired and unit-tested". The first account that really posts should do it against
 ```bash
 cd lbbs-rust
 cargo build            # compile the library and the binary
-cargo test             # 533 tests that need no database (14 more are opt-in, see 7.2)
+cargo test             # 567 tests that need no database (14 more are opt-in, see 7.2)
 cargo fmt              # the tree is rustfmt-clean; run it before you commit
 ```
 
 A healthy run looks like this:
 
 ```
-test result: ok. 533 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
+test result: ok. 567 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
@@ -818,139 +816,11 @@ app disagrees with us. These behaviours are therefore reproduced verbatim and pi
 | The naming prompt **starts out holding `宝宝`** (`chicken.c:175`) and `get_data` counts that prefill as the beginning of the line (`screen.c:326`), so Enter alone names the chicken 宝宝 and a typed name rides on it: `宝宝` then `新鸡` is accepted as `宝宝新鸡` | [`chicken::create_a_egg`](src/chicken.rs) | the same buffer seeds the 改名字 prompt with the current name, so an editor that cleared the prefill would rename the chicken to something its owner never typed |
 | `chictime` is **read and never assigned**: `show_chicken` (`chicken.c:221-229`) thins and dirties a chicken past 200 of them, and no line in `chicken.c` sets the field, so the starved-and-dirty coop C describes cannot happen | [`chicken::show_chicken`](src/chicken.rs) | it is a documented feature of the game that the code does not deliver; delivering it would be a design change, and the field is kept so the record still parses the same fourteen numbers |
 
-One entry left this table on 2026-11-21, and only because upstream moved first: the privilege list's binary
-search, which lost a stored board whenever the boards arrived out of `sid` order, and which — on an empty list —
-inspected slot 0, the global word. The port had reproduced both and pinned them. `../lbbs` repaired them in
-`9dd183a`, adding `src/test_user_priv.c` as its own proof, so the port followed the reference instead of deciding
-the C was wrong: [`privilege.rs`](src/privilege.rs) now carries the `left <= right` loop with the `found` flag,
-and `boards_that_arrive_out_of_order_stay_reachable` and `every_insertion_order_leaves_the_list_sorted_and_findable`
-pin the list as sorted and every board as findable. Nothing moved for the web application, because the C server
-computes the same words the Rust server now does.
-
-Four more left on 2026-11-22, with the same reason. The profile editors' missing `SYS_server_exit` guard became a
-guard in `9b9670f`, so [`user_info_update.rs`](src/user_info_update.rs) now skips the `UPDATE` on shutdown like
-`data_file_mgr.c` always did, pinned by `only_a_running_daemon_writes_the_text`. `c96f842` took three chicken
-quirks at once: the age keeps its years and the negative span gets them back rather than wrapping into a picture
-no `case` draws ([`chicken::load_chicken`](src/chicken.rs), pinned by
-`the_age_is_the_calendar_subtraction_of_load_chicken`); a name the filter masked is emptied before the prompt
-re-asks, so `宝宝***蛋` no longer arrives on a second Enter (pinned by
-`a_masked_name_is_emptied_and_asked_again`); and `save_chicken` cuts the record to the length it wrote, so a
-shorter name no longer leaves the longer one's tail in the user's file (pinned by
-`a_shorter_record_cuts_the_tail_of_the_longer_one`).
-
 That is the rule this table runs by: an entry leaves it only when the reference has already left, never because we
 decided the C was wrong.
 
 If any of these is ever repaired, it should be a coordinated change with the data and the web application —
 never smuggled into a port.
-
-### 10.3 The 1.7.12 round: what each reference fix means here
-
-`v1.7.11..bfa86c5` — twenty-one commits, 23 files, +620/−57 lines. Going through the hunks one by one, the answer
-is that **only `9dd183a` and `bfa86c5` needed a functional change in Rust** — the first repaired exactly the quirk
-§10.2 used to reproduce, and upstream moved first; the second gives the visit total a value to publish when its
-query answers with no row. Every other one needed a check, not a change. They leak, forget to bound, mis-count, or
-treat user text as a `printf` format, and this project has owned buffers, RAII guards and
-bound parameters instead; the logging `49805a5` adds already has a counterpart here. What each fix *means* is
-written into the C file's replacement module; this table is only the index.
-
-| Reference commit | The problem in C | Where the port says so |
-| --- | --- | --- |
-| `6012565` | `char tmp[]` accumulated escape sequences with no bound; the fix stops at `sizeof(tmp) - 1` | [`term/mod.rs`](src/term/mod.rs) — the decoder consumes a `Vec<u8>`, so nothing overflows |
-| `de5fa0f` | error paths leaked an `fd` and two mappings | [`cache.rs`](src/cache.rs) — `File` and `Vec` release themselves on every return |
-| `a2f6c10` | `article_post.c:276`, `:1149`: the length added was `snprintf`'s *wanted* length; `article_reply` ignored `lml_render`'s negative return | [`post.rs`](src/post.rs) — footer note |
-| `37dfc47` | `screen.c` walked the screen pool with `sizeof(MENU_ITEM)` and misused `menu_item_count` as the cap | [`menu.rs`](src/menu.rs) — the comment above `set.screens.len() >= MAX_MENUS` |
-| `c996502` | `lml.c:482-486` copied a `LML_TAG_PARAM_BUF_LEN`-long parameter into a buffer of the same length, overwriting the caller's NUL | [`lml.rs`](src/lml.rs) — the clamp at the parameter copy |
-| `a02a212`, `c6444e2` | three failure paths in `db_open` skipped `mysql_close`; `data_file_mgr.c` called `munmap` on `MAP_FAILED` | [`db.rs`](src/db.rs) (a pool has no handle to leak), [`state.rs`](src/state.rs) and [`data_file_mgr.rs`](src/data_file_mgr.rs) (there is no mapping at all) |
-| `b2e764c` | `bwf.c` treated a zero-length row as an empty one; `user_list.c` read `row[3][0]` without the NULL check its neighbours have | [`bwf.rs`](src/bwf.rs) — the empty-row skip; [`db.rs`](src/db.rs#L334) — `gender` decodes into a `String` that cannot be NULL, because the column is `char(1) NOT NULL DEFAULT 'M'` |
-| `51b1c7f` | two `prints(buffer)` calls let user text's `%` be read as a format | [`Terminal::print`](src/term/mod.rs) — the Rust `print` takes no format string |
-| `d7f2f5d` | `section_list_loader.c:145-152` left the board loop while still holding the write lock | [`loader.rs`](src/loader.rs) — the `load_section_config` docs; no guard here can outlive a refresh |
-| `0e5224a` | `editor.c` cleared one byte per pointer when clearing `p_display_lines[]`, so a recycled pool node kept 7/8 of a dirty row | [`editor.rs`](src/editor.rs) — `recount()` derives display rows from data rows, so a dirty tail cannot survive an edit |
-| `336b670` | `str_process.c` wrote the width of row `line_offsets_count` before checking the bound, so a file with many lines wrote past the offset array | [`text.rs`](src/text.rs) — `split_data_lines` checks, then truncates, pinned by `wrapped_respects_line_cap` |
-| `038dd6b` | the version number | this section |
-| `4553b19` | `article_favor.c:145`, `:211` wrote the delete prefix but measured it with `sizeof(sql_add)` — a real typo, harmless only because both buffers are `SQL_BUFFER_LEN` | [`db.rs`](src/db.rs#L772) — the `QueryBuilder` builds the prefix directly, so there is no "wrong variable's buffer size" |
-| `ebaa144` | the `long[]` offset table placed after the text in shared memory landed at `data_len + 1`, usually unaligned; the new `shm_offsets_offset()` rounds the length, the writer and the reader alike | the port never builds that layout: [`state.rs`](src/state.rs) stores file bytes and [`screen.rs`](src/screen.rs) wraps per session (those two `file_loader.c:88` citations are the moved line) |
-| `37b0660` | `log.c:114-117`: `log_printf` picked a `FILE *` by level and wrote to it, so logging before `log_begin()` was a NULL dereference; it now falls back to `stderr` | [`log::begin`](src/log.rs#L276) opens both streams and aborts startup if it cannot, and `main.rs:134` installs the subscriber before any session or loader task — there is no "not open yet" state to fall back from |
-| `65ce0f7` | the trie self-test shifted a negative `int64_t` left (`TEST_VAL << i`), which is undefined in C | defined in Rust, and the tables C keeps in tries are `HashMap`s here ([`board.rs`](src/board.rs), [`roster.rs`](src/roster.rs)); the reference self-test has no counterpart |
-| `b7a8b16` | `editor.c:395-414`: three `memmove`s shifted display rows by `display_line_total - last_display_line - 1` directly, so a dirty count became a huge `size_t` and both ends ran off; the fix requires `display_line_total >= last_display_line + 1` and logs the surprise otherwise | [`editor.rs`](src/editor.rs) — `EditorData::insert` changes data rows and `recount()` recomputes display rows, so there is no parallel array to shift and the negative length has no shape here |
-| `9dd183a` | `search_priv` used `while (left < right)` and then decided a hit by comparing `s_priv_list[left]`, while `setpriv` shifted the tail with a linear loop: an insert could land in the wrong place, the list stopped being sorted, and a stored board became unfindable | [`privilege.rs`](src/privilege.rs) — the port had reproduced this on purpose; §10.2 records the repair, and `boards_that_arrive_out_of_order_stay_reachable` and `every_insertion_order_leaves_the_list_sorted_and_findable` pin the sorted, findable list |
-| `49805a5` | `load_priv` dropped privileges once the list was full and said nothing; the new `count_priv_dropped()`/`log_priv_dropped()` (`:119-138`) report each stage | [`privilege.rs`](src/privilege.rs) — `Dropped::default()` plus `dropped.report(uid, "…")` is that logging, already ported |
-| `bfa86c5` | `user_login_count_load` (`user_list.c:370-405`) assigned the visit total only when `SELECT ID FROM user_login_log ORDER BY ID DESC LIMIT 1` returned a row, so an empty log left whatever the last pass had measured in place; the new `else` writes `0` | [`loader.rs`](src/loader.rs) — `publish_online_pass` takes `Option<i32>` and stores `count.unwrap_or(0)`, pinned by `the_online_pass_publishes_the_visit_total_with_the_list` |
-
-**The last seven of these were still uncommitted in `../lbbs` when this round was first written; they are all in
-`main` now.** Two of them move citation line numbers:
-`b7a8b16` adds eight lines inside `editor_data_insert`, so every `editor.c` citation after that hunk in
-[`editor.rs`](src/editor.rs) is +8; `ebaa144` adds seven lines above the `split_data_lines` the file pager
-cites, moving it from `file_loader.c:81` to `:88`. None of this was applied by arithmetic: each new line number
-was checked against the C text the old number pointed at, which is why `editor.c:345` and `:349-350` stay put
-while the ones after the inserted check move. Only `file_loader.c:88` — it sits inside the changed hunk — had to
-be re-read by hand against `git show 49805a5:src/file_loader.c`. `9dd183a` and `49805a5` likewise move
-`user_priv.c`: `search_priv` `:30`→`:31`, `setpriv` `:60`→`:63`, `getpriv` `:99`→`:103`, `load_priv`
-`:113`→`:141`, and the stages `:130`/`:151`/`:173`/`:198`/`:233`/`:255` move to `:162`/`:183`/`:205`/`:237`/
-`:279`/`:308`. `bfa86c5` adds four lines inside `user_login_count_load`, so every `user_list.c` citation below
-`:398` is untouched and every citation after it is +4: `user_list_pool_reload`'s online branch moves
-`:616-657`→`:620-661`, the roster swap moves `:658-664`→`:662-668`, and the readers move
-`:1031`/`:1058`/`:1087`/`:1114`/`:1243`/`:1309`/`:1470`/`:1561`/`:1619`/`:1629` to
-`:1035`/`:1062`/`:1091`/`:1118`/`:1247`/`:1313`/`:1474`/`:1565`/`:1623`/`:1633` — again checked line by line against
-`git show bfa86c5:src/user_list.c`, in [`roster.rs`](src/roster.rs), [`userlist.rs`](src/userlist.rs),
-[`userinfo.rs`](src/userinfo.rs), [`board.rs`](src/board.rs) and [`loader.rs`](src/loader.rs). None of the files
-these shifts are written against is touched by the tip `9193e5c`, which adds reference test programs only, so
-every number above still reads the same out of `git show 9193e5c:src/<file>`.
-
-### 10.4 The 1.7.13 round: what each reference fix means here
-
-`bfa86c5..9193e5c` — ten commits, 13 files, +947/−31 lines. Seven of them are what `416ea61` released as 1.7.13;
-`39d89e9` and `27ffdde` were pushed after the bump the same day, and `9193e5c` the same day too — it changes no
-server file and is listed below only for the tests it adds. This time **four changed behaviour here**: the
-shutdown gate of `9b9670f`, the `last_login_dt != 0` half of `d373719`, and all of `c96f842` and `39d89e9`.
-`9e1eff6` bought a shared constant rather than a behaviour. The other checks came out clean, because the port has
-owned buffers, RAII guards and bound parameters — and a check that is only clean because a test says so is listed
-with its test below.
-
-| Reference commit | The problem in C | Where the port says so |
-| --- | --- | --- |
-| `9b9670f` | `user_info_update.c`: `line_offsets` was `[max_line + 1]` while both callers passed `max_line + 2` as the count, and neither editor checked `SYS_server_exit` before its `UPDATE`, so an interrupted edit wrote the text the line count had just rejected | [`user_info_update.rs`](src/user_info_update.rs) — the offsets are a `Vec` the same call grows, so count and capacity cannot disagree, and the two `is_exiting()` gates (`:154-157`, `:329-332`) answer `9b9670f`; pinned by `only_a_running_daemon_writes_the_text` |
-| `9e1eff6` | `user_info_display.c`: an 11-element `line_offsets` measured against a count of 19 — the same contract, eight `long`s of it; the fix names the count `USER_INFO_MAX_LINE` and gives the array that size too | [`userinfo.rs`](src/userinfo.rs) — `USER_INFO_MAX_LINE` is the same `+ 9` expression (`:33`) and is the only number the array and the `MIN` share (`:62`, `:183`), pinned by `assert_eq!(USER_INFO_MAX_LINE, 19, …)` |
-| `8e02db3` | `user_stat.c`: `p_map->last_uid = uid_list[i - 1]` — `:59` until the fix, `:63` behind the new guard — ran with `i == 0` too, reading four bytes below the stack array and publishing the garbage into shared memory | [`roster.rs`](src/roster.rs) — `UserStatMap::update` assigns the watermark inside the loop, so an empty window leaves it where it was; pinned by `an_empty_window_leaves_the_watermark_where_it_was` |
-| `d373719` | `login.c:160-161`, as they read until the fix: `strnlen(password, sizeof(password))` on a `const char *` parameter is a bound of 8, not 12 — long passwords were escaped short. `load_user_info` (`:437-448`) then dereferenced `row[0..4]`, three of which are nullable in the schema, and an account that never signed in compared `0` against the deadline and was called expired | [`login.rs`](src/login.rs) — the credentials reach MySQL as bound parameters (`db.rs`), so there is no escape buffer to bound; [`pub_info`](src/db.rs) decodes `life`, `exp`, `user_timezone`, `nickname` and `last_login_dt` into `Option`s that default the way the five guards of `:439-448` do, and [`is_dead`](src/login.rs) is the `last_login_dt != 0` rule of `:458-460` (`immortal_accounts_have_no_deadline`, `the_deadline_is_the_accounts_own_lifetime_in_days`) |
-| `780e8ef` | `article_op.c`: two `goto cleanup` paths in `article_excerption_set` left the section write lock held (`:221-224`, `:254-257`), so the board stayed locked for everyone until the session died | [`post.rs`](src/post.rs) — the digest toggle takes the board lock through a guard that releases on every return, pinned by `a_refused_digest_toggle_leaves_the_board_readable` |
-| `c96f842` | `chicken.c`: `save_chicken` `fprintf`'d into a `FILE *` it never checked and never truncated, so a shorter name left the previous record's tail in the user's data file; `load_chicken` wrapped the age at twelve months and counted a month it had subtracted twice; `create_a_egg` re-asked with the masked `***` still in the buffer and let one more Enter accept it | [`chicken.rs`](src/chicken.rs) — all four in the deviations list: the checked open (`:143-147`) with `set_len` after the write (`:151-158`), the year-aware age (`:125-132`) with the negative span given the year back (`:129-132`), and the emptied buffer (`:189`); pinned by `a_record_that_cannot_be_opened_is_not_written`, `a_shorter_record_cuts_the_tail_of_the_longer_one`, `the_age_is_the_calendar_subtraction_of_load_chicken` and `a_masked_name_is_emptied_and_asked_again` |
-| `416ea61` | the version number | §1.1 |
-| `39d89e9` | `chicken.c:107-111`: the egg `load_chicken` had just written was read back through a `fopen(fname, "r")` whose NULL was never tested, so an egg the daemon could not reopen was parsed from nothing and the game opened on a zeroed record | [`chicken.rs`](src/chicken.rs) — the second open is checked and the game refuses to start (`load_chicken` answers `None`, `chicken_main` its `-2`), pinned by `an_egg_that_cannot_be_read_back_refuses_the_game` |
-| `27ffdde` | `section_list_loader.c`: `last_sid` still named a board the loop had already unlocked (`:287`, `:468`), and the end-of-loop release (`:342`, `:658`) could run on a `p_section` the batch had stopped holding | [`loader.rs`](src/loader.rs) — the header note: there is no held-board id to go stale here, because [`append_articles_into`](src/loader.rs) and [`apply_ops`](src/loader.rs) are handed one locked `&mut Board` per batch |
-| `9193e5c` | no server file changed. The tip adds `src/test_str_process.c` — tables for `str_length`, `split_line`, `split_data_lines` and `str_filter`, with canary slots on both sides of the caller's offsets and widths arrays — and `src/test_user_stat.c`, a map of uid 1/2/3/5 holding 0/5/0/7 posts scanned over five articles of uid 1/1/2/3/4 whose second one is hidden; plus 99 lines of Testing #7 in `src/test_section_list.c` about the board's read-write semaphore | [`text.rs`](src/text.rs) — `the_reference_str_length_table`, `the_reference_split_line_table`, `the_reference_split_capacity_table` and `the_reference_str_filter_table`; [`roster.rs`](src/roster.rs) — `the_reference_lookup_table` and `the_reference_scan_table`, including the uid 4 that is in no map, the author above the watermark whose post the pass skips, and the recount that starts at the end of the article block. Testing #7 is not mirrored: it constrains a shared-memory semaphore the port does not have. See the paragraph below |
-
-**Citations moved in seven files.** The shifts below were derived from the `git diff -U0` hunk headers and then
-confirmed by reading the C text at both ends — `git show bfa86c5:utils/game/chicken.c` against
-`git show 9193e5c:utils/game/chicken.c` — rather than applied by arithmetic; the `+N` of a range means every
-citation at or after that line. `utils/game/chicken.c` grew by the 24 lines `c96f842` added and the 5 `39d89e9`
-added inside `load_chicken`: `:18-119` +1, `:120` +3, `:121-127` +7, `:128-129` +8, `:130-131` +14, `:132-160` +23,
-`:161` and below +24, then `+5` again above `:106` — the file is 886 lines. `src/article_op.c` is +5 after `:219`
-and +5 more after `:247` (280 lines); `src/login.c` +1 after `:458` (709); `src/user_info_display.c` +1 after `:32`
-(189); `src/user_info_update.c` +5 after `:153` and +5 more after `:323` (374); `src/user_stat.c` +3 after `:61`
-(185); `src/section_list_loader.c` +2 after `:286` and +2 more after `:465` (1366). That is 308 `chicken.c`
-citations re-anchored in [`chicken.rs`](src/chicken.rs) and 11 `section_list_loader.c` citations in
-[`loader.rs`](src/loader.rs) and [`browse.rs`](src/browse.rs), with the C line at each old number byte-identical
-to the line at each new one.
-
-**What the tip's tests are worth here.** `test_str_process.c` and `test_user_stat.c` are the reference's own proof
-of `text.rs` and of the article counters in `roster.rs`, so the port replays their tables instead of paraphrasing
-them, and they pass as written — the width, wrapping and counting rules were already the ones the port implements.
-Two contracts of the C file are Rust types here and are therefore asserted differently. C hands
-`split_data_lines` two caller-sized arrays and protects them with canary slots; the port returns a `Wrapped` whose
-`offsets` always has exactly one entry more than its `count` and whose `widths` has exactly `count`, so the
-canaries became `widths.len() == count()`, every offset inside the buffer and never behind the previous one, and
-the last offset at `buf.len()` unless the window ran out — and C's `count` is this port's `max_lines + 1`. The
-`UTF8_fixed_width` global that C's `str_length` reads between its two modes is the `fixed` argument of
-[`display_width`](src/text.rs) here, so a table sets it per case instead of leaving a process-wide switch on, and
-one row of the C length table that reads like a truncated sequence actually spells a whole `中`. Testing #7 of
-`test_section_list.c` is the part with no counterpart: it locks, re-locks and releases a board's System V
-read-write semaphore and checks that releasing what nobody holds is refused, that a refused release still leaves
-the board lockable, that a second nested write lock times out, that two readers are granted and only a third
-release fails, and that `NULL` is not "no section" but the global slot `get_section_index(NULL) ==
-BBS_max_section` every section lock passes through. Those are contracts of shared memory and pool slots; the port
-has no semaphore to honour — [§10.1](#101-deliberate-changes-mechanics) records the `Arc<RwLock<...>>` that
-replaces it — so the rule is documented here and not tested.
 
 ---
 

@@ -8,7 +8,7 @@
 //! each one beside it; the display-line numbering [`editor_display`] works in is derived from
 //! the two, and an edit re-wraps only the line it changed ([`EditorData::recount_line`])
 //! instead of the whole document: re-splitting every line after every character made a pasted
-//! article quadratic in its size, while C only re-splits the line it touched (`:361-362`).
+//! article quadratic in its size, while C only re-splits the line it touched (`:467-468`).
 //! [`EditorData::recount`] is what loading does, and what an edit falls back to where the
 //! display-line cap makes the lines depend on each other. Everything the screen half of C reads
 //! — `display_line_lengths`, `display_line_widths`, the `split_line` that turns a column into an
@@ -21,25 +21,37 @@
 //! # Deviations from C
 //!
 //! * The two memory pools (`editor_memory_pool_init`, `:37-75`) are gone. What they bought
-//!   was a fixed 1024-byte stride per line, and that stride is the source of the two bugs
-//!   below.
-//! * A text line loaded longer than `MAX_EDITOR_DATA_LINE_LENGTH` stays one line. C packs it
-//!   into several fixed buffers but still sums their lengths into `len_data_line`, so the
-//!   first edit indexes past the end of the chunk it came from (`:349` `memmove`). The wrap
-//!   and the saved bytes are unchanged; only the overflow is gone.
+//!   was a fixed 1024-byte stride per line, and C keeps that stride honest in three places the
+//!   port has no counterpart for: a loaded line leaves two bytes of its block free for the
+//!   line feed and terminator an insert at its end writes (`:120-124`), cleanup releases every
+//!   block a logical line longer than one block spans (`:234-244`), and a load that runs out of
+//!   blocks publishes the rows it filled before it cleans up (`:144-146`). All three are
+//!   properties of the packing, not of the text.
+//! * Since `dd5b5d1` the loader itself breaks a text line that no longer fits a block at each
+//!   boundary, leaving a `'\n'` behind where it cut (`:103-114`, `:126-137`), so a line that
+//!   ends on a line feed is already several data lines by the time C edits it;
+//!   `break_over_long_lines` makes the same cut in [`EditorData::load`]. The bytes saved agree.
+//!   What differs is that the port gives each of those injected line feeds a display row of its
+//!   own, as it gives the one at `:397-399`, so its rows run one ahead of C's per break; and a
+//!   line that ends without a line feed — only the unterminated tail of a loaded article can be
+//!   one — stays a single entry here where C spans several blocks, where `len_data_line` counts
+//!   within the block of the cursor only (`is_data_line_end`, `:262-282`, and `:604-630`), so
+//!   the split and merge guards measure that one document differently.
+//! * C moves the cursor to the display line it re-wrote and returns it (`:765-770`). The port's
+//!   rows are slices of a buffer it owns, so the cursor is already on the row the edit left.
 //! * The cap on display lines is applied the way C applies it: [`EditorData::load`] drops what
-//!   does not fit in the [`MAX_EDITOR_DATA_LINES`] entries of its array (`:81, :99`) and an edit
+//!   does not fit in the [`MAX_EDITOR_DATA_LINES`] entries of its array (`:81, :100`) and an edit
 //!   into a document that already fills it loses the text that needs a row the array has not
-//!   got (`:366-387`, `:447-458`). One case is not reproduced: a deletion that joins the last
+//!   got (`:472-493`, `:553-564`). One case is not reproduced: a deletion that joins the last
 //!   line of a full array leaves C with one row more than the document has — a tail entry it
 //!   no longer maintains, which paints blank where the port paints the row that is really
 //!   there. The saved bytes agree either way.
-//! * `:437-444`, which moves the cursor to the next display line when an insert ran past the
+//! * `:543-550`, which moves the cursor to the next display line when an insert ran past the
 //!   end of the current one, is kept; it is what makes typing at the end of a line feel like
 //!   the text is pushing the cursor along.
 //! * C maintains its display array as it edits, and the maintenance disagrees with the loader
 //!   in one case: an Enter that ends a row already [`SCREEN_COLS`] wide leaves that row's
-//!   `'\n'` glued to it — `:308-310` sets the entry to `offset + 1` bytes and re-wraps only the
+//!   `'\n'` glued to it — `:397-399` sets the entry to `offset + 1` bytes and re-wraps only the
 //!   text after it — while [`crate::text::split_data_lines`], what [`EditorData::recount`] runs
 //!   over, gives the newline a row of its own. So the same text has one display line more in
 //!   the port than in C right after the edit, and C's `display_line + 1` would point at that
@@ -65,7 +77,7 @@ use crate::text;
 pub const MAX_EDITOR_DATA_LINES: usize = 65536;
 
 /// `MAX_EDITOR_DATA_LINE_LENGTH` (`include/editor.h:23`): the bytes one text line may hold,
-/// its `'\n'` included. Growing past it forces a hard break (`editor.c:272`, `:290`).
+/// its `'\n'` included. Growing past it forces a hard break (`editor.c:346`, `:364`).
 pub const MAX_EDITOR_DATA_LINE_LENGTH: usize = 1024;
 
 /// `Ctrl(C)` (`include/io.h:89`), the control keys of the C switch.
@@ -119,23 +131,23 @@ pub struct EditorData {
 }
 
 impl EditorData {
-    /// `editor_data_load` (`:77-155`).
+    /// `editor_data_load` (`:77-185`).
     ///
     /// C wraps the whole buffer and packs the display lines back into 1024-byte data lines;
     /// the partition is the same as splitting the buffer after each `'\n'`, except that a
     /// buffer ending in a newline gets one more, empty, data line — the display line the C
     /// `do/while` produces after the last `'\n'` becomes its data line during packing
-    /// (`:106-122`).
+    /// (`:122-152`).
     pub fn load(data: &[u8], fixed: bool) -> EditorData {
-        // `:81, :99`: the wrap is computed into an array of [`MAX_EDITOR_DATA_LINES`] display
-        // lines and only what fits in it is packed into data lines (`:102-150`), so the text
+        // `:81, :100`: the wrap is computed into an array of [`MAX_EDITOR_DATA_LINES`] display
+        // lines and only what fits in it is packed into data lines (`:116-180`), so the text
         // past the cap is not merely hidden — it is not in the editor, and a `'\n'` left as the
-        // array's last byte is trimmed off it (`:141-148`).
+        // array's last byte is trimmed off it (`:171-178`).
         let wrapped =
             text::split_data_lines(data, SCREEN_COLS, false, fixed, MAX_EDITOR_DATA_LINES);
         let rows = wrapped.count();
         let mut end = wrapped.offsets[rows] as usize;
-        // C's `:141-148` trims the `'\n'` off the array's last display line, which only bites
+        // C's `:171-178` trims the `'\n'` off the array's last display line, which only bites
         // when the last row that fits in the cap is a terminated one: a buffer that ends in a
         // `'\n'` keeps its empty row after it, and that row has nothing to trim.
         if wrapped.offsets[rows] > wrapped.offsets[rows - 1] && data[..end].ends_with(b"\n") {
@@ -154,7 +166,7 @@ impl EditorData {
             lines.push(Vec::new());
         }
 
-        // `:131-138`, tab to single space: the editor has no tab stops of its own, and a
+        // `:161-168`, tab to single space: the editor has no tab stops of its own, and a
         // typed tab already expands on the way in (`editor_display`).
         for line in lines.iter_mut() {
             for byte in line.iter_mut() {
@@ -163,6 +175,13 @@ impl EditorData {
                 }
             }
         }
+
+        // `:103-114, :126-137` (`dd5b5d1`): the loader packs display rows into data lines of
+        // [`MAX_EDITOR_DATA_LINE_LENGTH`] bytes, and where a row no longer fits it leaves a line
+        // feed behind in the data line it is finishing. Only up to the last row that already ends
+        // on one: the tail of a buffer that has no line feed of its own keeps its boundaries
+        // empty. The injected bytes are part of the document from then on, saved with it.
+        let lines = break_over_long_lines(lines, SCREEN_COLS, fixed);
 
         let mut this = EditorData {
             cols: SCREEN_COLS,
@@ -175,7 +194,7 @@ impl EditorData {
         this
     }
 
-    /// `editor_data_save` (`:158-185`). `None` is C's `-2`: the destination buffer was too
+    /// `editor_data_save` (`:188-215`). `None` is C's `-2`: the destination buffer was too
     /// small, and like C the port logs what it found and lets the caller give up.
     pub fn save(&self, buf_len: usize) -> Option<Vec<u8>> {
         let mut out: Vec<u8> = Vec::new();
@@ -231,13 +250,13 @@ impl EditorData {
         (split.bytes, split.display_len)
     }
 
-    /// `editor_data_insert` (`:220-461`) for the bytes at the cursor.
+    /// `editor_data_insert` (`:292-567`) for the bytes at the cursor.
     ///
     /// `display_line` and `offset` are the cursor in C's coordinates — a display line and a
     /// byte offset inside it — and come back on the slot C's edit leaves the text cursor at,
     /// which is what lets [`editor_display`] keep its `row_pos`/`col_pos` arithmetic.
     /// `last_updated_line` is the redraw bound the caller carries from edit to edit; C's
-    /// `MAX()` over it (`:434`) is reproduced, so a line that grows repaints everything below.
+    /// `MAX()` over it (`:541`) is reproduced, so a line that grows repaints everything below.
     pub fn insert(
         &mut self,
         display_line: &mut i64,
@@ -257,10 +276,20 @@ impl EditorData {
         let inserted: &[u8] = if cr { &[] } else { bytes };
         let str_len = inserted.len();
 
-        // `:271`, `:289`: the line is full, so the text is broken at the cursor and the rest
+        // `editor.c:308, :340` (`ae52b6a`): whether the line ends on a line feed decides how much
+        // room a break at its end still needs — one byte for the terminator when the line feed is
+        // already there, two when the break has to write one.
+        let lf_ending = self.lines[line].ends_with(b"\n");
+        let reserve = if lf_ending && pos < len_data_line {
+            1
+        } else {
+            2
+        };
+
+        // `:346`, `:364`: the line is full, so the text is broken at the cursor and the rest
         // of it moves to a new data line. C picks the side of the break by whether the
         // insert itself still fits in the current line.
-        if len_data_line + bytes.len() + 2 > MAX_EDITOR_DATA_LINE_LENGTH || cr {
+        if len_data_line + bytes.len() + reserve > MAX_EDITOR_DATA_LINE_LENGTH || cr {
             if self.total >= MAX_EDITOR_DATA_LINES {
                 tracing::debug!(
                     "Split line error, display_line_total({}) reach limit({MAX_EDITOR_DATA_LINES})",
@@ -270,18 +299,33 @@ impl EditorData {
             }
 
             // C chooses the side of the break by whether the insert still fits in the line it
-            // is typed into (`:289`).
-            let break_before_insert = pos + bytes.len() + 2 >= MAX_EDITOR_DATA_LINE_LENGTH || cr;
+            // is typed into (`:364`).
+            let break_reserve = if lf_ending { 1 } else { 2 };
+            let break_before_insert =
+                pos + bytes.len() + break_reserve >= MAX_EDITOR_DATA_LINE_LENGTH || cr;
             let mut head = self.lines[line][..pos].to_vec();
-            let tail = if break_before_insert {
+            let mut tail = if break_before_insert {
                 [&inserted[..], &self.lines[line][pos..]].concat()
             } else {
                 head.extend_from_slice(inserted);
                 self.lines[line][pos..].to_vec()
             };
             // Both halves of a break are terminated lines; the tail keeps the `'\n'` the line
-            // it came from had, if it had one.
-            head.push(b'\n');
+            // it came from had, if it had one — except where the cursor is at the very end of a
+            // line that already ends on one (`:385-393`, `:421-429`). A carriage return asked for
+            // at that place does want the empty line, and C gives it the new data line's own
+            // `'\n'`.
+            let keeps_its_line_feed = break_before_insert
+                && lf_ending
+                && pos == len_data_line
+                && *offset >= segment.len as i64;
+            if keeps_its_line_feed {
+                if cr {
+                    tail = vec![b'\n'];
+                }
+            } else {
+                head.push(b'\n');
+            }
 
             *offset = if break_before_insert {
                 str_len as i64
@@ -298,7 +342,7 @@ impl EditorData {
             self.recount_line(line + 1);
 
             if break_before_insert {
-                // `:312`: C's cursor goes to the display line after the head's last one, which
+                // `:402`: C's cursor goes to the display line after the head's last one, which
                 // is where it glues the terminating `'\n'` to a row that is already full. The
                 // port's wrap gives that newline a row of its own, so the same slot number
                 // would point at it and the next keystroke would edit the head line again.
@@ -307,21 +351,21 @@ impl EditorData {
             // The tail gets the rows the head did not use plus the ones the array still had.
             let allowed = old_count.saturating_sub(self.segments[line].len()) + free;
             let cut = self.cut_overflow(line + 1, allowed, display_line, offset);
-            // `:345`: the redraw reaches as far as the document used to.
+            // `:451`: the redraw reaches as far as the document used to.
             *last_updated_line = old_total.max(self.last_display(line + 1) + cut as i64);
         } else {
-            // `:349-350`: the insert goes into the line at the cursor.
+            // `:455-456`: the insert goes into the line at the cursor.
             self.lines[line].splice(pos..pos, inserted.iter().copied());
-            // `:358`, before the re-split: the clamp below belongs to the offset the insert left
+            // `:464`, before the re-split: the clamp below belongs to the offset the insert left
             // behind, not to the one it started from.
             *offset += str_len as i64;
             self.recount_line(line);
             let cut = self.cut_overflow(line, old_count + free, display_line, offset);
-            // `:435`: the row the re-split stopped one past, when the array was full.
+            // `:541`: the row the re-split stopped one past, when the array was full.
             *last_updated_line = (*last_updated_line).max(self.last_display(line) + cut as i64);
         }
 
-        // `:436-443`: an insert that ran to the end of its display line puts the cursor on
+        // `:543-550`: an insert that ran to the end of its display line puts the cursor on
         // the next one.
         let length = self.display_line_length(*display_line) as i64;
         if *offset >= length && *display_line + 1 < self.total as i64 {
@@ -334,7 +378,11 @@ impl EditorData {
         Ok(())
     }
 
-    /// `editor_data_delete` (`:463-643`), one character or the rest of the display line.
+    /// `editor_data_delete` (`:569-772`), one character or the rest of the display line.
+    ///
+    /// `exclude_lf` is C's `ae52b6a` argument: `Ctrl-K` asks for the text of the row and leaves
+    /// its line feed, so the row stays as an empty one (`:1041-1044`), while `Ctrl-Y` takes the
+    /// line feed too and the line goes away.
     ///
     /// The return is C's: the bytes removed, `0` when the cursor was already at the end of
     /// the line and nothing could go.
@@ -344,6 +392,7 @@ impl EditorData {
         offset: &mut i64,
         last_updated_line: &mut i64,
         del_line: bool,
+        exclude_lf: bool,
     ) -> i64 {
         let (line, seg) = self.locate(*display_line);
         let segment = self.segments[line][seg];
@@ -352,15 +401,27 @@ impl EditorData {
         let pos = segment.start + (*offset).clamp(0, segment.len as i64) as usize;
         let len_data_line = self.lines[line].len();
         let old_total = self.total as i64;
+        let row_ends_lf =
+            segment.len > 0 && self.lines[line][segment.start + segment.len - 1] == b'\n';
 
-        // `:512`: at the end of the data line there is nothing to delete.
+        // `:632`: at the end of the data line there is nothing to delete.
         if pos >= len_data_line {
             return 0;
         }
 
-        // `:518-541`: how much the one deletion takes away.
+        // `:592-602`: a cursor at the end of a display line whose logical line goes on in the
+        // next 1024-byte block is moved to the start of that block, where the character is. The
+        // port keeps a logical line in one buffer, so `pos` already sits on the character and
+        // there is no block to move into — see the module's deviations.
+        // `:637-665`: how much the one deletion takes away.
         let str_len = if del_line {
-            segment.len as i64 - (*offset).clamp(0, segment.len as i64)
+            let rest = segment.len as i64 - (*offset).clamp(0, segment.len as i64);
+            // `:641-645`: `Ctrl-K` leaves the line feed, and with it the row.
+            if exclude_lf && rest > 0 && row_ends_lf {
+                rest - 1
+            } else {
+                rest
+            }
         } else {
             let byte = self.lines[line][pos];
             if byte > 0 && byte < 127 {
@@ -377,7 +438,7 @@ impl EditorData {
             }
         };
 
-        // `:544-578`: the deletion reaches the end of the line, so the next line is pulled up
+        // `:668-704`: the deletion reaches the end of the line, so the next line is pulled up
         // into this one instead of a plain cut.
         let reaches_end = pos + str_len as usize > len_data_line
             || (pos + str_len as usize == len_data_line
@@ -389,14 +450,18 @@ impl EditorData {
                 return 0;
             }
             let next_len = self.lines[line + 1].len();
-            if pos + next_len + 1 > MAX_EDITOR_DATA_LINE_LENGTH {
+            // `editor.c:692-694`: the merged line keeps the room a split of it at the end needs
+            // for its terminator — and for the line feed, unless the line behind it already ends
+            // on one and that byte comes along in the copy (`ae52b6a`, undoing `6dd6846`).
+            let next_lf_ending = self.lines[line + 1].ends_with(b"\n");
+            if pos + next_len + if next_lf_ending { 1 } else { 2 } > MAX_EDITOR_DATA_LINE_LENGTH {
                 return 0;
             }
             let next = self.lines.remove(line + 1);
             if parallel {
                 let rows = self.segments.remove(line + 1).len();
                 self.total -= rows;
-                // `:589-592`: the merged line keeps the rows both lines used to take.
+                // `:715-718`: the merged line keeps the rows both lines used to take.
                 allowed += rows;
             }
             let mut head = self.lines[line][..pos].to_vec();
@@ -410,7 +475,7 @@ impl EditorData {
         if parallel {
             self.cut_rows(line, allowed);
         }
-        // `:609-636`: the redraw reaches the last display line of the line that changed, or
+        // `:736-762`: the redraw reaches the last display line of the line that changed, or
         // the end of what used to be there when the document got shorter.
         let last = self.last_display(line);
         *last_updated_line = if (self.total as i64) < old_total {
@@ -459,12 +524,12 @@ impl EditorData {
 
     /// Re-wrap every data line and update `display_line_total`. `split_data_lines` adds a
     /// display line after the one that ends on a `'\n'`; C's re-split stops at that newline
-    /// instead (`:428-431`), so the empty tail of a terminated line is dropped here — but only
+    /// instead (`:534-537`), so the empty tail of a terminated line is dropped here — but only
     /// when the split got far enough to produce it, which the display-line budget below can cut
     /// off.
     ///
     /// C splits the whole buffer into one display array of [`MAX_EDITOR_DATA_LINES`] entries
-    /// (`:81, :99`), so a document longer than that keeps only its first 65536 display lines;
+    /// (`:81, :100`), so a document longer than that keeps only its first 65536 display lines;
     /// the budget is what carries that into the per-line re-split.
     fn recount(&mut self) {
         self.segments.clear();
@@ -507,7 +572,7 @@ impl EditorData {
 
     /// Re-wrap one data line in place, leaving the rest of the array as it is.
     ///
-    /// C only ever re-splits the line it edited (`:361-362`, over at most
+    /// C only ever re-splits the line it edited (`:467-468`, over at most
     /// [`MAX_EDITOR_DATA_LINE_LENGTH`] bytes), while a whole-document [`recount`] after every
     /// character made a pasted article quadratic in its size. Whether the re-wrap still fits the
     /// display array is the caller's business: [`EditorData::cut_overflow`] is what C does when it
@@ -524,7 +589,7 @@ impl EditorData {
         self.segments[line] = segments;
     }
 
-    /// `:366-387`: the display array is [`MAX_EDITOR_DATA_LINES`] rows long, so an edit only
+    /// `:472-493`: the display array is [`MAX_EDITOR_DATA_LINES`] rows long, so an edit only
     /// gets the rows the array still has plus the ones its data line already occupied. What the
     /// re-split needs beyond that is lost: C terminates the last row the line can keep at
     /// [`SCREEN_COLS`] - 1 cells with a `'\n'`, drops the text after it and pulls the cursor back
@@ -551,7 +616,7 @@ impl EditorData {
         );
         self.lines[line].truncate(row.start + cut.bytes);
         self.lines[line].push(b'\n');
-        // `:379-380`: the terminating `'\n'` joins the row the cut left, it does not open
+        // `:485-486`: the terminating `'\n'` joins the row the cut left, it does not open
         // another one — that is how C keeps the array's row count while dropping the text.
         self.segments[line].truncate(allowed);
         let last = &mut self.segments[line][allowed - 1];
@@ -559,7 +624,7 @@ impl EditorData {
         last.width = cut.display_len;
         self.total = self.total - rows + allowed;
 
-        // `:382-385`.
+        // `:488-491`.
         let length = self.display_line_length(*display_line) as i64;
         if *offset >= length {
             *offset = length - 1;
@@ -567,7 +632,7 @@ impl EditorData {
         true
     }
 
-    /// `:599`: a deletion re-splits from the edited row with a budget of the rows the line
+    /// `:715`: a deletion re-splits from the edited row with a budget of the rows the line
     /// already had, so a shorter line never pushes the display array past
     /// [`MAX_EDITOR_DATA_LINES`]: what does not fit is dropped from the document, without the
     /// `'\n'` glue [`EditorData::cut_overflow`] adds.
@@ -581,7 +646,7 @@ impl EditorData {
         self.recount_line(line);
     }
 
-    /// `:447-458`: whatever the last row of a full display array cannot show in
+    /// `:553-564`: whatever the last row of a full display array cannot show in
     /// [`SCREEN_COLS`] - 1 cells is cut off the document, its `'\n'` included, and the cursor is
     /// clamped onto what is left. C runs this after every insert that leaves the array full, so
     /// editing anywhere in such a document costs the text at the very end of it.
@@ -610,12 +675,45 @@ impl EditorData {
             width: cut.display_len,
         };
 
-        // `:453-457`.
+        // `:559-563`.
         if *display_line + 1 >= self.total as i64 {
             *offset = (*offset).min(cut.bytes as i64);
             *display_line = self.total as i64 - 1;
         }
     }
+}
+
+/// `:103-114, :126-137` (`dd5b5d1`): the line feeds that the loader's block packing leaves
+/// behind where it cuts a text line that has a line feed of its own.
+fn break_over_long_lines(lines: Vec<Vec<u8>>, cols: usize, fixed: bool) -> Vec<Vec<u8>> {
+    let mut out = Vec::with_capacity(lines.len());
+    for line in lines {
+        // A line that fits a block with the two bytes the packing keeps free never crosses a
+        // boundary, and the unclosed tail of the buffer has no line feed to be copied from.
+        if !line.ends_with(b"\n") || line.len() + 2 <= MAX_EDITOR_DATA_LINE_LENGTH {
+            out.push(line);
+            continue;
+        }
+
+        let wrapped = text::split_data_lines(&line, cols, false, fixed, usize::MAX);
+        let rows = wrapped.count();
+        let mut piece = 0usize;
+        let mut current = 0usize;
+        for row in 0..rows {
+            let len = (wrapped.offsets[row + 1] - wrapped.offsets[row]) as usize;
+            if current > 0 && current + len + 2 > MAX_EDITOR_DATA_LINE_LENGTH {
+                let at = wrapped.offsets[row] as usize;
+                let mut broken = line[piece..at].to_vec();
+                broken.push(b'\n');
+                out.push(broken);
+                piece = at;
+                current = 0;
+            }
+            current += len;
+        }
+        out.push(line[piece..].to_vec());
+    }
+    out
 }
 
 /// `EDITOR_ESC_DISPLAY_STR`'s replacement, exposed for [`editor_display`] and its tests.
@@ -634,7 +732,7 @@ fn escape_display(bytes: &[u8]) -> Vec<u8> {
 /// `screen.c:1007`'s window: the rows the text is painted on, the status row excluded.
 const SCREEN_BEGIN_ROW: i64 = 1;
 
-/// `SCREEN_ROWS - screen_begin_row` (`:674`).
+/// `SCREEN_ROWS - screen_begin_row` (`:717`).
 const SCREEN_ROW_TOTAL: i64 = SCREEN_ROWS as i64 - SCREEN_BEGIN_ROW;
 
 /// `EDITOR_CTX` (`include/editor.h:30-36`).
@@ -646,7 +744,7 @@ pub struct EditorCtx {
     pub line_cursor: i64,
 }
 
-/// `editor_display_key_handler` (`:645-660`).
+/// `editor_display_key_handler` (`:774-789`).
 ///
 /// The C function always returns 0, which makes the `!= 0` branches of its two callers dead
 /// code; the port has no return for them to check.
@@ -705,7 +803,7 @@ impl View {
         self.col_pos = self.col_pos.min(width.max(1));
     }
 
-    /// `:1057-1096`, `KEY_LEFT`: one character back, or the last column of the row above.
+    /// `:1189-1228`, `KEY_LEFT`: one character back, or the last column of the row above.
     /// `false` is the fall-through into `KEY_UP`.
     fn left(&mut self, data: &EditorData) -> bool {
         let line = self.cursor_line();
@@ -737,7 +835,7 @@ impl View {
         false
     }
 
-    /// `:1097-1115`, `KEY_UP`.
+    /// `:1229-1247`, `KEY_UP`.
     fn up(&mut self, data: &EditorData) {
         if self.row_pos > SCREEN_BEGIN_ROW {
             self.row_pos -= 1;
@@ -755,7 +853,7 @@ impl View {
         self.clamp_col(data);
     }
 
-    /// `:1116-1160`, `KEY_RIGHT`: one character on, or the first column of the row below.
+    /// `:1248-1292`, `KEY_RIGHT`: one character on, or the first column of the row below.
     /// `false` is the fall-through into `KEY_DOWN`.
     fn right(&mut self, data: &EditorData) -> bool {
         let line = self.cursor_line();
@@ -780,7 +878,7 @@ impl View {
         false
     }
 
-    /// `:1161-1182`, `KEY_DOWN`: one row down, scrolling the window when it runs off.
+    /// `:1293-1314`, `KEY_DOWN`: one row down, scrolling the window when it runs off.
     fn down(&mut self, data: &EditorData, term: &mut Terminal) {
         if self.row_pos < SCREEN_ROW_TOTAL.min(data.total() as i64) {
             self.row_pos += 1;
@@ -803,7 +901,7 @@ impl View {
         term.print("\n");
     }
 
-    /// The repaint C asks for after `Ctrl-Q` help or `KEY_F5` (`:1223-1229`).
+    /// The repaint C asks for after `Ctrl-Q` help or `KEY_F5` (`:1355-1361`).
     fn refresh(&mut self, term: &mut Terminal) {
         self.line_current -= self.output_current_row - SCREEN_BEGIN_ROW;
         self.output_current_row = SCREEN_BEGIN_ROW;
@@ -820,7 +918,7 @@ fn clr_rows(term: &mut Terminal, begin: i64, end: i64) {
     screen::clrline(term, begin.max(1) as usize, end.max(1) as usize);
 }
 
-/// The status row, `:706-724`: cursor position, line number, insert mode and the message the
+/// The status row, `:837-854`: cursor position, line number, insert mode and the message the
 /// extended key handler left behind, padded to the full width and reset.
 fn status_line(data: &EditorData, view: &View, ctx: &EditorCtx, key_insert: bool) -> Vec<u8> {
     let buffer = format!(
@@ -844,7 +942,7 @@ fn status_line(data: &EditorData, view: &View, ctx: &EditorCtx, key_insert: bool
     out
 }
 
-/// `editor_display` (`:662-1294`): the full-screen edit of `data`.
+/// `editor_display` (`:791-1426`): the full-screen edit of `data`.
 ///
 /// The return is C's last key — `Ctrl-W`/`Ctrl-X` when the user left the way they should,
 /// [`KEY_NULL`] or [`KEY_TIMEOUT`] when the connection or the idle limit ended it. C's
@@ -854,10 +952,10 @@ fn status_line(data: &EditorData, view: &View, ctx: &EditorCtx, key_insert: bool
 ///
 /// # Deviations from C
 ///
-/// * `show_help` (`:663`) was a process-wide `static int` guarding the help pager against
+/// * `show_help` (`:793`) was a process-wide `static int` guarding the help pager against
 ///   re-entering the editor. One task owns one editor here, so the flag has nothing to
 ///   guard and the refresh C falls through to is done directly.
-/// * `:1260-1264` catches a negative display-line length. Rust cannot produce one.
+/// * `:1392-1396` catches a negative display-line length. Rust cannot produce one.
 /// * `MIN`/`MAX` of C's `long`s are the same over [`i64`]; the array indexes they produce are
 ///   clamped to the document, where C would have read past `p_display_lines`.
 pub async fn editor_display(
@@ -909,7 +1007,7 @@ pub async fn editor_display(
                 }
 
                 // The lead byte of a multi-byte character; the rest arrive on their own
-                // `igetch(100)` calls (`:751-776`).
+                // `igetch(100)` calls (`:882-906`).
                 if ch < 256 && (ch as u8) & 0x80 != 0 {
                     input.clear();
                     let mut c: u8 = (ch as u8) & 0xf0;
@@ -949,10 +1047,13 @@ pub async fn editor_display(
                     view.last_updated_line = display_line_in;
 
                     if !key_insert {
+                        // `:931-934`: overwrite mode deletes the character it is replacing, line
+                        // feed included.
                         data.delete(
                             &mut display_line_out,
                             &mut offset_out,
                             &mut view.last_updated_line,
+                            false,
                             false,
                         );
                     }
@@ -1016,7 +1117,7 @@ pub async fn editor_display(
                         tab_width -= 1;
                     } else {
                         // Keep reading while the client is still sending; paint as soon as it
-                        // stops (`:873-877`).
+                        // stops (`:1003-1007`).
                         ch = term.read_key(Duration::ZERO).await;
                         if ch == KEY_NULL || ch == KEY_TIMEOUT {
                             break;
@@ -1033,6 +1134,7 @@ pub async fn editor_display(
                     }
 
                     let mut del_line = false;
+                    let mut exclude_lf = false;
 
                     if ch == BACKSPACE {
                         // At the very top of the document there is nothing back to.
@@ -1042,7 +1144,7 @@ pub async fn editor_display(
                         let display_len =
                             data.col_to_offset(view.cursor_line(), view.col_pos).1 as i64;
                         view.col_pos = display_len;
-                        // `:906-909`: the cursor is on the first cell, so it backs onto the
+                        // `:1037-1040`: the cursor is on the first cell, so it backs onto the
                         // last cell of the row above. `row_pos` is already decremented when C
                         // reads the width, so it reads the row the cursor just landed on.
                         if view.col_pos < 1 && view.cursor_line() >= 0 {
@@ -1051,7 +1153,10 @@ pub async fn editor_display(
                                 data.display_line_width(view.cursor_line()).max(1) as i64;
                         }
                     } else if ch == KEY_CTRL_K {
+                        // `:1041-1044`: `Ctrl-K` kills the text of the row and keeps its line
+                        // feed, so the row is left standing empty.
                         del_line = true;
+                        exclude_lf = true;
                     } else if ch == KEY_CTRL_Y {
                         view.col_pos = 1;
                         del_line = true;
@@ -1069,6 +1174,7 @@ pub async fn editor_display(
                         &mut offset_out,
                         &mut view.last_updated_line,
                         del_line,
+                        exclude_lf,
                     );
                     if str_len < 0 {
                         tracing::error!("editor_data_delete() error: {str_len}");
@@ -1088,7 +1194,7 @@ pub async fn editor_display(
                         }
 
                         // The cursor ran past the end of the document: pull the window back
-                        // to it (`:945-955`).
+                        // to it (`:1077-1087`).
                         if view.line_current + (SCREEN_ROW_TOTAL - view.output_current_row)
                             >= data.total() as i64
                             && data.total() > SCREEN_ROW_TOTAL as usize
@@ -1242,11 +1348,10 @@ pub async fn editor_display(
 
                 ch = term.read_key_wait(MAX_USER_IDLE_TIME).await;
             }
-
             continue;
         }
 
-        // One display line per row, escapes shown as stars (`:1254-1288`).
+        // One display line per row, escapes shown as stars (`:1386-1420`).
         let mut len = data.display_line_length(view.line_current);
         if len >= MAX_EDITOR_DATA_LINE_LENGTH {
             tracing::error!("Buffer overflow: len={len} line={} ", view.line_current);
@@ -1372,7 +1477,7 @@ mod tests {
 
     #[test]
     fn typing_past_the_end_of_a_row_carries_the_cursor_onto_the_next() {
-        // `:436-443`: an insert that fills a display line leaves the cursor one cell into the
+        // `:543-550`: an insert that fills a display line leaves the cursor one cell into the
         // row after it.
         let mut data = doc(&"x".repeat(SCREEN_COLS));
         assert_eq!(data.total(), 1);
@@ -1390,7 +1495,7 @@ mod tests {
         let (mut line, mut offset) = (0i64, 2i64);
         let mut last_updated = 0i64;
         assert_eq!(
-            data.delete(&mut line, &mut offset, &mut last_updated, false),
+            data.delete(&mut line, &mut offset, &mut last_updated, false, false),
             1
         );
         assert_eq!(data.total(), 1);
@@ -1398,9 +1503,164 @@ mod tests {
         // And once the cursor is past the merged line's last byte there is nothing left.
         offset = 4;
         assert_eq!(
-            data.delete(&mut line, &mut offset, &mut last_updated, false),
+            data.delete(&mut line, &mut offset, &mut last_updated, false, false),
             0
         );
+    }
+
+    /// `editor.c:692-694` (`6dd6846`) refuses a join that would leave the merged line without the
+    /// two bytes a split at its end keeps — the pair of checks C's `test_editor.c` #9 makes.
+    #[test]
+    fn a_join_that_would_leave_no_room_at_the_end_of_the_line_is_refused() {
+        for fill in [
+            MAX_EDITOR_DATA_LINE_LENGTH - 3,
+            MAX_EDITOR_DATA_LINE_LENGTH - 4,
+        ] {
+            let text = format!("{}\nef", "g".repeat(fill));
+            let mut data = doc(&text);
+            let row = 12i64;
+            assert_eq!(
+                (data.total(), data.display_line_length(row)),
+                (14, fill + 1 - 12 * SCREEN_COLS),
+                "the full line takes thirteen rows and the short one a fourteenth"
+            );
+
+            let mut line = row;
+            let mut offset = fill as i64 - 12 * SCREEN_COLS as i64;
+            let mut last_updated = 0i64;
+            let ret = data.delete(&mut line, &mut offset, &mut last_updated, false, false);
+            if fill == MAX_EDITOR_DATA_LINE_LENGTH - 3 {
+                assert_eq!(
+                    ret, 0,
+                    "the merged line would have no byte left for its terminator"
+                );
+                assert_eq!(
+                    (saved(&data), data.total()),
+                    (text.into_bytes(), 14),
+                    "the refused join changes nothing"
+                );
+            } else {
+                assert_eq!(ret, 1, "one byte shorter and the lines do become one");
+                assert_eq!(
+                    (saved(&data), data.total()),
+                    (format!("{}ef", "g".repeat(fill)).into_bytes(), 13),
+                    "the join drops the row the short line had"
+                );
+            }
+        }
+    }
+
+    /// `editor.c:120-124` and `:692-694` (`6dd6846`) reserve the two bytes a split at the end of
+    /// a data line writes, so a line only breaks there once that room is gone.
+    #[test]
+    fn typing_at_the_end_of_a_line_breaks_it_only_when_no_room_is_left() {
+        fn end(data: &EditorData) -> (i64, i64) {
+            let row = data.total() as i64 - 1;
+            (row, data.display_line_length(row) as i64)
+        }
+
+        for fill in 0..5 {
+            let len = MAX_EDITOR_DATA_LINE_LENGTH - 3 + fill;
+            let breaks = len >= MAX_EDITOR_DATA_LINE_LENGTH - 2;
+            let text = "a".repeat(len);
+            let sep = if breaks { "\n" } else { "" };
+            let mut data = doc(&text);
+            let (mut line, mut offset) = end(&data);
+            let mut last_updated = 0i64;
+
+            data.insert(&mut line, &mut offset, b"z", &mut last_updated)
+                .unwrap();
+            assert_eq!(
+                saved(&data),
+                format!("{text}{sep}z").into_bytes(),
+                "one byte at the end of a {len} byte line"
+            );
+
+            let (mut line, mut offset) = end(&data);
+            data.insert(&mut line, &mut offset, b"\r", &mut last_updated)
+                .unwrap();
+            assert_eq!(
+                saved(&data),
+                format!("{text}{sep}z\n").into_bytes(),
+                "a break at the end of a {len} byte line"
+            );
+        }
+    }
+
+    /// The fill sizes C's `test_wrapping` walks, with the display rows they take. C also counts
+    /// the 1024-byte blocks a long line fills; the port keeps the line in one buffer, so only
+    /// the rows are compared.
+    #[test]
+    fn a_loaded_line_wraps_into_the_rows_the_reference_counts() {
+        for (fill, rows, tail) in [
+            (80usize, 1usize, 80usize),
+            (81, 2, 1),
+            (200, 3, 40),
+            (1022, 13, 62),
+            (1023, 13, 63),
+            (2000, 25, 80),
+        ] {
+            let data = doc(&"x".repeat(fill));
+            assert_eq!(data.total(), rows, "{fill} characters take {rows} rows");
+            assert_eq!(
+                data.display_line_length((rows - 1) as i64),
+                tail,
+                "the last row of a {fill} character line"
+            );
+        }
+    }
+
+    /// C's `test_load_save` table: the display lines, lengths and widths one buffer loads into,
+    /// the data lines it splits into, and the round trip back out.
+    #[test]
+    fn a_buffer_loads_into_the_lines_and_widths_the_reference_measures() {
+        let rows = |data: &EditorData| {
+            (0..data.total() as i64)
+                .map(|row| (data.display_line_length(row), data.display_line_width(row)))
+                .collect::<Vec<_>>()
+        };
+
+        for (text, line_count, measured) in [
+            ("", 1usize, vec![(0usize, 0usize)]),
+            ("abc", 1, vec![(3, 3)]),
+            ("abc\n", 2, vec![(4, 4), (0, 0)]),
+            ("ab\ncd", 2, vec![(3, 3), (2, 2)]),
+            ("one\ntwo\nthree", 3, vec![(4, 4), (4, 4), (5, 5)]),
+            ("a\tb\n\tc", 2, vec![(4, 4), (2, 2)]),
+            ("a\r\nb\rc", 2, vec![(3, 2), (3, 2)]),
+        ] {
+            let data = doc(text);
+            assert_eq!(
+                (data.lines.len(), data.total(), rows(&data)),
+                (line_count, measured.len(), measured),
+                "loading {text:?}"
+            );
+            let out = saved(&data);
+            assert_eq!(
+                out.as_slice(),
+                text.replace('\t', " ").as_bytes(),
+                "the round trip of {text:?}"
+            );
+        }
+
+        let data = doc("a\tb\n\tc");
+        assert_eq!(data.display_line(0), b"a b\n", "a tab loads as one space");
+        assert_eq!(data.display_line(1), b" c");
+
+        for (text, measured) in [
+            ("中文", vec![(6usize, 4usize)]),
+            ("a中b文c", vec![(9, 7)]),
+            ("\x1b[32mred\x1b[m", vec![(11, 11)]),
+        ] {
+            let data = EditorData::load(text.as_bytes(), true);
+            assert_eq!(rows(&data), measured, "the fixed width measure of {text:?}");
+            assert_eq!(saved(&data), text.as_bytes());
+        }
+
+        let data = doc("Hello\nWorld");
+        assert_eq!(data.save(12).unwrap(), b"Hello\nWorld");
+        assert_eq!(data.save(11), None, "one byte short of the text");
+        assert_eq!(data.save(5), None, "short of even the first line");
     }
 
     #[test]
@@ -1409,7 +1669,7 @@ mod tests {
         let (mut line, mut offset) = (0i64, 0i64);
         let mut last_updated = 0i64;
         assert_eq!(
-            data.delete(&mut line, &mut offset, &mut last_updated, false),
+            data.delete(&mut line, &mut offset, &mut last_updated, false, false),
             3
         );
         assert_eq!(saved(&data), b"x");
@@ -1421,10 +1681,253 @@ mod tests {
         let (mut line, mut offset) = (0i64, 2i64);
         let mut last_updated = 0i64;
         assert_eq!(
-            data.delete(&mut line, &mut offset, &mut last_updated, true),
+            data.delete(&mut line, &mut offset, &mut last_updated, true, false),
             4
         );
         assert_eq!(saved(&data), b"ab");
+    }
+
+    /// C's `test_editor.c` #8 with the `ae52b6a` `exclude_lf`: `Ctrl-K` takes the text of the row
+    /// and leaves its line feed, so the emptied row stays in the document (`editor.c:641-645`).
+    #[test]
+    fn ctrl_k_leaves_the_line_and_its_row() {
+        let mut data = doc("one\ntwo\nthree");
+        let (mut line, mut offset) = (0i64, 0i64);
+        let mut last_updated = 0i64;
+        assert_eq!(
+            data.delete(&mut line, &mut offset, &mut last_updated, true, true),
+            3,
+            "the three characters go, the line feed stays"
+        );
+        assert_eq!(saved(&data), b"\ntwo\nthree");
+        assert_eq!(data.total(), 3, "the emptied row is still a row");
+        assert_eq!(data.display_line(0), b"\n");
+    }
+
+    /// `editor.c:346` (`ae52b6a`): a line that ends on a line feed is broken only when its text
+    /// plus the insert no longer fits with one byte free, not two — C's `test_editor.c` #13 types
+    /// in front of that line feed on a line already full to its reserve.
+    #[test]
+    fn a_terminated_line_holds_one_byte_more_than_an_unterminated_one() {
+        let text = format!("{}\ntail", "a".repeat(1021));
+        let mut data = doc(&text);
+        assert_eq!(data.display_line_length(12), 62, "the tail row of the line");
+        assert_eq!(data.display_line(12).last(), Some(&b'\n'));
+
+        let (mut line, mut offset) = (12i64, 5i64);
+        let mut last_updated = 0i64;
+        data.insert(&mut line, &mut offset, b"z", &mut last_updated)
+            .unwrap();
+
+        let mut want = text.clone();
+        want.insert_str(960 + 5, "z");
+        assert_eq!(
+            saved(&data),
+            want.as_bytes(),
+            "the line only gained the character"
+        );
+    }
+
+    /// `editor.c:385-393`, `:421-429`: the break a split writes at the end of a line that already
+    /// ends on a line feed is that line feed, so typing there costs the document no empty row.
+    #[test]
+    fn typing_behind_a_full_line_starts_the_next_without_a_blank_one() {
+        let text = format!("{}\ntail", "a".repeat(1021));
+        let mut data = doc(&text);
+        let end = data.display_line_length(12) as i64;
+        let (mut line, mut offset) = (12i64, end);
+        let mut last_updated = 0i64;
+        data.insert(&mut line, &mut offset, b"q", &mut last_updated)
+            .unwrap();
+
+        let mut want = text.clone();
+        want.insert_str(1022, "q");
+        assert_eq!(saved(&data), want.as_bytes());
+        assert!(
+            !saved(&data).windows(2).any(|pair| pair == b"\n\n"),
+            "the line feed the break would have written is the one the line ends on"
+        );
+    }
+
+    /// `editor.c:388-392`: a carriage return asked for at that same place does want the empty
+    /// line, and it is the new data line's own line feed — a row of exactly one byte.
+    #[test]
+    fn a_break_behind_a_full_line_asks_for_the_empty_row() {
+        let text = format!("{}\ntail", "a".repeat(1021));
+        let mut data = doc(&text);
+        let end = data.display_line_length(12) as i64;
+        let (mut line, mut offset) = (12i64, end);
+        let mut last_updated = 0i64;
+        data.insert(&mut line, &mut offset, b"\r", &mut last_updated)
+            .unwrap();
+
+        let mut want = text.clone();
+        want.insert_str(1022, "\n");
+        assert_eq!(
+            saved(&data),
+            want.as_bytes(),
+            "the break leaves an empty line"
+        );
+        assert_eq!(
+            data.display_line_length(line),
+            1,
+            "the empty row is the lone line feed"
+        );
+    }
+
+    /// `editor.c:692-694`: joining a line whose text ends on a line feed keeps one free byte, not
+    /// two — the line feed comes along in the copy and is itself the terminator's neighbour.
+    #[test]
+    fn a_join_with_a_terminated_line_keeps_one_byte_of_reserve() {
+        let text = format!("x\n{}\ntail", "a".repeat(1021));
+        let mut data = doc(&text);
+        let (mut line, mut offset) = (0i64, 1i64);
+        let mut last_updated = 0i64;
+        assert_eq!(
+            data.delete(&mut line, &mut offset, &mut last_updated, true, false),
+            1,
+            "the row's line feed goes"
+        );
+        assert_eq!(
+            saved(&data),
+            format!("x{}\ntail", "a".repeat(1021)).as_bytes(),
+            "the terminated line joins with one byte to spare"
+        );
+    }
+
+    /// `editor.c:126-137` (`dd5b5d1`), the round trip C's `test_editor.c` #7 measures: a closed
+    /// line that spills its block comes back terminated where it spilled, and the keystrokes at
+    /// the end of that document still only append.
+    #[test]
+    fn an_over_long_closed_line_loads_terminated_at_the_block_boundary() {
+        for count in 1..=4usize {
+            let text = format!("{}\n", "d".repeat(1025)).repeat(count);
+            let want = format!("{}\n{}\n", "d".repeat(960), "d".repeat(65)).repeat(count);
+            let mut data = doc(&text);
+            assert_eq!(
+                saved(&data),
+                want.as_bytes(),
+                "the load of {count} over-long lines"
+            );
+            assert_eq!(
+                data.lines.len(),
+                count * 2 + 1,
+                "two data lines apiece and the empty tail"
+            );
+
+            let row = data.total() as i64 - 1;
+            let len = data.display_line_length(row);
+            let (mut line, mut offset) = (row, len as i64);
+            let mut last_updated = 0i64;
+            data.insert(&mut line, &mut offset, b"tail", &mut last_updated)
+                .unwrap();
+            assert_eq!(
+                saved(&data),
+                format!("{want}tail").as_bytes(),
+                "typing at the end of the capacity text"
+            );
+
+            let row = data.total() as i64 - 1;
+            let len = data.display_line_length(row);
+            let (mut line, mut offset) = (row, len as i64);
+            data.insert(&mut line, &mut offset, b"\r", &mut last_updated)
+                .unwrap();
+            assert_eq!(
+                saved(&data),
+                format!("{want}tail\n").as_bytes(),
+                "the break at the end of the capacity text"
+            );
+        }
+    }
+
+    /// `editor.c:103-114` and `:126-137` (`dd5b5d1`), from C's `test_editor.c` #13: three block
+    /// boundaries in one closed line load as three data lines, and typing inside the first one
+    /// only adds the character.
+    #[test]
+    fn a_closed_line_that_spills_two_blocks_loads_as_three_data_lines() {
+        let text = format!("{}\ntail", "a".repeat(2000));
+        let want = format!(
+            "{}\n{}\n{}\ntail",
+            "a".repeat(960),
+            "a".repeat(960),
+            "a".repeat(80)
+        );
+        let mut data = doc(&text);
+        assert_eq!(
+            saved(&data),
+            want.as_bytes(),
+            "the load of a line over two blocks"
+        );
+        assert_eq!(
+            data.lines.len(),
+            4,
+            "one data line per block the reference packs"
+        );
+
+        let (mut line, mut offset) = (1i64, 10i64);
+        let mut last_updated = 0i64;
+        data.insert(&mut line, &mut offset, b"x", &mut last_updated)
+            .unwrap();
+
+        let mut typed = want;
+        typed.insert_str(90, "x");
+        assert_eq!(
+            saved(&data),
+            typed.as_bytes(),
+            "typing inside the first block only adds the character"
+        );
+        assert_eq!(
+            (line, offset),
+            (1, 11),
+            "the cursor sits behind the character it typed"
+        );
+    }
+
+    /// The same load with wide characters, which C measures in bytes: the boundary comes at a
+    /// display row, so the injected line feed never falls inside a character.
+    #[test]
+    fn a_wide_line_is_broken_between_characters_at_its_block_boundary() {
+        let text = "一".repeat(400) + "\n";
+        let want = format!("{}\n{}\n", "一".repeat(320), "一".repeat(80));
+        let data = doc(&text);
+        assert_eq!(
+            saved(&data),
+            want.as_bytes(),
+            "the load of a wide line over one block"
+        );
+        assert_eq!(data.lines.len(), 3, "two blocks and the empty tail");
+    }
+
+    /// `editor.c:103-114` and `:130` (`dd5b5d1`), the other half of C's `test_editor.c` #13: a
+    /// buffer whose last line has no line feed of its own is loaded with its block boundaries
+    /// byte-free, so it saves back exactly as it came in and the character at a boundary still
+    /// belongs to the block behind it.
+    #[test]
+    fn an_unclosed_line_crosses_blocks_without_gaining_a_line_feed() {
+        let text = "a".repeat(2000);
+        let data = doc(&text);
+        assert_eq!(
+            saved(&data),
+            text.as_bytes(),
+            "the unclosed tail of the buffer keeps its boundaries empty"
+        );
+
+        let mut data = doc(&text);
+        let (mut line, mut offset) = (11i64, 80i64);
+        let mut last_updated = 0i64;
+        assert_eq!(
+            data.delete(&mut line, &mut offset, &mut last_updated, false, false),
+            1,
+            "the delete at the end of a block takes the character behind the boundary"
+        );
+
+        let mut want = text;
+        want.remove(960);
+        assert_eq!(
+            (saved(&data), line, offset),
+            (want.into_bytes(), 11, 80),
+            "the port sits at the end of the row where C moves the cursor to the next block"
+        );
     }
 
     #[test]
@@ -1451,7 +1954,7 @@ mod tests {
         assert_eq!(data.total(), MAX_EDITOR_DATA_LINES);
     }
 
-    /// The same cap as `editor.c:99`, where the display array is the size of the limit: a
+    /// The same cap as `editor.c:100`, where the display array is the size of the limit: a
     /// body of short lines fills it and the rest of the document is not editable.
     #[test]
     fn loading_stops_counting_display_lines_at_the_limit() {
@@ -1459,7 +1962,7 @@ mod tests {
         let text = "a\n".repeat(over);
         let data = doc(&text);
         assert_eq!(data.total(), MAX_EDITOR_DATA_LINES);
-        // `:141-148`: the cap cut the array off in front of the row that would have held the
+        // `:171-178`: the cap cut the array off in front of the row that would have held the
         // last `'\n'`, so that newline is the array's last byte and gets trimmed with it.
         assert_eq!(data.display_line(data.total() as i64 - 1), b"a");
         assert_eq!(data.display_line(data.total() as i64 - 2), b"a\n");
@@ -1474,7 +1977,7 @@ mod tests {
         );
     }
 
-    /// `:366-387`, `:447-458`: an edit into a document that already fills the display array
+    /// `:472-493`, `:553-564`: an edit into a document that already fills the display array
     /// never adds a row — the text that needs the row the array does not have is dropped, and
     /// what C measured byte for byte on the reference article is what these tests pin.
     #[test]
@@ -1508,7 +2011,7 @@ mod tests {
         );
     }
 
-    /// `:447-458`: the same cut runs on an edit that is nowhere near the end of the document:
+    /// `:553-564`: the same cut runs on an edit that is nowhere near the end of the document:
     /// a full array trims its last row to [`SCREEN_COLS`] - 1 cells whatever happened above it.
     #[test]
     fn a_full_document_loses_the_tail_of_its_last_row() {
@@ -1541,6 +2044,116 @@ mod tests {
             )
             .into_bytes()
         );
+    }
+
+    /// `:553-564` (`4358c9b`), C's `test_editor.c` #14 (a): the reserve cut walks by whole
+    /// codepoints, so a two-column character at the screen edge comes off entire and the document
+    /// loses it for good — the shape of the reference article that started this round.
+    #[test]
+    fn a_wide_character_at_the_screen_edge_is_cut_whole() {
+        const BIG: usize = 4 * MAX_EDITOR_DATA_LINES;
+        const CAR: &[u8] = "车".as_bytes();
+        let text = format!(
+            "{}{}车",
+            "\n".repeat(MAX_EDITOR_DATA_LINES - 1),
+            "a".repeat(SCREEN_COLS - 2)
+        );
+        let mut data = doc(&text);
+        assert_eq!(data.total(), MAX_EDITOR_DATA_LINES);
+        let last = data.total() as i64 - 1;
+        assert_eq!(
+            data.display_line_length(last),
+            SCREEN_COLS + 1,
+            "the wide tail takes three bytes for the last two columns"
+        );
+        assert_eq!(data.display_line_width(last), SCREEN_COLS);
+
+        let (mut line, mut offset) = (0i64, 0i64);
+        let mut last_updated = 0i64;
+        data.insert(&mut line, &mut offset, b"x", &mut last_updated)
+            .unwrap();
+
+        assert_eq!(
+            data.display_line_length(last),
+            SCREEN_COLS - 2,
+            "the cut drops the whole wide character, not one byte of it"
+        );
+        assert_eq!(data.display_line_width(last), SCREEN_COLS - 2);
+        let out = data.save(BIG).unwrap();
+        assert!(
+            !out.windows(CAR.len()).any(|w| w == CAR),
+            "the wide character is gone from the saved document too"
+        );
+
+        let again = EditorData::load(&out, false);
+        let last = again.total() as i64 - 1;
+        assert!(
+            !again
+                .display_line(last)
+                .windows(CAR.len())
+                .any(|w| w == CAR),
+            "the reloaded last row is still missing the wide character"
+        );
+    }
+
+    /// C's `test_editor.c` #14 (b): a wide character with room for it inside [`SCREEN_COLS`] - 1
+    /// columns survives the cut, which then costs the single column of ASCII behind it and stops
+    /// on the codepoint boundary rather than mid-sequence.
+    #[test]
+    fn a_wide_character_before_its_ascii_tail_survives_the_cut() {
+        let tail = format!("{}车", "a".repeat(SCREEN_COLS - 3));
+        let text = format!("{}{}z", "\n".repeat(MAX_EDITOR_DATA_LINES - 1), tail);
+        let mut data = doc(&text);
+        let last = data.total() as i64 - 1;
+        assert_eq!(data.display_line_length(last), SCREEN_COLS + 1);
+        assert_eq!(data.display_line_width(last), SCREEN_COLS);
+
+        let (mut line, mut offset) = (0i64, 0i64);
+        let mut last_updated = 0i64;
+        data.insert(&mut line, &mut offset, b"y", &mut last_updated)
+            .unwrap();
+
+        assert_eq!(
+            data.display_line_length(last),
+            SCREEN_COLS,
+            "the cut preserves the wide character and drops the ascii tail"
+        );
+        assert_eq!(data.display_line_width(last), SCREEN_COLS - 1);
+        let row = data.display_line(last);
+        assert_eq!(row[row.len() - 1], 0xa6, "the row ends on a byte");
+        assert_eq!(
+            row[row.len() - 3],
+            0xe8,
+            "the wide character begins three bytes from the end"
+        );
+    }
+
+    /// C's `test_editor.c` #14 (c): with two wide characters at the tail the cut stops between
+    /// them, so the first stays whole and the second is what goes.
+    #[test]
+    fn two_wide_characters_are_cut_on_their_boundary() {
+        let tail = format!("{}车车", "a".repeat(SCREEN_COLS - 4));
+        let text = format!("{}{}", "\n".repeat(MAX_EDITOR_DATA_LINES - 1), tail);
+        let mut data = doc(&text);
+        let last = data.total() as i64 - 1;
+        assert_eq!(
+            data.display_line_length(last),
+            SCREEN_COLS + 2,
+            "two wide characters take six bytes for the last four columns"
+        );
+        assert_eq!(data.display_line_width(last), SCREEN_COLS);
+
+        let (mut line, mut offset) = (0i64, 0i64);
+        let mut last_updated = 0i64;
+        data.insert(&mut line, &mut offset, b"q", &mut last_updated)
+            .unwrap();
+
+        assert_eq!(
+            data.display_line_length(last),
+            SCREEN_COLS - 1,
+            "the cut stops on the codepoint boundary between the two"
+        );
+        assert_eq!(data.display_line_width(last), SCREEN_COLS - 2);
     }
 
     /// The same document pasted into three times over, at the top of it, inside a wrapped row
@@ -1608,7 +2221,7 @@ mod tests {
         assert_eq!(data.save(BIG).unwrap().len(), 131_230);
     }
 
-    /// `:599`: a deletion re-splits with the rows its line already had, so the document gets
+    /// `:715`: a deletion re-splits with the rows its line already had, so the document gets
     /// no longer than the array C could show.
     #[test]
     fn a_deletion_at_the_limit_cuts_the_document_back() {
@@ -1624,7 +2237,7 @@ mod tests {
         let (mut line, mut offset) = (MAX_EDITOR_DATA_LINES as i64 - 2, 0i64);
         let mut last_updated = 0i64;
         assert_eq!(
-            data.delete(&mut line, &mut offset, &mut last_updated, true),
+            data.delete(&mut line, &mut offset, &mut last_updated, true, false),
             80,
             "the whole of the wrapped row goes"
         );
@@ -1639,6 +2252,139 @@ mod tests {
                 "b".repeat(80)
             )
             .into_bytes()
+        );
+    }
+
+    /// Testing #10 of the reference (`5da3fc6`): a line feed is worth a column of the row it ends
+    /// to the guard at `:552-564` but not to the loader, so a document whose last row exactly
+    /// fills the screen keeps all 80 columns until an edit asks for a row the array does not
+    /// have. Then the reserve comes off the end of the document, wherever the keystroke was.
+    #[test]
+    fn the_last_row_of_a_full_document_keeps_a_column_of_reserve() {
+        const BIG: usize = 4 * MAX_EDITOR_DATA_LINES;
+        const LAST: i64 = MAX_EDITOR_DATA_LINES as i64 - 1;
+        let text = format!(
+            "{}{}",
+            "\n".repeat(MAX_EDITOR_DATA_LINES - 1),
+            "x".repeat(SCREEN_COLS)
+        );
+        let cut = "x".repeat(SCREEN_COLS - 1);
+
+        let mut data = doc(&text);
+        assert_eq!(data.total(), MAX_EDITOR_DATA_LINES);
+        assert_eq!(
+            data.display_line_length(LAST),
+            SCREEN_COLS,
+            "the screen wide last row of a full document loads whole"
+        );
+        assert_eq!(data.display_line_width(LAST), SCREEN_COLS);
+        assert_eq!(
+            data.save(BIG).unwrap(),
+            text.as_bytes(),
+            "a screen wide last row saves as it loaded"
+        );
+
+        let (mut line, mut offset, mut last_updated) = (0i64, 0i64, 0i64);
+        data.insert(&mut line, &mut offset, b"y", &mut last_updated)
+            .unwrap();
+        assert_eq!(
+            data.display_line_length(LAST),
+            SCREEN_COLS - 1,
+            "an edit at the top cuts the last row one column short"
+        );
+        assert_eq!(data.display_line_width(LAST), SCREEN_COLS - 1);
+        assert_eq!(
+            data.display_line(LAST),
+            cut.as_bytes(),
+            "the character lost is the last one of the document"
+        );
+        assert_eq!(
+            data.save(BIG).unwrap(),
+            format!("y{}{}", "\n".repeat(MAX_EDITOR_DATA_LINES - 1), cut).into_bytes()
+        );
+
+        // Typed at the screen edge of that last row, the keystroke is the one the guard drops:
+        // the cursor is pulled back onto the reserve column and the row keeps the 79th `x`.
+        let mut data = doc(&text);
+        let (mut line, mut offset, mut last_updated) = (LAST, SCREEN_COLS as i64, 0i64);
+        data.insert(&mut line, &mut offset, b"y", &mut last_updated)
+            .unwrap();
+        assert_eq!(
+            (line, offset),
+            (LAST, SCREEN_COLS as i64 - 1),
+            "the cursor of the dropped character is pulled back one column"
+        );
+        assert_eq!(data.display_line_length(LAST), SCREEN_COLS - 1);
+        assert_eq!(
+            data.display_line(LAST),
+            cut.as_bytes(),
+            "the keystroke at the screen edge costs the document its last character"
+        );
+
+        // `:488-491`: the reserve column is not text either. The keystroke that asks for it is
+        // paid for by the character it replaces, so the row never grows past 79 columns.
+        let (mut line, mut offset, mut last_updated) = (LAST, SCREEN_COLS as i64 - 1, 0i64);
+        data.insert(&mut line, &mut offset, b"z", &mut last_updated)
+            .unwrap();
+        assert_eq!((line, offset), (LAST, SCREEN_COLS as i64 - 1));
+        assert_eq!(data.display_line_length(LAST), SCREEN_COLS - 1);
+        assert_eq!(
+            data.display_line(LAST),
+            cut.as_bytes(),
+            "the reserve column keeps the character it had"
+        );
+    }
+
+    /// The other half of testing #10: one display line short of the array the overflow has
+    /// somewhere to go, so the same keystrokes cost the document nothing and the 80 columns of a
+    /// row stay a row of their own.
+    #[test]
+    fn a_row_short_of_the_limit_spills_onto_the_free_display_line() {
+        const BIG: usize = 4 * MAX_EDITOR_DATA_LINES;
+        const LAST: i64 = MAX_EDITOR_DATA_LINES as i64 - 2;
+        let text = format!(
+            "{}{}",
+            "\n".repeat(MAX_EDITOR_DATA_LINES - 2),
+            "x".repeat(SCREEN_COLS)
+        );
+
+        let mut data = doc(&text);
+        assert_eq!(data.total(), MAX_EDITOR_DATA_LINES - 1);
+        assert_eq!(data.display_line_length(LAST), SCREEN_COLS);
+
+        let (mut line, mut offset, mut last_updated) = (0i64, 0i64, 0i64);
+        data.insert(&mut line, &mut offset, b"y", &mut last_updated)
+            .unwrap();
+        assert_eq!(
+            data.display_line_length(LAST),
+            SCREEN_COLS,
+            "an edit at the top costs the short model no column"
+        );
+        assert_eq!(data.total(), MAX_EDITOR_DATA_LINES - 1);
+
+        // Typing at the screen edge of a row that is not the last of a full array grows the
+        // logical line and re-wraps it: the character lands on a display line of its own without
+        // a break of its own, and the document keeps every column.
+        let (mut line, mut offset, mut last_updated) = (LAST, SCREEN_COLS as i64, 0i64);
+        data.insert(&mut line, &mut offset, b"w", &mut last_updated)
+            .unwrap();
+        assert_eq!(
+            data.total(),
+            MAX_EDITOR_DATA_LINES,
+            "the wrap takes the free row"
+        );
+        assert_eq!(data.display_line_length(LAST), SCREEN_COLS);
+        assert_eq!(data.display_line_width(LAST), SCREEN_COLS);
+        assert_eq!(data.display_line(LAST + 1), b"w");
+        assert_eq!(
+            data.save(BIG).unwrap(),
+            format!(
+                "y{}{}w",
+                "\n".repeat(MAX_EDITOR_DATA_LINES - 2),
+                "x".repeat(SCREEN_COLS)
+            )
+            .into_bytes(),
+            "the wrap keeps every character of the document"
         );
     }
 
@@ -1699,6 +2445,7 @@ mod tests {
                     &mut offset,
                     &mut last_updated,
                     rand(3) == 0,
+                    false,
                 );
             } else {
                 let bytes: &[u8] = match rand(5) {
