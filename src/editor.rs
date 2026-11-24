@@ -30,13 +30,13 @@
 //! * Since `dd5b5d1` the loader itself breaks a text line that no longer fits a block at each
 //!   boundary, leaving a `'\n'` behind where it cut (`:103-114`, `:126-137`), so a line that
 //!   ends on a line feed is already several data lines by the time C edits it;
-//!   `break_over_long_lines` makes the same cut in [`EditorData::load`]. The bytes saved agree.
-//!   What differs is that the port gives each of those injected line feeds a display row of its
-//!   own, as it gives the one at `:397-399`, so its rows run one ahead of C's per break; and a
-//!   line that ends without a line feed — only the unterminated tail of a loaded article can be
-//!   one — stays a single entry here where C spans several blocks, where `len_data_line` counts
-//!   within the block of the cursor only (`is_data_line_end`, `:262-282`, and `:604-630`), so
-//!   the split and merge guards measure that one document differently.
+//!   `break_over_long_lines` makes the same cut in [`EditorData::load`]. The bytes saved agree,
+//!   and so do the rows, because a load re-splits the whole text on both sides. What differs is
+//!   a line that ends without a line feed — only the unterminated tail of a loaded article can
+//!   be one — which stays a single entry here where C spans several blocks, where
+//!   `len_data_line` counts within the block of the cursor only (`is_data_line_end`,
+//!   `:262-282`, and `:604-630`), so the split and merge guards measure that one document
+//!   differently.
 //! * C moves the cursor to the display line it re-wrote and returns it (`:765-770`). The port's
 //!   rows are slices of a buffer it owns, so the cursor is already on the row the edit left.
 //! * The cap on display lines is applied the way C applies it: [`EditorData::load`] drops what
@@ -50,14 +50,13 @@
 //!   end of the current one, is kept; it is what makes typing at the end of a line feel like
 //!   the text is pushing the cursor along.
 //! * C maintains its display array as it edits, and the maintenance disagrees with the loader
-//!   in one case: an Enter that ends a row already [`SCREEN_COLS`] wide leaves that row's
-//!   `'\n'` glued to it — `:397-399` sets the entry to `offset + 1` bytes and re-wraps only the
-//!   text after it — while [`crate::text::split_data_lines`], what [`EditorData::recount`] runs
-//!   over, gives the newline a row of its own. So the same text has one display line more in
-//!   the port than in C right after the edit, and C's `display_line + 1` would point at that
-//!   row; [`EditorData::insert`] returns the first display line of the new data line instead,
-//!   which is the text position C's cursor is at. The screen still differs: the port shows the
-//!   blank row where C only shows it once the article is loaded again.
+//!   in one case: an Enter that ends a row already [`SCREEN_COLS`] wide glues that row's `'\n'`
+//!   to the row itself (`:397-399`, `:433-435` set it to one byte longer and re-split only the
+//!   text behind the cursor), while [`crate::text::split_data_lines`], what [`EditorData::recount`]
+//!   runs over, gives that newline a row of its own. [`EditorData::insert`] follows the edit:
+//!   [`EditorData::glue_row_line_feed`] folds the line feed back into the row the cursor stood
+//!   on, so the cursor drops one row and the screen shows what C shows. The array is
+//!   history-dependent on both sides — the same bytes reloaded gain that row back.
 
 use std::time::Duration;
 
@@ -339,13 +338,14 @@ impl EditorData {
                 self.segments.insert(line + 1, Vec::new());
             }
             self.recount_line(line);
+            if !keeps_its_line_feed {
+                self.glue_row_line_feed(line);
+            }
             self.recount_line(line + 1);
 
             if break_before_insert {
-                // `:402`: C's cursor goes to the display line after the head's last one, which
-                // is where it glues the terminating `'\n'` to a row that is already full. The
-                // port's wrap gives that newline a row of its own, so the same slot number
-                // would point at it and the next keystroke would edit the head line again.
+                // `:402`: C leaves the cursor on the display line after the head's last one, which
+                // is the first row of the data line the break opened.
                 *display_line = self.first_display(line + 1);
             }
             // The tail gets the rows the head did not use plus the ones the array still had.
@@ -361,8 +361,15 @@ impl EditorData {
             *offset += str_len as i64;
             self.recount_line(line);
             let cut = self.cut_overflow(line, old_count + free, display_line, offset);
-            // `:541`: the row the re-split stopped one past, when the array was full.
-            *last_updated_line = (*last_updated_line).max(self.last_display(line) + cut as i64);
+            // `:523`, `:541`: rows that appeared shove every row below them down, so the redraw
+            // has to reach as far as the document used to end; one that only re-split inside the
+            // line stops at the line's last row.
+            let resplit = (*last_updated_line).max(self.last_display(line) + cut as i64);
+            *last_updated_line = if (self.total as i64) > old_total {
+                old_total.max(resplit)
+            } else {
+                resplit
+            };
         }
 
         // `:543-550`: an insert that ran to the end of its display line puts the cursor on
@@ -376,6 +383,29 @@ impl EditorData {
         self.trim_last_row(display_line, offset);
 
         Ok(())
+    }
+
+    /// The line feed a break writes into the row the cursor stood on, `:397-399` and `:433-435`.
+    ///
+    /// A row that is filled to the last cell has no room left for that line feed, so the wrap of
+    /// the head puts it on a row of its own — the shape the same bytes take once they are loaded
+    /// again (`editor_data_load` splits them from scratch). The keystroke does not: C never
+    /// re-splits the head, it only re-measures the width of the row it just extended (`:443-444`),
+    /// so the head keeps the rows it had. Folding the line feed back into the row above gives the
+    /// same array, which is what decides how far the cursor drops.
+    fn glue_row_line_feed(&mut self, line: usize) {
+        let Some(last) = self.segments[line].last().copied() else {
+            return;
+        };
+        if self.segments[line].len() < 2
+            || last.len != 1
+            || self.lines[line].get(last.start) != Some(&b'\n')
+        {
+            return;
+        }
+        self.segments[line].pop();
+        self.segments[line].last_mut().unwrap().len += 1;
+        self.total -= 1;
     }
 
     /// `editor_data_delete` (`:569-772`), one character or the rest of the display line.
@@ -447,6 +477,20 @@ impl EditorData {
         let mut allowed = old_count;
         if reaches_end {
             if line + 1 >= self.lines.len() {
+                // Last line: if deleting the whole line, remove it; otherwise nothing to do.
+                if del_line && pos == 0 {
+                    self.lines.remove(line);
+                    if parallel {
+                        let rows = self.segments.remove(line).len();
+                        self.total -= rows;
+                    }
+                    if line >= self.lines.len() && !self.lines.is_empty() {
+                        *display_line -= 1;
+                    }
+                    self.recount_line(line.saturating_sub(1));
+                    *last_updated_line = self.last_display(line.saturating_sub(1));
+                    return str_len;
+                }
                 return 0;
             }
             let next_len = self.lines[line + 1].len();
@@ -472,6 +516,23 @@ impl EditorData {
         }
 
         self.recount_line(line);
+        // `editor.c:714-734`: C re-splits the changed data line from the edited display row, not
+        // from its head, so a row the cursor was sitting on survives as a real zero-width row when
+        // the deletion leaves nothing after it. Re-wrapping from the head drops that row, the
+        // cursor's display line then runs past the end of the document, and the next keystroke is
+        // located back onto row 0 — which is what made typing corrupt the first line.
+        if pos == self.lines[line].len()
+            && pos > 0
+            && !self.lines[line].ends_with(b"\n")
+            && self.segments[line].last().is_some_and(|s| s.len != 0)
+        {
+            self.segments[line].push(Segment {
+                start: pos,
+                len: 0,
+                width: 0,
+            });
+            self.total += 1;
+        }
         if parallel {
             self.cut_rows(line, allowed);
         }
@@ -777,6 +838,10 @@ struct View {
     col_pos: i64,
     /// `last_updated_line`, which C carries from one edit to the next.
     last_updated_line: i64,
+    /// The screen rows a keystroke of the current batch left waiting for a paint pass: the
+    /// delete path blanks them, and only the paint loop puts the text back.
+    stale_from: i64,
+    stale_through: i64,
 }
 
 impl View {
@@ -788,7 +853,31 @@ impl View {
             row_pos: 1,
             col_pos: 1,
             last_updated_line: 0,
+            stale_from: SCREEN_BEGIN_ROW,
+            stale_through: SCREEN_BEGIN_ROW - 1,
         }
+    }
+
+    /// Widen the band about to be painted to the rows an earlier keystroke of the same batch
+    /// left blank, keeping the `line_current` ↔ `output_current_row` mapping intact. C lets the
+    /// later, narrower band win, so the rows the first keystroke cleared are never painted
+    /// again: the delete looks like it did nothing and the following rows stay missing.
+    fn cover_stale(&mut self) {
+        if self.stale_through < self.stale_from {
+            return;
+        }
+        let raise = self.output_current_row - self.stale_from;
+        if raise > 0 && self.line_current >= raise {
+            self.line_current -= raise;
+            self.output_current_row = self.stale_from;
+        }
+        self.output_end_row = self.output_end_row.max(self.stale_through);
+    }
+
+    /// The band this keystroke changed now waits for the paint pass.
+    fn note_stale(&mut self) {
+        self.stale_from = self.output_current_row;
+        self.stale_through = self.output_end_row;
     }
 
     /// `line_current - output_current_row + row_pos`: the display line under the cursor.
@@ -971,6 +1060,8 @@ pub async fn editor_display(
     let mut input: Vec<u8> = Vec::new();
     // `tab_width`: the spaces a typed tab still owes; reset with every key read.
     let mut tab_width: i64;
+    // The key that ends the edit, kept until the paint pass it interrupted is finished.
+    let mut exit_key: Option<u32> = None;
 
     clr_rows(term, SCREEN_BEGIN_ROW, SCREEN_ROWS as i64);
     key_handler(&mut ch, &mut ctx, data.fixed);
@@ -979,12 +1070,23 @@ pub async fn editor_display(
         // The text area is behind when the window has run out of rows to paint.
         if view.line_current >= data.total() as i64 || view.output_current_row > view.output_end_row
         {
+            if view.output_current_row > view.output_end_row {
+                view.stale_from = SCREEN_BEGIN_ROW;
+                view.stale_through = SCREEN_BEGIN_ROW - 1;
+            }
             ctx.line_cursor = view.line_current - view.output_current_row + view.row_pos + 1;
             let status = status_line(data, &view, &ctx, key_insert);
             term.moveto(SCREEN_ROWS, 0);
             term.print_bytes(&status);
             term.moveto_signed(view.row_pos as i32, view.col_pos as i32);
             let _ = term.flush().await;
+
+            // An exit key ends the edit only after the rows it left unpainted are drawn, so the
+            // text the last keystroke changed is on the screen when control goes back. C stops at
+            // `:1117-1120` and leaves them blank.
+            if let Some(ch) = exit_key {
+                return ch;
+            }
 
             tab_width = 0;
             input.clear();
@@ -1107,6 +1209,8 @@ pub async fn editor_display(
                                 };
                             }
                         }
+                        view.cover_stale();
+                        view.note_stale();
                     }
 
                     if display_line_out != display_line_in {
@@ -1208,7 +1312,9 @@ pub async fn editor_display(
                             view.output_end_row = SCREEN_ROWS as i64 - 1;
                         }
 
+                        view.cover_stale();
                         clr_rows(term, view.output_current_row, view.output_end_row);
+                        view.note_stale();
                     }
 
                     if display_line_out != display_line_in {
@@ -1228,13 +1334,18 @@ pub async fn editor_display(
                 match ch {
                     KEY_NULL => {
                         tracing::debug!("KEY_NULL");
-                        return ch;
+                        exit_key = Some(ch);
+                        break;
                     }
                     KEY_TIMEOUT => {
                         tracing::debug!("User input timeout");
-                        return ch;
+                        exit_key = Some(ch);
+                        break;
                     }
-                    KEY_CTRL_W | KEY_CTRL_X => return ch,
+                    KEY_CTRL_W | KEY_CTRL_X => {
+                        exit_key = Some(ch);
+                        break;
+                    }
                     KEY_CTRL_S | KEY_CTRL_LEFT => view.col_pos = 1,
                     KEY_CTRL_E | KEY_CTRL_RIGHT => {
                         if view.cursor_line() == data.total() as i64 - 1 {
@@ -1473,6 +1584,81 @@ mod tests {
         // The cursor starts the next display line, which is what ends the inner key loop.
         assert_eq!((line, offset), (1, 0));
         assert_eq!(saved(&data), b"he\nllo");
+    }
+
+    /// An Enter on a row that is filled to the last cell. The break writes its line feed into the
+    /// row the cursor stands on (`:397-399`) and re-splits only the data line behind it (`:468`),
+    /// so the full row stays one row — the cursor lands at the head of the second one, not the
+    /// third. Measured against C's `editor_data_insert` for the same bytes.
+    #[test]
+    fn enter_on_a_row_filled_to_the_last_cell_lands_on_the_next_row() {
+        let mut data = doc(&"a".repeat(SCREEN_COLS));
+        assert_eq!(data.total(), 1);
+
+        let (mut line, mut offset) = (0i64, SCREEN_COLS as i64);
+        let mut last_updated = 0i64;
+        data.insert(&mut line, &mut offset, b"\r", &mut last_updated)
+            .unwrap();
+
+        assert_eq!(
+            (line, offset),
+            (1, 0),
+            "the cursor starts the new data line"
+        );
+        assert_eq!(last_updated, 1);
+        assert_eq!(data.total(), 2);
+        assert_eq!(data.display_line_length(0), SCREEN_COLS + 1);
+        assert_eq!(data.display_line_width(0), SCREEN_COLS);
+        assert_eq!(
+            data.display_line(0),
+            format!("{}\n", "a".repeat(SCREEN_COLS)).into_bytes()
+        );
+        assert_eq!(data.display_line(1), b"");
+        assert_eq!(
+            saved(&data),
+            format!("{}\n", "a".repeat(SCREEN_COLS)).into_bytes()
+        );
+
+        // The document those bytes reload into wraps differently: the line feed that leaves no
+        // cell of its row behind gets a row of its own there.
+        let reloaded = doc(&String::from_utf8_lossy(&saved(&data)));
+        assert_eq!(reloaded.total(), 3);
+    }
+
+    /// The same break one row down, where the data line already spans two rows: `:433-435` glues
+    /// the line feed to the row under the cursor, which is the head's last one.
+    #[test]
+    fn enter_at_the_end_of_the_second_row_of_a_long_line_joins_that_row() {
+        let mut data = doc(&"b".repeat(2 * SCREEN_COLS));
+        assert_eq!(data.total(), 2);
+
+        let (mut line, mut offset) = (1i64, SCREEN_COLS as i64);
+        let mut last_updated = 0i64;
+        data.insert(&mut line, &mut offset, b"\r", &mut last_updated)
+            .unwrap();
+
+        assert_eq!((line, offset), (2, 0));
+        assert_eq!(data.total(), 3);
+        assert_eq!(data.display_line_length(0), SCREEN_COLS);
+        assert_eq!(data.display_line_length(1), SCREEN_COLS + 1);
+        assert_eq!(data.display_line_width(1), SCREEN_COLS);
+        assert_eq!(data.display_line(2), b"");
+    }
+
+    /// A line feed that arrives as text instead of as an Enter goes through the insert that keeps
+    /// the line whole (`:453-468`), and that one re-splits — nothing is glued, and the cursor
+    /// still ends up inside the row the line feed was put on.
+    #[test]
+    fn a_line_feed_inserted_as_text_keeps_its_own_row_on_a_full_line() {
+        let mut data = doc(&"a".repeat(SCREEN_COLS));
+        let (mut line, mut offset) = (0i64, SCREEN_COLS as i64);
+        let mut last_updated = 0i64;
+        data.insert(&mut line, &mut offset, b"\n", &mut last_updated)
+            .unwrap();
+
+        assert_eq!(data.total(), 2);
+        assert_eq!(data.display_line_length(1), 1);
+        assert_eq!((line, offset), (1, 1));
     }
 
     #[test]
@@ -2415,9 +2601,30 @@ mod tests {
         let mut data = doc("");
         edit(&mut term, &mut session, &mut data).await;
         assert_eq!(saved(&data), paste.as_bytes());
-        // Each filled row keeps a display line of its own for the newline, and the last Enter
-        // opens the blank line the cursor is on.
-        assert_eq!(data.total(), 7);
+        // Each filled row keeps the line feed the Enter wrote inside it, the way the break leaves
+        // it, and the last Enter opens the blank line the cursor is on. Reading the same bytes
+        // back is what splits those line feeds into rows of their own.
+        assert_eq!(data.total(), 4);
+    }
+
+    /// The same break on the screen: the row under the cursor is the second text row, not the
+    /// third, and the status row counts the two rows the document has become.
+    #[tokio::test]
+    async fn enter_on_a_full_row_puts_the_cursor_on_the_next_screen_row() {
+        let (mut term, mut session, mut client) = editor_pipe();
+        keys(&client, format!("{}\r", "a".repeat(SCREEN_COLS)).as_bytes());
+
+        let mut data = doc("");
+        edit(&mut term, &mut session, &mut data).await;
+        assert_eq!(data.total(), 2);
+        let screen = painted(&mut client);
+        // The row is painted with the line feed the break left in it, and the cursor goes to the
+        // head of the row after it.
+        assert!(
+            screen.contains(&format!("{}\n", "a".repeat(SCREEN_COLS))),
+            "{screen}"
+        );
+        assert!(screen.ends_with("\x1b[2;1H"), "{screen}");
     }
 
     /// An edit re-wraps only the data line it touched, which has to give the same display
@@ -2596,5 +2803,490 @@ mod tests {
         assert_eq!(edit(&mut term, &mut session, &mut data).await, KEY_NULL);
         // Whatever was typed before the hang-up stays in the document, as in C.
         assert_eq!(saved(&data), b"x");
+    }
+
+    /// Filling the first data line to SCREEN_COLS pushes the cursor onto the second display row;
+    /// the view must scroll so the data line below the filled one stays visible on screen.
+    #[tokio::test]
+    async fn filling_a_line_to_full_keeps_the_next_data_line_visible() {
+        let (mut term, mut session, mut client) = editor_pipe();
+        let mut input = Vec::new();
+        input.extend_from_slice(b"\x1b[B\x1b[A\x1b[C\x1b[C\x1b[C");
+        for _ in 0..77 {
+            input.push(b'a');
+        }
+        keys(&client, &input);
+
+        let mut data = doc("abc\nkkk");
+        edit(&mut term, &mut session, &mut data).await;
+
+        let screen = painted(&mut client);
+        assert!(
+            screen.contains('k'),
+            "second data line must remain visible: {screen}"
+        );
+    }
+
+    /// The reported article-472411 keystrokes: down to the second data line, `Ctrl-Y` until nothing is
+    /// left below it, then `k`, `j`, `h`, one more `Ctrl-Y` and `b`. Each `Ctrl-Y` re-splits only the data
+    /// line it edited, from the row it edited (`editor.c:714-734`), so a row the cursor sits on survives an
+    /// emptied deletion as a zero-width row and the typing below it never reaches the first line: the digits
+    /// keep their 80 bytes and `b` is the whole of the second data line.
+    #[tokio::test]
+    async fn ctrl_y_then_typing_below_a_wrapped_first_line() {
+        let (mut term, mut session, client) = editor_pipe();
+        // Article 472411 content
+        let content = "01234567890123456789012345678901234567890123456789012345678901234567890123456789\nabcdefg\n1234567890\n--\n※ 作者已于 2026-11-23 18:43:33 (UTC +0800) 修改本文※\n";
+
+        let mut input = Vec::new();
+        // Two down arrows: the first data line fills two display rows, so this is the second data line
+        input.extend_from_slice(b"\x1b[B\x1b[B");
+        // Delete all remaining lines (Ctrl-Y 4 times)
+        input.extend_from_slice(&[0x19; 4]);
+        // 'k' lands at the second data line's first column, 'jh' rides after it, the next
+        // `Ctrl-Y` empties that row again and 'b' lands at its first column.
+        input.push(b'k');
+        input.extend_from_slice(b"jh");
+        input.push(0x19);
+        input.push(b'b');
+        keys(&client, &input);
+
+        let mut data = doc(content);
+        edit(&mut term, &mut session, &mut data).await;
+
+        let saved = String::from_utf8_lossy(&saved(&data)).into_owned();
+
+        // The first data line is untouched: all 80 digits, and nothing typed joined itself to it.
+        let first_line = saved.lines().next().unwrap_or("");
+        assert_eq!(first_line.len(), 80, "first line: {first_line:?}");
+        assert!(
+            first_line.chars().all(|c| c.is_ascii_digit()),
+            "first line is all digits: {first_line:?}"
+        );
+
+        let second_line = saved.lines().nth(1).unwrap_or("");
+        assert_eq!(second_line, "b", "second line: {second_line:?}");
+    }
+
+    /// Regression for the article-472411 corruption: the first data line is exactly
+    /// SCREEN_COLS+'\n' (81 bytes), so it fills two display rows (row 0 = the 80 digits,
+    /// row 1 = the '\n'). Ctrl-Y from row 1 pulls each following line up into row 0; when
+    /// the last pull takes the empty trailing line, C keeps a zero-width row after the now
+    /// full-width line (`editor.c:714-734`) so `cursor_line()` stays a real row. A re-wrap
+    /// from the head drops that row, the cursor runs off the end, and the next keystroke is
+    /// located back onto row 0 — replacing the first digit and showing '9' where 'k' was typed.
+    #[tokio::test]
+    async fn typing_after_ctrl_y_all_below_wrapped_first_line() {
+        let (mut term, mut session, client) = editor_pipe();
+        let content = "01234567890123456789012345678901234567890123456789012345678901234567890123456789\nabcdefg\n1234567890\n--\n※ 作者已于 2026-11-23 18:43:33 (UTC +0800) 修改本文※\n";
+        let mut input = Vec::new();
+        // 1 down arrow → display row 1 = the '\n' segment of data line 0
+        input.extend_from_slice(b"\x1b[B");
+        // Five `Ctrl-Y`s: each pull takes the next data line up into row 0, until only the
+        // 80 digits and C's empty trailing row are left.
+        input.extend_from_slice(&[0x19; 5]);
+        // 'k' lands on the row the cursor sits on, so it rides onto the digits.
+        input.push(b'k');
+        keys(&client, &input);
+        let mut data = doc(content);
+        edit(&mut term, &mut session, &mut data).await;
+        let saved = String::from_utf8_lossy(&saved(&data)).into_owned();
+
+        // First data line: 80 digits + 'k' = 81 bytes (k is appended, not inserted at pos 0)
+        let first = saved.lines().next().unwrap_or("");
+        assert_eq!(
+            first.len(),
+            81,
+            "first data line should be 80 digits + 'k' = 81 bytes, got: {:?}",
+            first
+        );
+        assert!(
+            first.ends_with('k'),
+            "'k' should be at end of first data line, not inserted at pos 0: {:?}",
+            first
+        );
+        assert!(
+            first.starts_with('0'),
+            "first data line should start with '0' (not replaced by 'k'): {:?}",
+            first
+        );
+    }
+
+    /// Regression: the same keystrokes, then `Ctrl-Y` deletes the typed `k` and `b` lands on the
+    /// empty row the deletion left behind — the reported symptom was '8' showing there.
+    #[tokio::test]
+    async fn typing_after_repeated_ctrl_y_at_wrapped_first_line_end() {
+        let (mut term, mut session, client) = editor_pipe();
+        let content = "01234567890123456789012345678901234567890123456789012345678901234567890123456789\nabcdefg\n1234567890\n--\n※ 作者已于 2026-11-23 18:43:33 (UTC +0800) 修改本文※\n";
+        let mut input = Vec::new();
+        input.extend_from_slice(b"\x1b[B");
+        input.extend_from_slice(&[0x19; 5]);
+        input.push(b'k');
+        // `Ctrl-Y` again empties that row: 'k' was the only text on it
+        input.push(0x19);
+        input.push(b'b');
+        keys(&client, &input);
+        let mut data = doc(content);
+        edit(&mut term, &mut session, &mut data).await;
+        let saved = String::from_utf8_lossy(&saved(&data)).into_owned();
+
+        // First line: 80 digits + 'b' = 81 bytes ('b' appended, not replacing first digit)
+        let first = saved.lines().next().unwrap_or("");
+        assert_eq!(
+            first.len(),
+            81,
+            "first line should be 80 digits + 'b' = 81 bytes, got len {}: {:?}",
+            first.len(),
+            first
+        );
+        assert!(
+            first.ends_with('b'),
+            "'b' should be at end of first line: {:?}",
+            first
+        );
+        assert!(
+            first.starts_with("0123456789"),
+            "first line should start with digits (not replaced): {:?}",
+            first
+        );
+    }
+
+    /// `Ctrl-Y` deletes a blank line: "a\n\nb\nc\n" has a blank '\n' row at display row 1, and
+    /// one `Ctrl-Y` there collapses it exactly as C does, leaving "a\nb\nc\n".
+    #[tokio::test]
+    async fn ctrl_y_removes_a_blank_line() {
+        let (mut term, mut session, client) = editor_pipe();
+        let mut input = Vec::new();
+        input.extend_from_slice(b"\x1b[B"); // down onto the blank row
+        input.push(0x19); // Ctrl-Y
+        keys(&client, &input);
+        let mut data = doc("a\n\nb\nc\n");
+        edit(&mut term, &mut session, &mut data).await;
+        let saved = String::from_utf8_lossy(&saved(&data)).into_owned();
+        assert_eq!(saved, "a\nb\nc\n", "the blank line is gone: {:?}", saved);
+    }
+
+    /// On the last content line, `Ctrl-Y` removes the text and — matching C — keeps a zero-width
+    /// trailing row (`editor.c:714-734`), so the next keystroke lands on it and appends ("a\nb\nk")
+    /// instead of corrupting the document; a second `Ctrl-Y` there is a no-op.
+    #[tokio::test]
+    async fn ctrl_y_on_last_line_keeps_empty_row_then_appends() {
+        // Just the delete: the last line's text goes, an empty row survives.
+        let (mut term, mut session, client) = editor_pipe();
+        let mut input = Vec::new();
+        input.extend_from_slice(b"\x1b[B\x1b[B"); // down to "c\n" (row 2)
+        input.push(0x19);
+        keys(&client, &input);
+        let mut data = doc("a\nb\nc\n");
+        edit(&mut term, &mut session, &mut data).await;
+        let text = String::from_utf8_lossy(&saved(&data)).into_owned();
+        assert_eq!(
+            text, "a\nb\n",
+            "the last line's text is deleted: {:?}",
+            text
+        );
+        assert_eq!(
+            data.total(),
+            3,
+            "C's empty trailing row survives: total {}",
+            data.total()
+        );
+
+        // Delete then type: 'k' lands on that empty row and appends.
+        let (mut term, mut session, client) = editor_pipe();
+        let mut input = Vec::new();
+        input.extend_from_slice(b"\x1b[B\x1b[B");
+        input.push(0x19); // Ctrl-Y removes 'c'
+        input.push(0x19); // Ctrl-Y on the empty row is a no-op
+        input.push(b'k');
+        keys(&client, &input);
+        let mut data = doc("a\nb\nc\n");
+        edit(&mut term, &mut session, &mut data).await;
+        let text = String::from_utf8_lossy(&saved(&data)).into_owned();
+        assert_eq!(
+            text, "a\nb\nk",
+            "typing after the empty row appends: {:?}",
+            text
+        );
+    }
+
+    // ---- the painted screen ----
+
+    /// The bytes the editor wrote, applied to a grid: the screen the user sees rather than the
+    /// escape sequences that produced it. Wide enough for the whole status line.
+    fn screen(bytes: &[u8]) -> Vec<String> {
+        const ROWS: usize = SCREEN_ROWS;
+        const COLS: usize = 240;
+        let blank = || vec![b' '; COLS];
+        let mut grid = vec![blank(); ROWS];
+        let (mut r, mut c) = (0usize, 0usize);
+        let mut i = 0usize;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if b == 0x1b {
+                if i + 1 < bytes.len() && bytes[i + 1] == b'[' {
+                    let mut j = i + 2;
+                    let mut params: Vec<u8> = Vec::new();
+                    while j < bytes.len()
+                        && !((bytes[j] as char).is_ascii_alphabetic() || bytes[j] == b'~')
+                    {
+                        params.push(bytes[j]);
+                        j += 1;
+                    }
+                    let f = if j < bytes.len() { bytes[j] } else { b' ' };
+                    let nums: Vec<i64> = String::from_utf8_lossy(&params)
+                        .split(';')
+                        .map(|s| s.trim_start_matches('?').parse().unwrap_or(0))
+                        .collect();
+                    match f {
+                        b'H' | b'f' => {
+                            let rr = *nums.first().unwrap_or(&1);
+                            let cc = *nums.get(1).unwrap_or(&1);
+                            r = (rr.max(1) as usize - 1).min(ROWS - 1);
+                            c = (cc.max(1) as usize - 1).min(COLS - 1);
+                        }
+                        b'K' => {
+                            for x in c.min(COLS - 1)..COLS {
+                                grid[r.min(ROWS - 1)][x] = b' ';
+                            }
+                        }
+                        b'J' if nums.first() == Some(&2) => {
+                            for row in grid.iter_mut() {
+                                *row = blank();
+                            }
+                        }
+                        _ => {}
+                    }
+                    i = j + 1;
+                } else {
+                    i += 1;
+                }
+                continue;
+            }
+            match b {
+                b'\n' => {
+                    if r + 1 >= ROWS {
+                        for rr in 0..ROWS - 1 {
+                            grid[rr] = grid[rr + 1].clone();
+                        }
+                        grid[ROWS - 1] = blank();
+                    } else {
+                        r += 1;
+                    }
+                    i += 1;
+                }
+                b'\r' => {
+                    c = 0;
+                    i += 1;
+                }
+                // The bell and the backspace the status line never uses move nothing.
+                7 => i += 1,
+                8 => {
+                    c = c.saturating_sub(1);
+                    i += 1;
+                }
+                _ => {
+                    if r < ROWS && c < COLS {
+                        grid[r][c] = b;
+                    }
+                    c = (c + 1).min(COLS - 1);
+                    i += 1;
+                }
+            }
+        }
+        grid.iter()
+            .map(|row| String::from_utf8_lossy(row).trim_end().to_string())
+            .collect()
+    }
+
+    /// The editor in its own task over a byte pipe, so a test can hand the keys over in pieces and
+    /// read the screen back when the edit is over.
+    async fn spawn_edit(content: &str) -> (Pipe, tokio::task::JoinHandle<EditorData>) {
+        let (client, server) = Pipe::new();
+        let content = content.to_string();
+        let task = tokio::spawn(async move {
+            let mut term = Terminal::new(ByteIo::Pipe(server));
+            let mut session = crate::session::offline_session();
+            // A fresh action time keeps the paths' `online_update(None)` inside the refresh
+            // interval and therefore off the database.
+            session.current_action_tm = session::now();
+            let mut data = doc(&content);
+            let _ = tokio::time::timeout(
+                Duration::from_secs(5),
+                editor_display(&mut term, &mut session, &mut data),
+            )
+            .await;
+            data
+        });
+        (client, task)
+    }
+
+    /// One burst of keys — every byte is already buffered when the editor next reads, which is
+    /// what a fast typist sends — and the exit that follows it. The screen and the document the
+    /// edit left behind come back.
+    async fn edit_burst(content: &str, input: &[u8]) -> (Vec<String>, EditorData) {
+        let (mut client, task) = spawn_edit(content).await;
+        let mut keys = input.to_vec();
+        keys.push(ctrl(b'W') as u8);
+        client.push(&keys);
+        let data = task.await.expect("the burst ended the edit");
+        (screen(&client.take_available()), data)
+    }
+
+    /// `[row;col] 第line/total行 [mode]` — the window the editor claims to be showing.
+    fn status_window(rows: &[String]) -> (i64, i64) {
+        let status = rows.last().expect("the status row");
+        let close = status.find(']').expect("the cursor field");
+        let open = status[..close].rfind('[').expect("the cursor field");
+        let row_pos: i64 = status[open + 1..close]
+            .split(';')
+            .next()
+            .expect("the row")
+            .parse()
+            .expect("a row number");
+        let rest = &status[close..];
+        let mark = rest.find('第').expect("the line field") + '第'.len_utf8();
+        let line = &rest[mark..];
+        let cursor: i64 = line[..line.find('/').expect("the total")]
+            .trim()
+            .parse()
+            .expect("a line number");
+        (row_pos, cursor)
+    }
+
+    /// The text rows that do not show the document row the status window points at: the screen is
+    /// behind the text, which is the whole complaint about rows that vanish.
+    fn rows_behind_document(rows: &[String], data: &EditorData) -> Vec<String> {
+        let (row_pos, cursor) = status_window(rows);
+        let top = cursor - row_pos;
+        let mut bad = Vec::new();
+        for (i, shown) in rows[..SCREEN_ROWS - 1].iter().enumerate() {
+            let index = top + i as i64;
+            let want = if index < 0 || index >= data.total() as i64 {
+                String::new()
+            } else {
+                let mut text = String::from_utf8_lossy(data.display_line(index)).into_owned();
+                while text.ends_with('\n') || text.ends_with('\r') {
+                    text.pop();
+                }
+                text
+            };
+            if shown.trim_end() != want.trim_end() {
+                bad.push(format!(
+                    "row {}: screen {:?} != document {:?}",
+                    i + 1,
+                    shown.trim_end(),
+                    want.trim_end()
+                ));
+            }
+        }
+        bad
+    }
+
+    /// A line of `n` letters, so a wrapped document is spelled out rather than pasted.
+    fn letters(n: usize) -> String {
+        (0..n)
+            .map(|i| (b'a' + (i % 26) as u8) as char)
+            .collect::<String>()
+    }
+
+    /// Regression for the rows that disappear while the text stays intact: the keys arrive as one
+    /// batch, so `Ctrl-Y` blanks the rows below it and the `Ctrl-K` that follows narrows the paint
+    /// band to its own row (`editor.c:947`, and the batched `continue` at `:1093-1105`). C lets
+    /// the narrower band win and leaves the rows blank until the file is reopened; the port widens
+    /// it back over everything the batch blanked.
+    #[tokio::test]
+    async fn a_batched_delete_and_kill_repaints_the_rows_it_blanked() {
+        let content = format!(
+            "a\n{}\n{}\nabc\n{}\n{}\n",
+            letters(5),
+            letters(78),
+            letters(17),
+            letters(80)
+        );
+        // `Ctrl-Y` on the second row, then `Ctrl-K` before the screen is repainted.
+        let (rows, data) = edit_burst(&content, &[0x19, 0x0b]).await;
+        assert!(
+            rows_behind_document(&rows, &data).is_empty(),
+            "every row the batch blanked came back: {rows:#?}"
+        );
+    }
+
+    /// Regression for the same symptom from the typing side: a character that pushes its line over
+    /// the row boundary shoves every row below it down one, so the redraw has to reach as far as the
+    /// document used to end (`editor.c:523`, `:541`). Stopping at the last row of the line that was
+    /// edited leaves the rows below showing the text one row too high.
+    #[tokio::test]
+    async fn a_row_created_by_typing_repaints_what_it_pushed_down() {
+        let content = format!("{}\n{}\n{}\n", letters(79), letters(60), letters(60));
+        let (rows, data) = edit_burst(&content, b"z").await;
+        assert_eq!(data.total(), 5, "the line split into a second row");
+        assert!(
+            rows_behind_document(&rows, &data).is_empty(),
+            "the rows the new one pushed down were redrawn: {rows:#?}"
+        );
+    }
+
+    /// Regression for the typed character that never shows: an insert leaves its own row waiting
+    /// for the paint pass, and `Ctrl-W` in the same batch used to end the edit right there
+    /// (`:1117-1120`), so the screen kept the text as it was before the keystroke. The port paints
+    /// the pending row before it returns.
+    #[tokio::test]
+    async fn the_exit_key_waits_for_the_row_just_typed() {
+        let (rows, data) = edit_burst("abcdef\nghijkl\n", b"z").await;
+        assert_eq!(data.display_line(0), b"zabcdef\n");
+        assert_eq!(rows[0], "zabcdef", "the typed letter is on the screen");
+        assert!(
+            rows_behind_document(&rows, &data).is_empty(),
+            "the whole screen caught up: {rows:#?}"
+        );
+    }
+
+    /// Regression for the Enter or Delete that takes two presses: a sequence split across two
+    /// reads used to answer an escape key and throw the rest of the buffer away, which ate both the
+    /// key and the Enter typed behind it. `igetch` (`io.c:430-487`) consumes the buffer the same
+    /// way; the port waits briefly for the rest instead.
+    #[tokio::test]
+    async fn a_key_split_across_two_reads_still_edits() {
+        let (mut client, task) = spawn_edit("abc\ndef\n").await;
+        client.push(b"\x1b[3");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        client.push(b"~\r");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        client.push(&[ctrl(b'W') as u8]);
+        let data = task.await.expect("the edit stopped");
+
+        assert_eq!(
+            saved(&data),
+            b"\nbc\ndef\n",
+            "one Delete and one Enter, not an escape and a lost Enter"
+        );
+        let rows = screen(&client.take_available());
+        assert_eq!(rows[0], "", "the row the Enter opened");
+        assert_eq!(rows[1], "bc");
+    }
+
+    /// `ESC[H` and `ESC[F`, the xterm-style Home and End, are editing keys: C's tables
+    /// (`io.c:802-822`) leave them unmapped, so they fall through as text and the editor paints a
+    /// star. The port reads them as the keys every terminal client sends.
+    #[tokio::test]
+    async fn home_and_end_move_the_cursor_rather_than_insert_text() {
+        let (rows, data) = edit_burst("one\ntwo\nthree\n", b"\x1b[F").await;
+        assert!(
+            !rows.iter().any(|row| row.contains('*')),
+            "no escape painted as a star: {rows:#?}"
+        );
+        assert_eq!(
+            saved(&data),
+            b"one\ntwo\nthree\n",
+            "the keys edited nothing"
+        );
+        // The last display row of a newline-terminated document is the empty one after it.
+        assert_eq!(status_window(&rows).1, data.total() as i64);
+
+        let (rows, data) = edit_burst("one\ntwo\nthree\n", b"\x1b[H").await;
+        assert_eq!(status_window(&rows).1, 1);
+        assert_eq!(saved(&data), b"one\ntwo\nthree\n");
+        assert!(rows_behind_document(&rows, &data).is_empty());
     }
 }

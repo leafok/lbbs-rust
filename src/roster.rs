@@ -756,7 +756,7 @@ mod tests {
         assert_eq!(stats.next_uid(), seen + 1);
     }
 
-    /// The map `build_map` (`src/test_user_stat.c:65-79` at `9193e5c`) seeds: uids 1, 2, 3 and 5
+    /// The map `build_map` (`tests/test_user_stat.c:65-79`) seeds: uids 1, 2, 3 and 5
     /// with counts 0, 5, 0 and 7, so uid 4 is the gap, uid 5 the last entry and two stored users
     /// read as zero.
     fn build_map(last_uid: i32, last_article_index: i32) -> UserStatMap {

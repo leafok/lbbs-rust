@@ -17,6 +17,12 @@ use crate::text;
 
 pub use key::{Decoded, KEY_NULL, KEY_RETRY, KEY_TIMEOUT};
 
+/// How long an escape that ends the input buffer may wait for the bytes behind it, and how
+/// often that wait is retried while they trickle in. `io.c:1103` uses the same hundred
+/// milliseconds for the continuation bytes of a multi-byte character.
+const ESC_GRACE: Duration = Duration::from_millis(100);
+const ESC_GRACE_ROUNDS: usize = 3;
+
 /// Client character set, chosen by the `(U)UTF-8/(G)GBK` prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Charset {
@@ -353,17 +359,47 @@ impl Terminal {
                 self.input.drain(..n.min(self.input.len()));
                 code
             }
-            // No sequence state survives a call, so an escape split across packets is
-            // dropped whole and reported as a bare ESC.
-            Decoded::Partial => {
-                self.input.clear();
-                key::KEY_ESC
-            }
+            // A sequence split across packets is still one sequence: the bytes in flight are
+            // awaited before anything is given up on. `igetch` decodes the bytes its drained
+            // read happened to have and returns 0, so a key whose tail lagged behind simply
+            // went missing and had to be pressed a second time.
+            Decoded::Partial => self.await_sequence().await,
             Decoded::Retry => {
                 self.input.clear();
                 KEY_RETRY
             }
         }
+    }
+
+    /// Settles a buffer that ends inside an escape sequence: `KEY_ESC` while the escape is
+    /// alone, since that is the key the user pressed, and `KEY_RETRY` once a second byte has
+    /// joined it and no known sequence follows.
+    async fn await_sequence(&mut self) -> u32 {
+        for _ in 0..ESC_GRACE_ROUNDS {
+            match self.refill(ESC_GRACE).await {
+                Refill::Data => match key::decode(&self.input) {
+                    Decoded::Key(code, n) => {
+                        self.input.drain(..n.min(self.input.len()));
+                        return code;
+                    }
+                    Decoded::Retry => {
+                        self.input.clear();
+                        return KEY_RETRY;
+                    }
+                    Decoded::Partial => continue,
+                },
+                Refill::Timeout => break,
+                Refill::Closed => {
+                    self.closed = true;
+                    return KEY_NULL;
+                }
+            }
+        }
+
+        let lone_escape =
+            self.input.first() == Some(&(key::KEY_ESC as u8)) && self.input.len() == 1;
+        self.input.clear();
+        if lone_escape { key::KEY_ESC } else { KEY_RETRY }
     }
 
     /// `igetch_t`: wait up to `seconds`, retrying through timeouts.
@@ -641,14 +677,58 @@ mod tests {
         assert_eq!(&buf[..6], "菜单".as_bytes());
     }
 
+    /// `igetch` decoded only the bytes its own read happened to return, so an arrow split
+    /// across packets came back as a bare escape and lost the key typed behind it with it. The
+    /// wait for the rest of the sequence keeps such a key one key.
     #[tokio::test]
-    async fn arrow_key_split_across_packets_is_lost_like_igetch() {
+    async fn arrow_key_split_across_packets_is_rejoined() {
         let (mut term, client) = session();
         client.push(b"\x1b[");
-        client.push(b"Ax");
-        assert_eq!(term.read_key(Duration::from_millis(50)).await, key::KEY_ESC);
-        assert_eq!(term.read_key(Duration::from_millis(50)).await, b'A' as u32);
-        assert_eq!(term.read_key(Duration::from_millis(50)).await, b'x' as u32);
+        let (key, ()) = tokio::join!(term.read_key(Duration::from_secs(1)), async {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            client.push(b"Ax");
+        });
+        assert_eq!(key, key::KEY_UP, "the split arrow is one key");
+        assert_eq!(
+            term.read_key(Duration::from_millis(50)).await,
+            b'x' as u32,
+            "the text typed behind it is not swallowed with it"
+        );
+
+        // The reported case: a `Del` whose tail lagged, with the `Enter` typed after it.
+        client.push(b"\x1b[3");
+        let (del, ()) = tokio::join!(term.read_key(Duration::from_secs(1)), async {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            client.push(b"~\r");
+        });
+        assert_eq!(del, key::KEY_DEL);
+        assert_eq!(term.read_key(Duration::from_millis(50)).await, key::CR);
+    }
+
+    /// A lone escape waits for a tail that never arrives and then answers as the escape key,
+    /// which is `igetch`'s `out == 0 && in_esc` case (`io.c:1075-1078`).
+    #[tokio::test]
+    async fn lone_escape_is_reported_once_the_grace_ends() {
+        let (mut term, client) = session();
+        client.push(b"\x1b");
+        let started = tokio::time::Instant::now();
+        assert_eq!(term.read_key(Duration::from_secs(1)).await, key::KEY_ESC);
+        assert!(
+            started.elapsed() >= ESC_GRACE,
+            "the escape waits for the byte that would tell it apart from a sequence"
+        );
+    }
+
+    /// Once a second byte has joined a sequence that matches no known key, `igetch` returns 0
+    /// rather than the escape (`in_esc` is cleared at `io.c:529`), so the editor inserts
+    /// nothing and the keys that follow are read normally.
+    #[tokio::test]
+    async fn unknown_sequence_is_dropped_without_a_key() {
+        let (mut term, client) = session();
+        client.push(b"\x1b[?25l");
+        assert_eq!(term.read_key(Duration::from_millis(400)).await, KEY_RETRY);
+        client.push(b"y");
+        assert_eq!(term.read_key(Duration::from_millis(50)).await, b'y' as u32);
     }
 
     #[tokio::test]

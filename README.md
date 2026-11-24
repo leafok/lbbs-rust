@@ -33,8 +33,9 @@ hard constraint: **we must not change the schema.**
 The C original is still developed, so a code citation only means something if it names a revision. Every
 `file.c:NNN` comment in the Rust sources points into a **committed** revision of `../lbbs`, never into its
 working tree, which is the author's own and is often dirty; `git -C ../lbbs show HEAD:src/<file>` — or
-`…:utils/game/chicken.c` for the game — prints exactly the text the comment describes. Upstream's release tags
-are not all on `main`'s history, which is why the reference is named by revision rather than by tag.
+`…:tests/test_<name>.c` for a C test program, `…:utils/game/chicken.c` for the game — prints exactly
+the text the comment describes. Upstream's release tags are not all on `main`'s history, which is why
+the reference is named by revision rather than by tag.
 
 ### 1.2 This project (lbbs-rust)
 
@@ -165,13 +166,13 @@ differently from C, read the deviations section first — the reason is written 
 | [src/config.rs](src/config.rs) | 394 | `src/init.c` | reads `conf/bbsd.conf` | done |
 | [src/log.rs](src/log.rs) | 542 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
 | [src/text.rs](src/text.rs) | 635 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
-| [src/term/mod.rs](src/term/mod.rs) | 812 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
-| [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | turns ESC sequences into key codes | done |
+| [src/term/mod.rs](src/term/mod.rs) | 892 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
+| [src/term/key.rs](src/term/key.rs) | 524 | `src/io.c` | turns ESC sequences into key codes | done |
 | [src/screen.rs](src/screen.rs) | 1151 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
 | [src/db.rs](src/db.rs) | 1581 | `src/database.c` etc. | MySQL queries through sqlx | done |
 | [src/board.rs](src/board.rs) | 1602 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
 | [src/browse.rs](src/browse.rs) | 3371 | `src/section_list_display.c`, `src/section_list_loader.c`, `src/menu_proc.c` (the two digest items) | the article list, its keys, reading a post, the saved reading position, and a board's digest tree | done |
-| [src/editor.rs](src/editor.rs) | 2600 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
+| [src/editor.rs](src/editor.rs) | 3292 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
 | [src/post.rs](src/post.rs) | 1677 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, the article's web link, and the transaction each write runs in | done |
 | [src/viewlog.rs](src/viewlog.rs) | 369 | `src/article_view_log.c` | which posts this user has read | done |
 | [src/favorlog.rs](src/favorlog.rs) | 452 | `src/article_favor.c` | which posts this user starred | done |
@@ -205,8 +206,8 @@ differently from C, read the deviations section first — the reason is written 
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 424 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-39 896 lines in total, the tests included (they live in the modules they test). There are 587 tests: 581 in
-the library and 6 in the binary. 567 of them need nothing but the checked-out tree; the other 14 are ignored
+40 688 lines in total, the tests included (they live in the modules they test). There are 605 tests: 599 in
+the library and 6 in the binary. 585 of them need nothing but the checked-out tree; the other 14 are ignored
 because they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
@@ -224,8 +225,9 @@ that does not run is described as if it did.
    keys case-insensitive).
 2. **Display-width arithmetic** — wide CJK characters count as two columns, control sequences as zero, using
    the same rules as C's `str_process.c`.
-3. **Key decoding** — `ESC [ A` arrives as "up arrow"; a sequence split across packets is discarded and reported
-   as a bare `ESC`, the way `igetch` does it.
+3. **Key decoding** — `ESC [ A` arrives as "up arrow" and `ESC [ H`/`ESC [ F` as Home and End. A sequence split
+   across packets is waited out for a tenth of a second and rejoined, so neither it nor the key typed behind it
+   is lost; a buffer holding nothing but `ESC` is still answered as `ESC`, the way `igetch` does it.
 4. **Character sets** — UTF-8 and GBK both work; a GBK character split across packets is rejoined correctly,
    and so is a `0xff` control escape. `io_buf_conv` (io.c:1142-1176) keeps such an escape and the byte behind
    it away from the converter, which matters because that is exactly what a telnet client's `IAC` answer to
@@ -288,13 +290,17 @@ that does not run is described as if it did.
    `Ctrl-Y` deletes, backspace joining rows, wide characters deleted whole, `Ctrl-W`/`Ctrl-X` leaving without
    repainting, the status row, and the `MAX_EDITOR_DATA_LINES` limit. The two guards that decide whether a
    keystroke splits a row or a merge joins one also ask whether the row they are looking at ends on a line feed,
-   and `Ctrl-K` leaves that line feed where it used to take it. The loader makes the same cut itself: a text
-   line that no longer fits its 1,024-byte block is broken at the boundary and keeps a line feed there.
+   and `Ctrl-K` leaves that line feed where it used to take it. A `Ctrl-Y` that empties a full display row keeps
+   that row as an empty one, so the cursor stays below it and the next character lands there instead of back at the
+   head of the first line. The loader makes the same cut itself: a text line that no longer fits its 1,024-byte block
+   is broken at the boundary and keeps a line feed there. An Enter typed on a row that has filled its last cell
+   leaves its own line feed inside that row rather than opening one for it, so the cursor comes to rest at the head
+   of the row the break opened.
 20. **Writing the article cache.** [`cache::generate`](src/cache.rs)
    is C's `article_cache_generate` down to the byte, and the loader calls it for every post a pass appends and
    every `'M'` a replay applies (`section_list_loader.c:333`, `:550`), so `var/articles/<CID>` appears on its
    own — within a second of the post landing, the same as C. The reference's own cache suite,
-   [`src/test_article_cache.c`](../lbbs/src/test_article_cache.c), is replayed here as ten tests that write the
+   [`tests/test_article_cache.c`](../lbbs/tests/test_article_cache.c), is replayed here as ten tests that write the
    same documents and read the files back through a terminal model of their own.
 21. **The two roster pages and the profile behind them** — `user_list_display(1)` and `user_list_display(0)`
     ([`userlist::user_list_display`](src/userlist.rs)), reached from the
@@ -506,14 +512,14 @@ wired and unit-tested". The first account that really posts should do it against
 ```bash
 cd lbbs-rust
 cargo build            # compile the library and the binary
-cargo test             # 567 tests that need no database (14 more are opt-in, see 7.2)
+cargo test             # 585 tests that need no database (14 more are opt-in, see 7.2)
 cargo fmt              # the tree is rustfmt-clean; run it before you commit
 ```
 
 A healthy run looks like this:
 
 ```
-test result: ok. 567 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
+test result: ok. 585 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
@@ -796,6 +802,9 @@ The cells that are still ⬜ are the screens behind those keys — see §6.3.
 | `SO_REUSEADDR` **and** `SO_REUSEPORT` on every listening socket (`net_server.c:634-645`) | `SO_REUSEADDR` only ([`net::bind`](src/net.rs)) | the second option exists so several processes can bind one port and have the kernel split the connections between them; with `fork()` gone there is exactly one listener, so setting it would only turn "another `bbsd` is still running" from a refused bind into two daemons quietly sharing the port. A restart fails loudly instead. |
 | A parent that counts its children in `SYS_child_process_count` and compares it to `BBS_max_client` on each accept (`net_server.c:961`) | [`net::Gateway::reserve_total`](src/net.rs) compares the live task count to the limit the reload published | the first port sized a semaphore once at startup, which is the number the C process could never be: raise or lower `bbs_max_client` and the gate now moves on the next accept, as C's does. |
 | `arg_usage()` prints the literal `bbsd` (`main.c:83`) | the same literal ([`daemon::PROG_NAME`](src/daemon.rs)) | `argv[0]` is what the shell typed, so a start through a path or a symlink would print a usage line the C server never prints; the server root still comes from `argv[0]`, as `main.c:217` has it. |
+| A key sequence split across two reads is thrown away and the read answers `ESC` (`io.c:430-487`), so the key and whatever was typed behind it both disappear | [`Terminal::read_key`](src/term/mod.rs#L336) waits a tenth of a second for the rest and retries; only a buffer that holds nothing but `ESC` is answered as `ESC` | a split is what TCP does to an arrow key on a real connection — the user saw Enter or Delete do nothing and pressed it again |
+| `ESC [ H` and `ESC [ F` are in neither of C's two-byte tables (`io.c:802-822`), so they reach the editor as text and paint a star | [`key::decode`](src/term/key.rs) reads them as Home and End | xterm-style clients send exactly these bytes for those two keys |
+| Keys that arrive in one batch share a paint pass and the last one's band wins: `Ctrl-Y` blanks the rows below it, the `Ctrl-K` behind it narrows the band to a single row (`editor.c:947`, the batched `continue` at `:1093-1105`), and `Ctrl-W`/`Ctrl-X` (`:1117-1120`) returns before the row just typed is drawn | [`View::cover_stale`](src/editor.rs) widens each band back over the rows the batch blanked, and an exit key waits for the paint pass it interrupted | the bytes were in the file all along; only the screen had lost them, and reopening the post brought them back |
 
 ### 10.2 C quirks we reproduced on purpose
 
@@ -808,11 +817,11 @@ app disagrees with us. These behaviours are therefore reproduced verbatim and pi
 | The username/password **format check issues no SQL at all**, so a malformed attempt is never logged | [`login.rs`](src/login.rs) | the web unlock feature counts those rows |
 | A disabled account (`p_login = 0`) still has its login row **committed before** the rejection | same | otherwise the visit counters move |
 | The EULA path updates neither visit counters nor the online list | same | same reason |
-| `moveto` prints a negative coordinate with its sign, and with a negative row emits a bare `\r` | [`Terminal::moveto_signed`](src/term/mod.rs#L231) | menu cursors rely on it |
-| A key sequence split across packets is dropped and reported as `ESC` | [`Terminal::read_key`](src/term/mod.rs#L275) | pager key handling must feel identical |
+| `moveto` prints a negative coordinate with its sign, and with a negative row emits a bare `\r` | [`Terminal::moveto_signed`](src/term/mod.rs#L292) | menu cursors rely on it |
 | `S_DEFAULT = 0x3` (list + experience) and **no post bit** | [`privilege.rs`](src/privilege.rs) | making new accounts "more convenient" would diverge from the web app |
 | A station that **refuses** the connection is only reported when the ten-second budget runs out, and then as `连接超时！` | [`bbsnet::connect`](src/bbsnet.rs) | C's wait loop keeps spinning on a socket that is writable but unconnected, and the keys pressed while the bar runs are spent on the connect; failing fast would change both the screen and what reaches the station |
 | The editors' **ten-line limit admits nine**: `split_data_lines` is a do/while, so the newline that closes the tenth line is counted as an eleventh line of its own | [`user_info_update.rs`](src/user_info_update.rs), [`text::split_data_lines`](src/text.rs) | counting the lines the way a reader does would accept texts C refuses with `长度超过限制 (10行)`, and the same counter decides what the profile page and the board lists fit on their screens |
+| A delete ending exactly at the end of a data line keeps **the display row the cursor sat on** as a zero-width row: `editor_data_delete` re-splits that one line from the edited row, not from its head (`editor.c:714-734`) | [`EditorData::delete`](src/editor.rs) | re-wrapping from the head drops the row, the cursor's line then runs past the end of the document, and the next keystroke is located back onto row 0 — which types over the first line |
 | The naming prompt **starts out holding `宝宝`** (`chicken.c:175`) and `get_data` counts that prefill as the beginning of the line (`screen.c:326`), so Enter alone names the chicken 宝宝 and a typed name rides on it: `宝宝` then `新鸡` is accepted as `宝宝新鸡` | [`chicken::create_a_egg`](src/chicken.rs) | the same buffer seeds the 改名字 prompt with the current name, so an editor that cleared the prefill would rename the chicken to something its owner never typed |
 | `chictime` is **read and never assigned**: `show_chicken` (`chicken.c:221-229`) thins and dirties a chicken past 200 of them, and no line in `chicken.c` sets the field, so the starved-and-dirty coop C describes cannot happen | [`chicken::show_chicken`](src/chicken.rs) | it is a documented feature of the game that the code does not deliver; delivering it would be a design change, and the field is kept so the record still parses the same fourteen numbers |
 

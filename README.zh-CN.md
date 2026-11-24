@@ -30,8 +30,9 @@ LBBS 是一个**用纯文本终端访问的论坛（BBS）服务器**。用户�
 
 C 原程序还在继续开发，所以一处代码引用只有说清修订才有意义。Rust 源码里出现的每一个 `file.c:NNN`
 引用都指向 `../lbbs` 里**已提交**的某个修订，从不指向它的工作区——那是作者自己的目录，会随他动，也常常带着
-没提交的改动。`git -C ../lbbs show HEAD:src/<文件>`（游戏是 `…:utils/game/chicken.c`）打印出来的，正是那条
-注释所描述的内容。上游的发布标签并不全在 `main` 的历史上，所以参考端按修订来称呼，而不按标签。
+没提交的改动。`git -C ../lbbs show HEAD:src/<文件>`（C 的测试程序在 `…:tests/test_<名字>.c`，游戏在
+`…:utils/game/chicken.c`）打印出来的，正是那条注释所描述的内容。上游的发布标签并不全在 `main` 的历史上，
+所以参考端按修订来称呼，而不按标签。
 
 ### 1.2 本项目（lbbs-rust）
 
@@ -153,13 +154,13 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
 | [src/paths.rs](src/paths.rs) | 118 | `include/bbs.h` 等 | 屏幕尺寸、各字段长度、路径名等常量 | 完成 |
 | [src/config.rs](src/config.rs) | 394 | `src/init.c` | 读取 `conf/bbsd.conf` | 完成 |
 | [src/text.rs](src/text.rs) | 635 | `src/str_process.c` | 显示宽度（全角=2 列）与折行计算 | 完成 |
-| [src/term/mod.rs](src/term/mod.rs) | 812 | `src/io.c` | 字节管道、GBK 转码、`prints`/`iflush`、`igetch` | 完成 |
-| [src/term/key.rs](src/term/key.rs) | 504 | `src/io.c` | 把 ESC 序列翻译成按键码 | 完成 |
+| [src/term/mod.rs](src/term/mod.rs) | 892 | `src/io.c` | 字节管道、GBK 转码、`prints`/`iflush`、`igetch` | 完成 |
+| [src/term/key.rs](src/term/key.rs) | 524 | `src/io.c` | 把 ESC 序列翻译成按键码 | 完成 |
 | [src/screen.rs](src/screen.rs) | 1151 | `src/screen.c` | 清屏、回显接管 `set_input_echo`、行输入 `str_input`、分页器 `display_data` | 完成 |
 | [src/db.rs](src/db.rs) | 1581 | `src/database.c` 等 | 经 sqlx 访问 MySQL | 完成 |
 | [src/board.rs](src/board.rs) | 1602 | `src/section_list_loader.c` | 版块/帖子/用户的内存池 | 完成 |
 | [src/browse.rs](src/browse.rs) | 3371 | `src/section_list_display.c`、`src/section_list_loader.c`、`src/menu_proc.c`（两个精华区入口） | 帖子列表、列表按键、阅读帖子、阅读位置文件，以及版块精华区树的浏览与树里读一篇帖子 | 完成 |
-| [src/editor.rs](src/editor.rs) | 2600 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
+| [src/editor.rs](src/editor.rs) | 3292 | `src/editor.c` | 全屏编辑器：行列、窗口、状态行、按键 | 完成 |
 | [src/post.rs](src/post.rs) | 1677 | `src/article_post.c`、`src/article_del.c`、`src/article_op.c` | 发帖、回复、修改、删除、精华标记、一篇帖子的网页链接，以及各个写入动作自己的事务 | 完成 |
 | [src/viewlog.rs](src/viewlog.rs) | 369 | `src/article_view_log.c` | 记录该用户读过哪些帖子 | 完成 |
 | [src/favorlog.rs](src/favorlog.rs) | 452 | `src/article_favor.c` | 记录该用户收藏了哪些帖子 | 完成 |
@@ -194,7 +195,7 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
 
 另有 [src/daemon.rs](src/daemon.rs)（480 行，命令行与后台化）、[src/log.rs](src/log.rs)（542 行，两个日志文件）、[src/state.rs](src/state.rs)（410 行，加载器发布、会话读取的共享状态）。
 
-合计 39,896 行（含测试，测试就写在被测模块里）。共 587 个测试：库 581 个、可执行文件 6 个。其中 567 个只读代码
+合计 40,688 行（含测试，测试就写在被测模块里）。共 605 个测试：库 599 个、可执行文件 6 个。其中 585 个只读代码
 仓库里的东西，另外 14 个默认跳过，因为它们要连真实数据库、读真实生成的文件。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
@@ -209,7 +210,9 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
 
 1. **配置解析**——`conf/bbsd.conf` 的切分方式与 C 完全相同（空格、制表符、CR、LF 为分隔；键名不区分大小写）。
 2. **显示宽度计算**——中日韩全角字符算 2 列，控制序列算 0 列，规则与 C 的 `str_process.c` 一致。
-3. **按键解析**——`ESC [ A` 被识别为“上箭头”；跨包被切断的序列会整段丢弃并报成裸 `ESC`，与 `igetch` 相同。
+3. **按键解析**——`ESC [ A` 被识别为“上箭头”，`ESC [ H`/`ESC [ F` 被识别为 Home 与 End；跨包切断的序列会等
+   十分之一秒再接回，序列本身和它后面紧跟的那个键都不会丢；缓冲区里只剩一个孤立的 `ESC` 时仍旧报成裸 `ESC`，
+   与 `igetch` 相同。
 4. **字符编码**——UTF-8 与 GBK 都支持；GBK 字符在包边界被切断也能正确拼回，`0xff` 控制转义序列也一样。
    `io_buf_conv`（io.c:1142-1176）会把 `0xff` 和紧随的那一个字节留给 `igetch`、不送进转码器，而 telnet 客户端
    应答协商发回的 `IAC` 正是这种字节：以前它们被当成文本转码，在登录行上变成乱码并把后面真正的按键吃掉，
@@ -261,11 +264,15 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
 19. **全屏编辑器**（`editor.c`）：插入与改写、行与窗口的行列运算、`Ctrl-K`/`Ctrl-Y` 删除、退格合并行、
     宽字符整体删除、`Ctrl-W`/`Ctrl-X` 不重绘直接退出、状态行，以及 `MAX_EDITOR_DATA_LINES` 上限。决定一次
     按键要不要拆行、一次合并要不要并行的那两处判断，还要问这一行的末尾是不是换行符；`Ctrl-K` 也留下那个换行符，
-    不再把它一起带走。加载器自己也会这么切：塞不进那一块 1,024 字节的文本行在块边界处断开，切口留下一个换行符。
+    不再把它一起带走。`Ctrl-Y` 删空一格不留的行时，那一行本身作为一行空行留下，光标仍停在它下面，下一个
+    字符也就落在那里，而不是回到第一行的行首。加载器自己也会这么切：塞不进那一块 1,024 字节的文本行在块边界处
+    断开，切口留下一个换行符。在一格不留的满行上按回车，这个换行符留在原行里，而不是另起一行，光标于是停在断行
+    开出的那一行行首。
+    在一格不留的满行上按回车，这个换行符留在原行里，而不是另起一行，光标于是停在断行开出的那一行行首。
 20. **生成文章缓存。** [`cache::generate`](src/cache.rs) 与 C 的
     `article_cache_generate` 逐字节一致，加载器在每收录一帖、每重放一个 `'M'` 之后都会调用它
     （`section_list_loader.c:333`、`:550`），所以 `var/articles/<CID>` 会自己出现——帖子落库后一秒之内，与 C 相同。
-    参考端自己的那套缓存测试（`src/test_article_cache.c`）在这里由十个测试复演：写同样的文章，再拿本项目
+    参考端自己的那套缓存测试（`tests/test_article_cache.c`）在这里由十个测试复演：写同样的文章，再拿本项目
     自己的一套终端模型把文件读回来对。
 21. **两张花名册页面和它们身后的资料页**——`user_list_display(1)` 与 `user_list_display(0)`
     （[`userlist::user_list_display`](src/userlist.rs)），只从主菜单的
@@ -442,14 +449,14 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
 ```bash
 cd lbbs-rust
 cargo build            # 编译库和可执行文件
-cargo test             # 567 个不需要数据库的测试（另有 14 个见 7.2）
+cargo test             # 585 个不需要数据库的测试（另有 14 个见 7.2）
 cargo fmt              # 全树已经是 rustfmt 干净的，提交前跑一次
 ```
 
 正常情况长这样：
 
 ```
-test result: ok. 567 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
+test result: ok. 585 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```
@@ -709,6 +716,9 @@ Rust 里这些路径集中放在 [src/paths.rs](src/paths.rs)，
 | 每个监听套接字同时设 `SO_REUSEADDR` **和** `SO_REUSEPORT`（`net_server.c:634-645`） | 只设 `SO_REUSEADDR`（[`net::bind`](src/net.rs)） | 后一个选项是让好几个进程绑同一个端口、由内核把连接分给他们；`fork()` 去掉之后监听的就一个，设上它只会把“另一个 `bbsd` 还在跑”从一次失败的 bind 变成两个守护进程悄悄共用一个端口。现在重启会响亮地失败，而不是并行着互相抢连接。 |
 | 父进程在 `SYS_child_process_count` 里数自己的子进程，每次 accept 拿它和 `BBS_max_client` 比（`net_server.c:961`） | [`net::Gateway::reserve_total`](src/net.rs) 拿当前活着的会话数与重载刚发布的上限比 | 最早的移植在启动时就把信号量定死了，而那恰恰是 C 那个数永远不可能做到的事：把 `bbs_max_client` 调大调小，下一次的 accept 关卡就跟着动，和 C 一样。 |
 | `arg_usage()` 打印的是字面量 `bbsd`（`main.c:83`） | 同样是字面量（[`daemon::PROG_NAME`](src/daemon.rs)） | `argv[0]` 是 shell 敲进来的那条路径，照它打印就会输出 C 从来不会打印的 usage；服务器根目录仍然由 `argv[0]` 推出来，与 `main.c:217` 一致。 |
+| 一次读只收到半个转义序列时整段丢掉、这次读回答 `ESC`（`io.c:430-487`），于是那一下按键和紧跟在后面输入的键一起消失 | [`Terminal::read_key`](src/term/mod.rs#L336) 先等十分之一秒把剩下的字节接上、重试到序列完整；只有缓冲区里本就只剩一个孤立 `ESC` 时才回答 `ESC` | 真连接上箭头键本来就会被 TCP 切开，用户看到的是“Enter 或 Del 要按两次才生效” |
+| `ESC [ H`、`ESC [ F` 不在 C 的两字节表里（`io.c:802-822`），于是被当成正文送进编辑器，画成一个星号 | [`key::decode`](src/term/key.rs) 把它们读成 Home 与 End | xterm 系的客户端发的就是这两个键的这串字节 |
+| 一批按键共用一次重画，而最后那个键算出的行区间说了算：`Ctrl-Y` 先清空它下面的行，跟在后面的 `Ctrl-K` 把区间收窄成一行（`editor.c:947`、批量 `continue` 见 `:1093-1105`），`Ctrl-W`/`Ctrl-X`（`:1117-1120`）更是在刚敲的那一行画出来之前就返回 | [`View::cover_stale`](src/editor.rs) 把每次的区间重新放宽到这一批清空过的所有行，退出键也等这一趟画完 | 字节一直都在文件里，只是屏幕没跟上；重开这篇帖子它们又出现了 |
 | `editor.c` 每次编辑只重新拆分改动的那条数据行，再挪动显示指针数组 | 同样只重排那一行（[`EditorData::recount_line`](src/editor.rs)） | 最早的移植每敲一个字符就把整个文档重排一遍，黏贴长帖时开销随长度平方增长、把一个 CPU 核跑满，而 C 几乎不耗 CPU |
 | 每一局猜拳里的 `srand((unsigned) time(NULL))` 加 `rand() % 3`（`chicken.c:726-727`） | [`chicken::opponent`](src/chicken.rs) 混的是同一颗以秒为单位的种子 | glibc 的加法反馈发生器是 libc 的性质而不是这个游戏的性质，照搬过来等于多维护一个 libm。种子仍然一秒变一次、仍然只有三个答案，所以一秒之内猜两次碰到的还是同一只手——这才是玩家看得见的那部分。 |
 | 小鸡记录用 `fscanf` 读：十四个 `%d` 加一个 `%s`（`chicken.c:117-118`） | [`Chicken::parse`](src/chicken.rs) 把这一行切开，逐格交给 [`c_atoi`](src/config.rs) | C 拿去和 `15` 比较的格数这里照样报得出来，C 读不到的那一格这里读成 `0`——凡是 `save_chicken` 与 `create_a_egg` 写过的行，两边结果一致 |
@@ -725,11 +735,11 @@ Rust 里这些路径集中放在 [src/paths.rs](src/paths.rs)，
 | 用户名/密码**格式校验阶段一条 SQL 都不发**，所以格式错误的尝试不会被记录 | [`login.rs`](src/login.rs) | 网页端的解锁功能依赖这些计数 |
 | 账号被停用（`p_login = 0`）时，登录日志**先提交**再拒绝 | 同上 | 否则访问计数会变 |
 | 走 EULA 流程时既不更新访问计数，也不登记在线 | 同上 | 同上 |
-| `moveto` 遇到负数会带符号输出；行号为负时只输出一个 `\r` | [`Terminal::moveto_signed`](src/term/mod.rs#L231) | 菜单光标位置依赖这个行为 |
-| 跨包被切断的按键序列会被丢弃并报成 `ESC` | [`Terminal::read_key`](src/term/mod.rs#L275) | 分页器的按键手感必须完全一致 |
+| `moveto` 遇到负数会带符号输出；行号为负时只输出一个 `\r` | [`Terminal::moveto_signed`](src/term/mod.rs#L292) | 菜单光标位置依赖这个行为 |
 | `S_DEFAULT = 0x3`（可看列表 + 可得经验值），**不含发帖位** | [`privilege.rs`](src/privilege.rs) | 让新账号“更方便”就会与网页端不一致 |
 | 被对方**拒绝**的连接不会立刻报出来，要等十秒预算走完，然后报 `连接超时！` | [`bbsnet::connect`](src/bbsnet.rs) | C 的等待循环在“可写但没连上”的套接字上继续空转，进度条期间按下的键也被连接吃掉；提前失败会同时改掉屏幕上的字和真正送到站点的按键 |
 | 编辑器的**十行上限其实只容得下九行**：`split_data_lines` 是 do/while，收尾第十行的那个换行自己又算出一行显示行 | [`user_info_update.rs`](src/user_info_update.rs)、[`text::split_data_lines`](src/text.rs) | 按读者的数法数行，就会接受 C 用 `长度超过限制 (10行)` 拒掉的文字；而同一个计数器也决定资料页与版块列表一屏放得下什么 |
+| 恰好删到一条数据行结尾的那次删除，会把**光标所在的那个显示行**留成一行零宽的显示行：`editor_data_delete` 只从改动的那一行起重新拆分这一条数据行，不是从行首重来（`editor.c:714-734`） | [`EditorData::delete`](src/editor.rs) | 从行首重排会丢掉这一行，光标所在的那一行于是跑到文档末尾之后，下一个按键被定位回第 0 行——结果就是往第一行上打字 |
 | 取名的提示**开头本来就带着 `宝宝`**（`chicken.c:175`），而 `get_data` 把这段预填当作行首来计数（`screen.c:326`）：单按回车小鸡就叫 宝宝，敲进来的名字也接在它后面——先 `宝宝` 再敲 `新鸡`，收下的名字是 `宝宝新鸡` | [`chicken::create_a_egg`](src/chicken.rs) | 同一块缓冲也拿现名去预填 `改名字` 那一问，所以一个会清掉预填的编辑器会把小鸡改成主人从没输入过的名字 |
 | `chictime` **只读、从不赋值**：`show_chicken`（`chicken.c:221-229`）在它超过 200 时让小鸡变瘦变脏，而 `chicken.c` 没有任何一行给它赋值，所以 C 描述的那个又饿又脏的鸡舍不会发生 | [`chicken::show_chicken`](src/chicken.rs) | 这是说明里有、代码里没实现的功能；替它补上实现就是改设计，字段留着只是为了记录仍然读得出同样那十四个数字 |
 

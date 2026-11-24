@@ -360,9 +360,9 @@ mod tests {
         assert_eq!(fit_display("abc".as_bytes(), 3, FIX), b"abc".to_vec());
     }
 
-    // The four tables below replay `src/test_str_process.c` (`9193e5c`) case for case. That file
-    // is the reference's own proof of this module, so it is quoted rather than paraphrased: the
-    // C `str_length(text, skip)` is [`display_width`] with `fixed` set the way `UTF8_fixed_width`
+    // The four tables below replay `tests/test_str_process.c` case for case. That file is the
+    // reference's own proof of this module, so it is quoted rather than paraphrased: the C
+    // `str_length(text, skip)` is [`display_width`] with `fixed` set the way `UTF8_fixed_width`
     // is in each C function, and C's `count` — the number of slots in the caller's array — is
     // `max_lines + 1` here, because `offsets` carries one entry more than the lines it describes.
     #[test]

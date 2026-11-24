@@ -117,9 +117,11 @@ pub fn utf8_seq_len(lead: u8) -> usize {
 pub enum Decoded {
     /// A key plus the number of bytes it consumed.
     Key(u32, usize),
-    /// The buffer ends inside an escape sequence. `igetch` has no cross-call sequence
-    /// state, so a drained buffer that last saw `ESC` yields `KEY_ESC` and drops the
-    /// partial sequence; the caller decides once it knows no more input is pending.
+    /// The buffer ends inside an escape sequence, so the key still needs the bytes behind it.
+    /// [`crate::term::Terminal::read_key`] waits a moment for them; when nothing more arrives,
+    /// the escape answers as [`KEY_ESC`] while it is still alone and as a plain retry once a
+    /// second byte has joined it, which is what `igetch` hands back for a sequence that
+    /// matches no known key.
     Partial,
     /// Every byte was spent on discarded sequences: `igetch` would return `KEY_RETRY`.
     Retry,
@@ -140,6 +142,8 @@ fn esc_sequence(seq: &[u8]) -> Option<u32> {
                 b'B' => Some(KEY_DOWN),
                 b'C' => Some(KEY_RIGHT),
                 b'D' => Some(KEY_LEFT),
+                b'H' => Some(KEY_HOME),
+                b'F' => Some(KEY_END),
                 b'P' => Some(KEY_F1),
                 b'Q' => Some(KEY_F2),
                 b'R' => Some(KEY_F3),
@@ -163,6 +167,10 @@ fn esc_sequence(seq: &[u8]) -> Option<u32> {
             b'B' => Some(KEY_DOWN),
             b'C' => Some(KEY_RIGHT),
             b'D' => Some(KEY_LEFT),
+            // `io.c:802-822` maps no `H`/`F` here, so a terminal in the xterm-style encoding
+            // loses its Home and End; the port reads them as the two editing keys they are.
+            b'H' => Some(KEY_HOME),
+            b'F' => Some(KEY_END),
             b'V' => Some(KEY_SHIFT_F1),
             b'Z' => Some(KEY_SHIFT_F2),
             b'a' => Some(KEY_SHIFT_F3),
@@ -418,6 +426,18 @@ mod tests {
         assert_eq!(key(b"\x1b[6~"), KEY_PGDN);
         assert_eq!(key(b"\x7f"), BACKSPACE);
         assert_eq!(key(b"\x1b\x1b"), KEY_CSI);
+    }
+
+    /// `io.c` maps these only in the `<n>~` encodings, so a terminal sending the two-byte
+    /// forms got a bare escape and the editor inserted a star instead of moving the cursor.
+    #[test]
+    fn home_and_end_in_the_two_byte_encodings() {
+        assert_eq!(key(b"\x1b[H"), KEY_HOME);
+        assert_eq!(key(b"\x1b[F"), KEY_END);
+        assert_eq!(key(b"\x1bOH"), KEY_HOME);
+        assert_eq!(key(b"\x1bOF"), KEY_END);
+        // A cursor-position report is not a key, and stays unknown.
+        assert_eq!(decode(b"\x1b[10;20H"), Decoded::Partial);
     }
 
     #[test]

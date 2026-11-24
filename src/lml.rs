@@ -679,7 +679,7 @@ mod tests {
         assert_eq!(render(line.as_bytes(), 4096, 0, false, true).len(), 300);
     }
 
-    /// Every case `src/test_lml.c` exercises, rendered by the C code and recorded here as hex so
+    /// Every case `tests/test_lml.c` exercises, rendered by the C code and recorded here as hex so
     /// the port can be diffed against the original.
     #[test]
     fn matches_the_c_golden_output() {
