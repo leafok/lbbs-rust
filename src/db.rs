@@ -29,6 +29,12 @@ use crate::paths::CONF_CA_CERT;
 /// Sessions share this many connections; the C original used one per forked child.
 const POOL_SIZE: u32 = 8;
 
+/// How long a statement against a [`Db::detached`] handle may wait for its first connection.
+/// sqlx caps `acquire`, including the connection attempt, at the pool's 30 s default, and the
+/// cost of failing that attempt is host-dependent: the empty host of an offline session is
+/// refused in microseconds by one resolver and retried through a whole search list by another.
+const DETACHED_ACQUIRE_TIMEOUT: Duration = Duration::from_millis(100);
+
 /// `mysql_set_character_set(db, "utf8")`: utf8mb3, which decides the collation used by the
 /// string comparison in `check_user` and rejects 4-byte sequences. Not interchangeable
 /// with the tables' utf8mb4.
@@ -90,10 +96,17 @@ impl Db {
 
     /// A handle that opens its first connection on the first query, so a value that only
     /// has to exist — a [`crate::session::Session`] under test, say — can be built without
-    /// a server. Any statement against it still waits for the usual acquire timeout.
+    /// a server.
+    ///
+    /// Its acquisition is capped at [`DETACHED_ACQUIRE_TIMEOUT`] instead of the pool default:
+    /// what an unreachable address costs is a property of the host's resolver and firewall,
+    /// not of this handle, and a screen that issues a statement per paint would otherwise sit
+    /// in a wait no caller of it can afford. The live daemon uses [`Db::connect`].
     pub fn detached(db: &DbConfig) -> Db {
         Db {
-            pool: MySqlPool::connect_lazy_with(Self::options(db, Path::new(CONF_CA_CERT))),
+            pool: MySqlPoolOptions::new()
+                .acquire_timeout(DETACHED_ACQUIRE_TIMEOUT)
+                .connect_lazy_with(Self::options(db, Path::new(CONF_CA_CERT))),
         }
     }
 
