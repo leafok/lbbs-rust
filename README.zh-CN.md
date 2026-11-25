@@ -193,9 +193,9 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 424 | `utils/bin/gen_ex_list.php` | 被守护进程标了记的每个版块，各写出一个 `var/gen_ex/<SID>` 精华区树 | 完成 |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs)、[gen_section_menu.rs](src/bin/gen_section_menu.rs)、[gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | `php utils/bin/*.php` 那几行 crontab | 三个可执行文件：调用三个生成工具，把脚本的退出码原样交回给 shell | 完成 |
 
-另有 [src/daemon.rs](src/daemon.rs)（488 行，命令行与后台化）、[src/systemd.rs](src/systemd.rs)（218 行，不依赖 libsystemd 的 `sd_notify`）、[src/log.rs](src/log.rs)（542 行，两个日志文件）、[src/state.rs](src/state.rs)（410 行，加载器发布、会话读取的共享状态）。
+另有 [src/daemon.rs](src/daemon.rs)（488 行，命令行与后台化）、[src/systemd.rs](src/systemd.rs)（220 行，不依赖 libsystemd 的 `sd_notify`）、[src/log.rs](src/log.rs)（542 行，两个日志文件）、[src/state.rs](src/state.rs)（410 行，加载器发布、会话读取的共享状态）。
 
-合计 40,929 行（含测试，测试就写在被测模块里）。共 609 个测试：库 603 个、可执行文件 6 个。其中 589 个只读代码
+合计 40,931 行（含测试，测试就写在被测模块里）。共 609 个测试：库 603 个、可执行文件 6 个。其中 589 个只读代码
 仓库里的东西，另外 14 个默认跳过，因为它们要连真实数据库、读真实生成的文件。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
@@ -443,6 +443,7 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
 | MySQL | 8.x | 存放论坛数据的那个库 |
 | Linux | — | 开发与验证都在 Linux 上进行 |
 | macOS | 11 或更新（arm64） | 已在 Apple Silicon 的 Mac 上原生构建并跑完整套测试，全绿；守护进程本身只验到 `Db::connect()`，再往下的启动步骤要有数据库。从 Linux 交叉时要自备两样 Mac 上本来就有的东西：一个认 Apple 参数的 clang——`aws-lc-sys` 与 `ring` 需要，zig 的就行——以及写明 `libiconv`（`libc` 自己声明的链接库）和 `CoreFoundation`（chrono 的时区后端）的 `.tbd` 桩，这两个通常来自 `MacOSX.sdk` |
+| Windows | 10 或更新（x86_64，GNU 工具链） | 用 mingw-w64 能编过也能链接，测试在 wine 里跑通：库内 585 个、可执行文件里 6 个。比 unix 构建少的那 4 个是有意加 `#[cfg(unix)]` 的——`systemd` 那三个套接字地址的测试，还有文章缓存逐字节对比的那个，它的 C 基准文件把时区写成 `CST`，而 Rust 版在 Windows 上只能写 UTC 偏移 |
 | locale | `en_US.UTF-8` | `locale -a` 里必须有它：服务器在写出任何文章缓存之前会安装这个 locale，与 C 一样，缺了就拒绝启动 |
 
 `cargo` 是 Rust 自带的构建与测试工具。以下命令都在 `lbbs-rust/` 目录里执行。
@@ -464,6 +465,13 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 
 > **排版交给 `cargo fmt`，不用手工调。** 全树现在都能通过 `cargo fmt --check`，所以提交前先跑一次，
 > 这样 diff 里就只剩下你真正改的东西。缩进仍是 4 个空格，下面的命名规矩不变。
+
+GitHub Actions 把同样的两步搬到四个平台上：**CI** 先查格式，再 `--all-targets` 编译并跑测试，覆盖 Linux x86_64、
+Linux aarch64、macOS arm64 和 Windows x86_64，推送到 `main` 或 `v*.*` 分支、以及提 PR 时都会跑。打上 `v*.*.*`
+标签则用 release 模式编同样的四个平台，外加一个源码包——解开之后照样编译测试一遍——每个平台的产物都摆成一颗
+服务器根目录：`bin/` 里放四个可执行文件，再加 `conf/`、`data/`，以及守护进程不会自己建的空 `log/` 和 `var/`，
+最后开一个草稿 release，附上压缩包和各自的 `.sha256`。CI 需要的只有这份树本身：不用数据库（那 14 个测试照旧
+`#[ignore]`，见 §7.2），也不用预先生成 `var/`（那些由 §7.4 产出）。
 
 ### 7.2 使用真实数据库、真实配置文件的测试
 

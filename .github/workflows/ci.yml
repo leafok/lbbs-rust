@@ -1,0 +1,104 @@
+name: Cargo CI
+
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+    branches:
+      - "main"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+
+    name: rustfmt
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    # the tree is rustfmt-clean, so a commit that skips `cargo fmt` fails here
+    - name: Check the formatting
+      run: cargo fmt --check
+
+  build:
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            ext: ""
+          # arm64 Linux, the image the C repository's Docker job builds on
+          - name: linux-aarch64
+            os: ubuntu-26.04-arm
+            target: aarch64-unknown-linux-gnu
+            ext: ""
+          # arm64 (Apple Silicon), so the Darwin code paths compile and test natively
+          - name: macos-arm64
+            os: macos-26
+            target: aarch64-apple-darwin
+            ext: ""
+          # the GNU target rather than MSVC: this is the Windows build that was checked by hand,
+          # and its C dependencies build with a plain gcc instead of a Visual Studio shell
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-gnu
+            ext: .exe
+
+    steps:
+    - uses: actions/checkout@v6
+
+    # `aws-lc-sys` (russh's default crypto backend) and `ring` (sqlx's) compile C, so the gnu target
+    # needs a gcc for it. MSYS2 is installed on the Windows image but is not on its PATH, and the
+    # standard library for this target is not in the toolchain the runner preinstalls either.
+    - name: Set up the build tools (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        gcc=""
+        for dir in /msys64/mingw64/bin /c/msys64/mingw64/bin /mingw64/bin; do
+        	[ -x "${dir}/x86_64-w64-mingw32-gcc.exe" ] && { gcc="${dir}"; break; }
+        done
+        if [ -z "${gcc}" ]; then
+        	echo "no mingw-w64 gcc on this runner" >&2
+        	ls / /c 2>/dev/null >&2
+        	exit 1
+        fi
+        echo "${gcc}" >> "$GITHUB_PATH"
+        "${gcc}/x86_64-w64-mingw32-gcc.exe" --version | head -n 1
+        rustup target add x86_64-pc-windows-gnu
+
+    - name: Show the toolchain
+      shell: bash
+      run: |
+        rustc -vV
+        cargo -V
+        cc --version 2>/dev/null | head -n 1 || gcc --version | head -n 1
+
+    - name: Build
+      shell: bash
+      run: cargo build --all-targets --locked --target ${{ matrix.target }}
+
+    - name: Test
+      shell: bash
+      run: cargo test --locked --target ${{ matrix.target }}
+
+    # bbsd answers -v before it looks for a server root, which is all a runner can offer
+    - name: Run the binary
+      shell: bash
+      run: |
+        # arg_version() writes to stderr, as C's did
+        "target/${{ matrix.target }}/debug/bbsd${{ matrix.ext }}" -v

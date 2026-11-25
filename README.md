@@ -163,7 +163,7 @@ differently from C, read the deviations section first — the reason is written 
 | --- | ---:| --- | --- | --- |
 | [src/paths.rs](src/paths.rs) | 118 | `include/bbs.h` etc. | screen size, field lengths, path names | done |
 | [src/daemon.rs](src/daemon.rs) | 488 | `src/main.c`, `src/daemon.c` | command line, `--help`/`--version`, `fork` into background | done |
-| [src/systemd.rs](src/systemd.rs) | 218 | the `HAVE_SYSTEMD_SD_DAEMON_H` blocks of `src/net_server.c` | `READY=1`, `RELOADING=1`, `STOPPING=1` written to `NOTIFY_SOCKET` without libsystemd | done |
+| [src/systemd.rs](src/systemd.rs) | 220 | the `HAVE_SYSTEMD_SD_DAEMON_H` blocks of `src/net_server.c` | `READY=1`, `RELOADING=1`, `STOPPING=1` written to `NOTIFY_SOCKET` without libsystemd | done |
 | [src/config.rs](src/config.rs) | 394 | `src/init.c` | reads `conf/bbsd.conf` | done |
 | [src/log.rs](src/log.rs) | 542 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
 | [src/text.rs](src/text.rs) | 635 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
@@ -207,7 +207,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 424 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-40 929 lines in total, the tests included (they live in the modules they test). There are 609 tests: 603 in
+40 931 lines in total, the tests included (they live in the modules they test). There are 609 tests: 603 in
 the library and 6 in the binary. 589 of them need nothing but the checked-out tree; the other 14 are ignored
 because they read the real database and files.
 
@@ -507,6 +507,7 @@ wired and unit-tested". The first account that really posts should do it against
 | MySQL | 8.x | the database that holds the board's data |
 | Linux | — | development and verification happen on Linux |
 | macOS | 11 or newer (arm64) | built and tested there natively: the whole suite passes. The daemon itself was only taken as far as `Db::connect()`, since everything after it needs a database. Cross-building from Linux needs two things a Mac has anyway: a clang that takes Apple flags, which `aws-lc-sys` and `ring` need — zig's does — and `.tbd` stubs naming `libiconv` (`libc`'s own link declaration) and `CoreFoundation` (chrono's time-zone backend), which otherwise come from `MacOSX.sdk` |
+| Windows | 10 or newer (x86_64, GNU toolchain) | builds and links against mingw-w64, and its test binaries pass under wine: 585 library tests plus the six in the binary. The four a unix build has are `#[cfg(unix)]` on purpose — the three `systemd` socket-address tests, and the article-cache byte comparison, whose C fixture spells the time zone `CST` where the port can only write a UTC offset |
 | Locale | `en_US.UTF-8` | `locale -a` must list it: the server installs it before it writes any article cache, as C does, and refuses to start without it |
 
 `cargo` is Rust's build-and-test tool and comes with the toolchain. Run everything from the `lbbs-rust/` directory.
@@ -529,6 +530,14 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 > **Formatting is `cargo fmt`'s job, not yours.** The tree passes `cargo fmt --check`, so run it before committing
 > and the diff you read contains only what you actually changed. Four-space indent and the naming below stay as
 > they are.
+
+GitHub Actions runs the same two commands on every platform: **CI** checks the formatting, then builds
+`--all-targets` and tests on Linux x86_64 and aarch64, macOS arm64 and Windows x86_64, for a push to `main` or a
+`v*.*` branch and for a pull request. A `v*.*.*` tag builds the same four platforms in release mode plus a source
+tarball it unpacks and tests, stages each build as a server root — `bin/` with the four binaries, `conf/`, `data/`
+and the empty `log/` and `var/` the daemon does not make for itself — and opens a draft release holding the
+archives and their `.sha256` files. A job needs nothing but the tree: no database, since the fourteen tests that
+want one stay `#[ignore]`d (§7.2), and no generated `var/` file, since those come from §7.4.
 
 ### 7.2 The tests that use the real database and real files
 

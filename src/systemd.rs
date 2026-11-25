@@ -126,7 +126,9 @@ fn socket_addr(socket: &str) -> Option<(libc::sockaddr_un, libc::socklen_t)> {
 mod tests {
     use super::*;
 
-    /// `sun_path` read back as bytes, which is what the address was built from.
+    /// `sun_path` read back as bytes, which is what the address was built from. `libc` is a
+    /// `cfg(unix)` dependency, so this helper only exists where the address type does.
+    #[cfg(unix)]
     fn sun_path_bytes(addr: &libc::sockaddr_un) -> Vec<u8> {
         addr.sun_path.iter().map(|byte| *byte as u8).collect()
     }

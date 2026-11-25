@@ -1,0 +1,276 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # bbsd takes its server root two levels up from the executable, so a package only works when the
+  # tree it unpacks keeps bin/, conf/ and data/ beside each other under this prefix
+  INSTALL_PREFIX: /usr/local/lbbs
+
+jobs:
+  source:
+
+    name: source-tarball
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Check the tag against Cargo.toml
+      run: |
+        version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)"
+        if [ "${version}" != "${GITHUB_REF_NAME#v}" ]; then
+        	echo "the tag ${GITHUB_REF_NAME} does not match the version in Cargo.toml, ${version}" >&2
+        	exit 1
+        fi
+        echo "VERSION=${version}" >> "$GITHUB_ENV"
+
+    - name: Build the tarball
+      run: |
+        # the C repository runs `make distcheck` here; the cargo equivalent is to hand the archive
+        # `git archive` writes to the build below and see that it stands on its own
+        name="lbbs-rust-${VERSION}"
+        git archive --format=tar --prefix="${name}/" HEAD | gzip -n > "${name}.tar.gz"
+        ls -l "${name}.tar.gz"
+
+    - name: Test the tree inside the tarball
+      run: |
+        mkdir -p "${RUNNER_TEMP}/dist"
+        tar -xzf "lbbs-rust-${VERSION}.tar.gz" -C "${RUNNER_TEMP}/dist"
+        cd "${RUNNER_TEMP}/dist/lbbs-rust-${VERSION}"
+        cargo fmt --check
+        cargo test --locked
+
+    - name: Checksum the tarball
+      run: |
+        for tarball in lbbs-rust-*.tar.gz; do
+        	sha256sum "${tarball}" > "${tarball}.sha256"
+        done
+        ls -l lbbs-rust-*.tar.gz*
+
+    - name: Upload the source tarball
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-source
+        path: |
+          lbbs-rust-*.tar.gz
+          lbbs-rust-*.tar.gz.sha256
+
+  binary:
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin_ext: ""
+            pkg: tar.gz
+          - name: linux-aarch64
+            os: ubuntu-26.04-arm
+            target: aarch64-unknown-linux-gnu
+            bin_ext: ""
+            pkg: tar.gz
+          # arm64 (Apple Silicon), the image the Makefile CI job builds on too
+          - name: macos-arm64
+            os: macos-26
+            target: aarch64-apple-darwin
+            bin_ext: ""
+            pkg: tar.gz
+          # the GNU target rather than MSVC: it is the Windows build that was verified by hand, and
+          # its C dependencies build with a plain gcc instead of a Visual Studio shell
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-gnu
+            bin_ext: .exe
+            pkg: zip
+
+    steps:
+    - uses: actions/checkout@v6
+
+    # `aws-lc-sys` (russh's default crypto backend) and `ring` (sqlx's) compile C, so the gnu target
+    # needs a gcc for it. MSYS2 is on the Windows image but not on PATH, and its standard library is
+    # not in the toolchain the runner preinstalls.
+    - name: Set up the build tools (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        gcc=""
+        for dir in /msys64/mingw64/bin /c/msys64/mingw64/bin /mingw64/bin; do
+        	[ -x "${dir}/x86_64-w64-mingw32-gcc.exe" ] && { gcc="${dir}"; break; }
+        done
+        if [ -z "${gcc}" ]; then
+        	echo "no mingw-w64 gcc on this runner" >&2
+        	ls / /c 2>/dev/null >&2
+        	exit 1
+        fi
+        echo "${gcc}" >> "$GITHUB_PATH"
+        "${gcc}/x86_64-w64-mingw32-gcc.exe" --version | head -n 1
+        rustup target add x86_64-pc-windows-gnu
+
+    # naming the target instead of letting each job build its host keeps one artifact path,
+    # target/<triple>/release, for all four
+    - name: Build
+      shell: bash
+      run: cargo build --release --locked --target ${{ matrix.target }}
+
+    - name: Test
+      shell: bash
+      run: cargo test --release --locked --target ${{ matrix.target }}
+
+    - name: Set the package root
+      shell: bash
+      run: |
+        # a unix package carries the install prefix inside it and is unpacked at /; Windows has no
+        # such layout, so its tree is rooted at the package name itself
+        if [ "$RUNNER_OS" = Windows ]; then
+        	root="${RUNNER_TEMP}/package/lbbs"
+        else
+        	root="${RUNNER_TEMP}/package${INSTALL_PREFIX}"
+        fi
+        echo "PKG_ROOT=${root}" >> "$GITHUB_ENV"
+        echo "PKG_TOP=${root#"${RUNNER_TEMP}/package/"}" >> "$GITHUB_ENV"
+
+    - name: Stage the installation tree
+      shell: bash
+      run: |
+        exe="${{ matrix.bin_ext }}"
+        # log/ has to exist before the daemon opens its two files there and var/ has to exist for
+        # the directories the daemon makes inside it, so both ship empty
+        mkdir -p "${PKG_ROOT}/bin" "${PKG_ROOT}/conf" "${PKG_ROOT}/data" \
+        	"${PKG_ROOT}/log" "${PKG_ROOT}/var/articles"
+        for bin in bbsd gen_top gen_section_menu gen_ex_list; do
+        	cp "target/${{ matrix.target }}/release/${bin}${exe}" "${PKG_ROOT}/bin/"
+        done
+        cp conf/bbsd.conf.default conf/bbsnet.conf.default conf/badwords.conf.default conf/menu.conf "${PKG_ROOT}/conf/"
+        cp data/*.txt "${PKG_ROOT}/data/"
+        "${PKG_ROOT}/bin/bbsd${exe}" -v
+
+    - name: Write BUILD-INFO.txt
+      shell: bash
+      run: |
+        version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)"
+        ext="${{ matrix.pkg }}"
+        exe="${{ matrix.bin_ext }}"
+        name="lbbs-rust-${version}-${{ matrix.name }}"
+        echo "PKG_NAME=${name}" >> "$GITHUB_ENV"
+
+        host="$(uname -srm)"
+        if [ "$(uname -s)" = Darwin ]; then
+        	host="${host} (macOS $(sw_vers -productVersion))"
+        fi
+        # on the Windows image `uname` is MSYS2's and already names the Windows version
+
+        {
+        	echo "Package:  ${name}.${ext}"
+        	echo "Tag:      ${GITHUB_REF_NAME}"
+        	echo "Commit:   ${GITHUB_SHA}"
+        	echo "Built:    $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        	echo "Host:     ${host}"
+        	echo "Toolchain: $(rustc -Vv | head -n 1)"
+        	echo "Target:    ${{ matrix.target }}"
+        	echo "Build:    cargo build --release --locked --target ${{ matrix.target }}"
+        	echo
+        	echo "Compiled in:"
+        	# bbsd reports to stderr
+        	"${PKG_ROOT}/bin/bbsd${exe}" -C 2>&1 | sed 's/^/  /'
+        	echo
+        	echo "Shared library dependencies:"
+        	if [ "${exe}" = .exe ]; then
+        		echo "  bin/bbsd.exe is a mingw-w64 build; only system DLLs load at runtime."
+        	else
+        		for module in "${PKG_ROOT}"/bin/*; do
+        			[ -f "${module}" ] || continue
+        			echo "  ${module#"${PKG_ROOT}/"}"
+        			if [ "$(uname -s)" = Darwin ]; then
+        				otool -L "${module}" | tail -n +2 | sed 's/^/    /'
+        			else
+        				ldd "${module}" | sed 's/^/    /'
+        			fi
+        		done
+        	fi
+        	echo
+        	echo "bbsd takes its server root two levels up from the executable, so bin/, conf/ and"
+        	echo "data/ have to stay together in one tree. Move that directory wherever it should"
+        	echo "live and run the daemon from its own bin/."
+        	echo "The host needs the en_US.UTF-8 locale, which bbsd selects on startup."
+        	echo
+        	if [ "${ext}" = zip ]; then
+        		echo "From the root of the tree:"
+        		echo "  copy conf\\bbsd.conf.default conf\\bbsd.conf"
+        		echo "  rem fill in db_host, db_username, db_password and db_database first"
+        		echo "  bin\\bbsd.exe --foreground"
+        	else
+        		echo "Unpack at / to install it under ${INSTALL_PREFIX}, then from the root of the tree:"
+        		echo "  cp conf/bbsd.conf.default conf/bbsd.conf   # fill in db_host, db_username, db_password, db_database"
+        		echo "  for k in rsa ed25519 ecdsa; do ssh-keygen -t \$k -f conf/ssh_host_\${k}_key -N '' -q; done"
+        		echo "  ./bin/bbsd --foreground"
+        	fi
+        } > "${PKG_ROOT}/BUILD-INFO.txt"
+
+        cd "${RUNNER_TEMP}/package"
+        if [ "${ext}" = zip ]; then
+        	# 7z rather than Compress-Archive, which drops the empty log/ and var/ directories
+        	7z a -bso0 -bsp0 -tzip "${name}.${ext}" "${PKG_TOP}"
+        else
+        	tar -czf "${name}.${ext}" "${PKG_TOP}"
+        fi
+        artifact="${name}.${ext}"
+        if command -v sha256sum >/dev/null; then
+        	sha256sum "${artifact}" > "${artifact}.sha256"
+        else
+        	shasum -a 256 "${artifact}" > "${artifact}.sha256"
+        fi
+        mv "${artifact}" "${artifact}.sha256" "${GITHUB_WORKSPACE}/"
+        ls -l "${GITHUB_WORKSPACE}/${artifact}"*
+
+    - name: Show the build info
+      shell: bash
+      run: cat "${PKG_ROOT}/BUILD-INFO.txt"
+
+    - name: Upload the binary package
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-${{ matrix.name }}
+        path: lbbs-rust-*
+
+  release:
+
+    name: publish
+    needs: [source, binary]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # Allows the action to create and write to the release
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Download the release assets
+      uses: actions/download-artifact@v8
+      with:
+        pattern: release-*
+        merge-multiple: true
+        path: assets
+
+    - name: Create Release and Upload Assets
+      uses: softprops/action-gh-release@v2
+      with:
+        draft: true
+        prerelease: true
+        files: |
+          assets/lbbs-rust-*.tar.gz
+          assets/lbbs-rust-*.tar.gz.sha256
+          assets/lbbs-rust-*.zip
+          assets/lbbs-rust-*.zip.sha256
