@@ -185,7 +185,7 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
 | [src/bbs.rs](src/bbs.rs) | 1127 | `src/bbs_main.c`、`src/bbs_cmd.c` | 会话自身的执行顺序（含回显接管）、`bbs_center` | 菜单循环完成，`conf/menu.conf` 绑定的每个动作都有处理函数（收藏目录那个是菜单过滤条件，不是动作） |
 | [src/net.rs](src/net.rs) | 469 | `src/net_server.c` | accept、连接数限制、优雅退出 | 完成 |
 | [src/ssh.rs](src/ssh.rs) | 504 | `src/net_server.c`（libssh 那一半） | 宿主密钥、密码认证、会话通道 | 完成 |
-| [src/main.rs](src/main.rs) | 580 | `src/main.c`、`src/net_server.c` | 启动顺序、信号处理、`SIGHUP` 重载、退出 | 完成 |
+| [src/main.rs](src/main.rs) | 594 | `src/main.c`、`src/net_server.c` | 启动顺序、信号处理、`SIGHUP` 重载、退出 | 完成 |
 | [src/batch.rs](src/batch.rs) | 385 | `utils/lib/db_open.inc.php` + 三个脚本里反复出现的那几行 | 一个生成工具的完整一生：参数、服务器根目录、`conf/bbsd.conf`、数据库，以及脚本自己的 stdout 文字与退出码 | 完成 |
 | [src/section_list.rs](src/section_list.rs) | 149 | `utils/lib/section_list.inc.php` | 生成工具要走的那棵分类/版块树，附带调用方自己的每版数据 | 完成 |
 | [src/gen_top.rs](src/gen_top.rs) | 306 | `utils/bin/gen_top.php` | `var/bbs_top.txt` 与 `var/bbs_top_menu.conf`：本周十篇最热帖子 | 完成 |
@@ -193,9 +193,9 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 424 | `utils/bin/gen_ex_list.php` | 被守护进程标了记的每个版块，各写出一个 `var/gen_ex/<SID>` 精华区树 | 完成 |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs)、[gen_section_menu.rs](src/bin/gen_section_menu.rs)、[gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | `php utils/bin/*.php` 那几行 crontab | 三个可执行文件：调用三个生成工具，把脚本的退出码原样交回给 shell | 完成 |
 
-另有 [src/daemon.rs](src/daemon.rs)（480 行，命令行与后台化）、[src/log.rs](src/log.rs)（542 行，两个日志文件）、[src/state.rs](src/state.rs)（410 行，加载器发布、会话读取的共享状态）。
+另有 [src/daemon.rs](src/daemon.rs)（488 行，命令行与后台化）、[src/systemd.rs](src/systemd.rs)（218 行，不依赖 libsystemd 的 `sd_notify`）、[src/log.rs](src/log.rs)（542 行，两个日志文件）、[src/state.rs](src/state.rs)（410 行，加载器发布、会话读取的共享状态）。
 
-合计 40,688 行（含测试，测试就写在被测模块里）。共 605 个测试：库 599 个、可执行文件 6 个。其中 585 个只读代码
+合计 40,929 行（含测试，测试就写在被测模块里）。共 609 个测试：库 603 个、可执行文件 6 个。其中 589 个只读代码
 仓库里的东西，另外 14 个默认跳过，因为它们要连真实数据库、读真实生成的文件。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
@@ -442,6 +442,7 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
 | Rust | 1.88 或更新 | `Cargo.toml` 写的是 `edition = "2024"`，这要 1.85；另有四处 `if let … && let` 链式条件——[`net.rs`](src/net.rs) 与 [`term/`](src/term/key.rs)——用的是 1.88 才稳定下来的写法。`rust-version` 没有填，所以这两个下限都没人替你把关 |
 | MySQL | 8.x | 存放论坛数据的那个库 |
 | Linux | — | 开发与验证都在 Linux 上进行 |
+| macOS | 11 或更新（arm64） | 已在 Apple Silicon 的 Mac 上原生构建并跑完整套测试，全绿；守护进程本身只验到 `Db::connect()`，再往下的启动步骤要有数据库。从 Linux 交叉时要自备两样 Mac 上本来就有的东西：一个认 Apple 参数的 clang——`aws-lc-sys` 与 `ring` 需要，zig 的就行——以及写明 `libiconv`（`libc` 自己声明的链接库）和 `CoreFoundation`（chrono 的时区后端）的 `.tbd` 桩，这两个通常来自 `MacOSX.sdk` |
 | locale | `en_US.UTF-8` | `locale -a` 里必须有它：服务器在写出任何文章缓存之前会安装这个 locale，与 C 一样，缺了就拒绝启动 |
 
 `cargo` 是 Rust 自带的构建与测试工具。以下命令都在 `lbbs-rust/` 目录里执行。
@@ -449,14 +450,14 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
 ```bash
 cd lbbs-rust
 cargo build            # 编译库和可执行文件
-cargo test             # 585 个不需要数据库的测试（另有 14 个见 7.2）
+cargo test             # 589 个不需要数据库的测试（另有 14 个见 7.2）
 cargo fmt              # 全树已经是 rustfmt 干净的，提交前跑一次
 ```
 
 正常情况长这样：
 
 ```
-test result: ok. 585 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
+test result: ok. 589 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```

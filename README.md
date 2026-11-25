@@ -162,7 +162,8 @@ differently from C, read the deviations section first — the reason is written 
 | Rust file | Lines | Original C | Responsibility | Status |
 | --- | ---:| --- | --- | --- |
 | [src/paths.rs](src/paths.rs) | 118 | `include/bbs.h` etc. | screen size, field lengths, path names | done |
-| [src/daemon.rs](src/daemon.rs) | 480 | `src/main.c`, `src/daemon.c` | command line, `--help`/`--version`, `fork` into background | done |
+| [src/daemon.rs](src/daemon.rs) | 488 | `src/main.c`, `src/daemon.c` | command line, `--help`/`--version`, `fork` into background | done |
+| [src/systemd.rs](src/systemd.rs) | 218 | the `HAVE_SYSTEMD_SD_DAEMON_H` blocks of `src/net_server.c` | `READY=1`, `RELOADING=1`, `STOPPING=1` written to `NOTIFY_SOCKET` without libsystemd | done |
 | [src/config.rs](src/config.rs) | 394 | `src/init.c` | reads `conf/bbsd.conf` | done |
 | [src/log.rs](src/log.rs) | 542 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
 | [src/text.rs](src/text.rs) | 635 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
@@ -198,7 +199,7 @@ differently from C, read the deviations section first — the reason is written 
 | [src/bbs.rs](src/bbs.rs) | 1127 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | menu loop done, and every action `conf/menu.conf` binds has a handler (the favourites filter is a menu filter, not an action) |
 | [src/net.rs](src/net.rs) | 469 | `src/net_server.c` | accept, connection limits, graceful drain | done |
 | [src/ssh.rs](src/ssh.rs) | 504 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
-| [src/main.rs](src/main.rs) | 580 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
+| [src/main.rs](src/main.rs) | 594 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
 | [src/batch.rs](src/batch.rs) | 385 | `utils/lib/db_open.inc.php` + the lines the three scripts repeat | one generator's life: arguments, server root, `conf/bbsd.conf`, database, the PHP's own stdout text and exit bytes | done |
 | [src/section_list.rs](src/section_list.rs) | 149 | `utils/lib/section_list.inc.php` | the class/board hierarchy the generators walk, with the caller's per-board values | done |
 | [src/gen_top.rs](src/gen_top.rs) | 306 | `utils/bin/gen_top.php` | `var/bbs_top.txt` and `var/bbs_top_menu.conf`: the ten hottest posts of the week | done |
@@ -206,8 +207,8 @@ differently from C, read the deviations section first — the reason is written 
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 424 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-40 688 lines in total, the tests included (they live in the modules they test). There are 605 tests: 599 in
-the library and 6 in the binary. 585 of them need nothing but the checked-out tree; the other 14 are ignored
+40 929 lines in total, the tests included (they live in the modules they test). There are 609 tests: 603 in
+the library and 6 in the binary. 589 of them need nothing but the checked-out tree; the other 14 are ignored
 because they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
@@ -505,6 +506,7 @@ wired and unit-tested". The first account that really posts should do it against
 | Rust | 1.88 or newer | `Cargo.toml` asks for `edition = "2024"`, which needs 1.85, and four `if let … && let` chains — [`net.rs`](src/net.rs) and [`term/`](src/term/key.rs) — need the 1.88 stabilisation. There is no `rust-version` key to enforce either floor |
 | MySQL | 8.x | the database that holds the board's data |
 | Linux | — | development and verification happen on Linux |
+| macOS | 11 or newer (arm64) | built and tested there natively: the whole suite passes. The daemon itself was only taken as far as `Db::connect()`, since everything after it needs a database. Cross-building from Linux needs two things a Mac has anyway: a clang that takes Apple flags, which `aws-lc-sys` and `ring` need — zig's does — and `.tbd` stubs naming `libiconv` (`libc`'s own link declaration) and `CoreFoundation` (chrono's time-zone backend), which otherwise come from `MacOSX.sdk` |
 | Locale | `en_US.UTF-8` | `locale -a` must list it: the server installs it before it writes any article cache, as C does, and refuses to start without it |
 
 `cargo` is Rust's build-and-test tool and comes with the toolchain. Run everything from the `lbbs-rust/` directory.
@@ -512,14 +514,14 @@ wired and unit-tested". The first account that really posts should do it against
 ```bash
 cd lbbs-rust
 cargo build            # compile the library and the binary
-cargo test             # 585 tests that need no database (14 more are opt-in, see 7.2)
+cargo test             # 589 tests that need no database (14 more are opt-in, see 7.2)
 cargo fmt              # the tree is rustfmt-clean; run it before you commit
 ```
 
 A healthy run looks like this:
 
 ```
-test result: ok. 585 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
+test result: ok. 589 passed; 0 failed; 14 ignored; 0 measured; 0 filtered out
 ...
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 ```

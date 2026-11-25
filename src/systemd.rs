@@ -56,7 +56,18 @@ fn send_to(socket: &str, state: &str) -> bool {
     };
     let bytes = state.as_bytes();
 
+    // `SOCK_CLOEXEC` is a Linux flag. Elsewhere the descriptor is marked close-on-exec afterwards,
+    // so the socket still cannot outlive an `exec` on a thread that is not this one.
+    #[cfg(target_os = "linux")]
     let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_DGRAM | libc::SOCK_CLOEXEC, 0) };
+    #[cfg(not(target_os = "linux"))]
+    let fd = {
+        let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_DGRAM, 0) };
+        if fd >= 0 {
+            unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) };
+        }
+        fd
+    };
     if fd < 0 {
         return false;
     }
