@@ -531,15 +531,19 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 > and the diff you read contains only what you actually changed. Four-space indent and the naming below stay as
 > they are.
 
-GitHub Actions runs the same two commands on every platform: **CI** checks the formatting, then builds
-`--all-targets` and tests on Linux x86_64 and aarch64, macOS arm64 and Windows x86_64, for a push to `main` or a
-`v*.*` branch and for a pull request. A `v*.*.*` tag builds the same four platforms in release mode plus a source
-tarball it unpacks and tests, stages each build as a server root — `bin/` with the four binaries, `conf/`, `data/`
+GitHub Actions runs the same two commands on every platform: **CI** checks the formatting, then builds `--all-targets`
+and tests Linux x86_64, Linux aarch64 and Windows x86_64 — the three on a Linux image, the last cross-compiled with
+mingw-w64 and its suite run under wine — for a push to `main` or a `v*.*` branch and for a pull request. A `v*.*.*` tag
+builds the same three in release mode and adds macOS arm64 on a runner of its own: a Mach-O cross-built on Linux can be
+neither run nor tested there, so Darwin is the one platform that needs its image, and it is checked where a release is
+made rather than on every push. wine runs the code, not the platform, so a behaviour that belongs to a real Windows
+host — how its resolver handles an unreachable database, say — shows up only on a machine. The same tag job unpacks and
+tests a source tarball, stages each build as a server root — `bin/` with the four binaries, `conf/`, `data/`
 and the empty `log/` and `var/` the daemon does not make for itself — and opens a draft release holding the
 archives and their `.sha256` files. A job needs nothing but the tree: no database, since the fourteen tests that
-want one stay `#[ignore]`d (§7.2), and no generated `var/` file, since those come from §7.4. Two things an image
-does not supply are settled inside the job — the Windows one finds or installs the mingw-w64 gcc and the NASM
-`aws-lc-sys` assembles with, and the test step names the zone the cache fixtures were cut in, since their
+want one stay `#[ignore]`d (§7.2), and no generated `var/` file, since those come from §7.4. The Windows job takes what
+the cross build needs — the mingw-w64 gcc, the NASM that `aws-lc-sys` assembles with, the wine that runs the suite —
+from the image's package manager, and the test step names the zone the cache fixtures were cut in, since their
 `strftime("%c %Z")` follows the host.
 
 ### 7.2 The tests that use the real database and real files

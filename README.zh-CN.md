@@ -466,14 +466,17 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
 > **排版交给 `cargo fmt`，不用手工调。** 全树现在都能通过 `cargo fmt --check`，所以提交前先跑一次，
 > 这样 diff 里就只剩下你真正改的东西。缩进仍是 4 个空格，下面的命名规矩不变。
 
-GitHub Actions 把同样的两步搬到四个平台上：**CI** 先查格式，再 `--all-targets` 编译并跑测试，覆盖 Linux x86_64、
-Linux aarch64、macOS arm64 和 Windows x86_64，推送到 `main` 或 `v*.*` 分支、以及提 PR 时都会跑。打上 `v*.*.*`
-标签则用 release 模式编同样的四个平台，外加一个源码包——解开之后照样编译测试一遍——每个平台的产物都摆成一颗
-服务器根目录：`bin/` 里放四个可执行文件，再加 `conf/`、`data/`，以及守护进程不会自己建的空 `log/` 和 `var/`，
-最后开一个草稿 release，附上压缩包和各自的 `.sha256`。CI 需要的只有这份树本身：不用数据库（那 14 个测试照旧
-`#[ignore]`，见 §7.2），也不用预先生成 `var/`（那些由 §7.4 产出）。跑起来还得补上镜像没给的两样东西，都写在作业里：
-Windows 那一趟先找后装 `aws-lc-sys` 要用的 mingw-w64 gcc 和 NASM，跑测试的那步则指定缓存基准文件剪出来时用的时区，
-因为它里面的 `strftime("%c %Z")` 跟着宿主机走。
+GitHub Actions 把同样的两步搬到每台平台上：**CI** 先查格式，再 `--all-targets` 编译并跑测试，覆盖 Linux x86_64、
+Linux aarch64 和 Windows x86_64 三趟，三趟都跑在 Linux 镜像上——Windows 那一趟用 mingw-w64 交叉编译，测试交给
+wine——推送到 `main` 或 `v*.*` 分支、以及提 PR 时都会跑。打上 `v*.*.*` 标签则用 release 模式编同样的三趟，再加
+macOS arm64：Linux 上交叉编出来的 Mach-O 在这里既跑不了也测不了，所以 Darwin 是唯一需要自己那台 runner 的平台，
+而它只在出 release 时验一次，不在每次推送上占时间。wine 跑的是代码，不是平台，只属于真实 Windows 宿主机的行为——
+比如解析器怎么对待一个连不上的数据库——只有真机才看得出来。同一个打标签的作业还会解开源码包照样编译测试一遍，
+每个平台的产物都摆成一颗服务器根目录：`bin/` 里放四个可执行文件，再加 `conf/`、`data/`，以及守护进程不会自己建的
+空 `log/` 和 `var/`，最后开一个草稿 release，附上压缩包和各自的 `.sha256`。作业需要的只有这份树本身：不用数据库
+（那 14 个测试照旧 `#[ignore]`，见 §7.2），也不用预先生成 `var/`（那些由 §7.4 产出）。Windows 那一趟要用的
+mingw-w64 gcc、`aws-lc-sys` 汇编要用的 NASM 和跑测试的 wine，都从镜像自己的包管理器装；跑测试的那步则指定缓存
+基准文件剪出来时用的时区，因为它里面的 `strftime("%c %Z")` 跟着宿主机走。
 
 ### 7.2 使用真实数据库、真实配置文件的测试
 

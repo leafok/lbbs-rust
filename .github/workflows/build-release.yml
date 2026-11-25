@@ -85,16 +85,18 @@ jobs:
             target: aarch64-unknown-linux-gnu
             bin_ext: ""
             pkg: tar.gz
-          # arm64 (Apple Silicon), the image the Makefile CI job builds on too
+          # arm64 (Apple Silicon) is the one leg that needs an image of its own: a Mach-O built on
+          # Linux can be neither run nor tested there, so it is built, tested and smoke-run natively
           - name: macos-arm64
             os: macos-26
             target: aarch64-apple-darwin
             bin_ext: ""
             pkg: tar.gz
-          # the GNU target rather than MSVC: it is the Windows build that was verified by hand, and
-          # its C dependencies build with a plain gcc instead of a Visual Studio shell
+          # The GNU target rather than MSVC: it is the Windows build that was verified by hand, and
+          # its C dependencies build with a plain gcc instead of a Visual Studio shell. Like CI, the
+          # job cross-builds it on the Linux image with mingw-w64 and runs its suite under wine.
           - name: windows-x86_64
-            os: windows-latest
+            os: ubuntu-latest
             target: x86_64-pc-windows-gnu
             bin_ext: .exe
             pkg: zip
@@ -102,81 +104,38 @@ jobs:
     steps:
     - uses: actions/checkout@v6
 
-    # `aws-lc-sys` (russh's default crypto backend) and `ring` (sqlx's) compile C, so the gnu target
-    # needs a mingw-w64 gcc, and the standard library for the target is not preinstalled either. The
-    # image keeps a compiler off PATH, under an MSYS2 root that moves between its images and can have
-    # no toolchain package installed at all, so this searches for the tools before buying them.
+    # `aws-lc-sys` (russh's default crypto backend) and `ring` (sqlx's) compile C, and the first
+    # assembles its Windows x86_64 crypto with NASM, so the cross target needs both in front of
+    # `cargo`. The standard library for the target is not installed either.
     - name: Set up the build tools (Windows)
-      if: runner.os == 'Windows'
-      shell: bash
+      if: matrix.target == 'x86_64-pc-windows-gnu'
       run: |
-        msys="$(cygpath -u "${MINGW_ROOT:-C:/msys64}")"
-        roots="$msys /c/tools /c/mingw64 /c/Strawberry /c/hostedtoolcache /msys64 /mingw64"
-        [ "${msys}" = /c/msys64 ] || roots="${roots} /c/msys64"
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 nasm wine64 zip
 
-        search() {
-        	find $roots -maxdepth 8 -name "$1" -print 2>/dev/null || true
-        }
-
-        first() {
-        	local hit
-        	hit="$(search "$1" | head -n 1)"
-        	if [ -n "${hit}" ]; then
-        		echo "${hit}"
-        	fi
-        }
-
-        # The target-prefixed name marks a mingw-w64 gcc: the one in an MSYS usr/bin builds against
-        # msys-2.0.dll and cannot link this target. NASM is what `aws-lc-sys` assembles its Windows
-        # x86_64 crypto with, so the step needs it beside the compiler.
-        gcc="$(first x86_64-w64-mingw32-gcc.exe)"
-        nasm="$(command -v nasm 2>/dev/null || true)"
-        [ -n "${nasm}" ] || nasm="$(first nasm.exe)"
-
-        pkgs=""
-        [ -n "${gcc}" ] || pkgs="mingw-w64-x86_64-gcc"
-        [ -n "${nasm}" ] || pkgs="${pkgs:+${pkgs} }mingw-w64-x86_64-nasm"
-        if [ -n "${pkgs}" ]; then
-        	for pacman in $(search pacman.exe); do
-        		if "${pacman%/*}/bash.exe" -lc "pacman -Sy --noconfirm && pacman -S --noconfirm --needed ${pkgs}"; then
-        			gcc="$(first x86_64-w64-mingw32-gcc.exe)"
-        			nasm="$(first nasm.exe)"
-        		fi
-        		if [ -n "${gcc}" ] && [ -n "${nasm}" ]; then
-        			break
-        		fi
-        	done
-        fi
-        if [ -z "${gcc}" ] || [ -z "${nasm}" ]; then
-        	if command -v choco >/dev/null; then
-        		[ -n "${gcc}" ] || choco install --no-progress -y mingw || true
-        		[ -n "${nasm}" ] || choco install --no-progress -y nasm || true
-        		gcc="$(first x86_64-w64-mingw32-gcc.exe)"
-        		nasm="$(first nasm.exe)"
-        		# chocolatey hides nasm under a root with a space in it, which the search list cannot hold
-        		if [ -z "${nasm}" ] && [ -x "/c/Program Files/NASM/nasm.exe" ]; then
-        			nasm="/c/Program Files/NASM/nasm.exe"
-        		fi
-        	fi
-        fi
-        if [ -z "${gcc}" ] || [ -z "${nasm}" ]; then
-        	echo "no mingw-w64 toolchain on this runner: gcc=${gcc:-none} nasm=${nasm:-none}" >&2
-        	echo "roots searched:" >&2
-        	for root in $roots; do
-        		echo "  ${root}" >&2
-        	done
-        	ls /c || true
-        	find $roots -maxdepth 8 \( -name '*gcc*.exe' -o -name 'nasm*.exe' \) -print 2>/dev/null || true
+        # Debian splits the launcher: `wine` is a package of its own and only `wine64` is
+        # guaranteed here, so the job names whichever of the two the image actually offers.
+        wine="$(command -v wine 2>/dev/null || command -v wine64 2>/dev/null || true)"
+        if [ -z "${wine}" ]; then
+        	echo "no wine on this runner after installing it" >&2
+        	ls /usr/bin/wine* || true
         	exit 1
         fi
 
-        for bin in "${gcc%/*}" "${nasm%/*}"; do
-        	# Windows spelling, since the steps that follow run `cargo` as a native process
-        	echo "$(cygpath -w "${bin}")" >> "$GITHUB_PATH"
-        done
-        "${gcc}" --version | head -n 1
-        "${nasm}" -v
+        {
+        	echo "WINEBIN=${wine}"
+        	echo "WINEPREFIX=${RUNNER_TEMP}/wine"
+        	echo "WINEDEBUG=-all"
+        	echo "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=${wine}"
+        } >> "$GITHUB_ENV"
+
+        x86_64-w64-mingw32-gcc --version | head -n 1
+        nasm -v
         rustup target add x86_64-pc-windows-gnu
+
+        # An empty prefix makes the first run write its own, which is a minute of log output the
+        # suite does not need; wineboot builds it once here instead.
+        "${wine}" wineboot --init
 
     # naming the target instead of letting each job build its host keeps one artifact path,
     # target/<triple>/release, for all four
@@ -184,7 +143,8 @@ jobs:
       shell: bash
       run: cargo build --release --locked --target ${{ matrix.target }}
 
-    # the same zone the cache fixtures were cut under, as in the CI job
+    # the same zone the cache fixtures were cut under, as in the CI job; the Windows target goes
+    # through the cargo runner variable the tools step exported, the other three ignore it
     - name: Test
       env:
         TZ: Asia/Shanghai
@@ -194,9 +154,10 @@ jobs:
     - name: Set the package root
       shell: bash
       run: |
-        # a unix package carries the install prefix inside it and is unpacked at /; Windows has no
-        # such layout, so its tree is rooted at the package name itself
-        if [ "$RUNNER_OS" = Windows ]; then
+        # a unix package carries the install prefix inside it and is unpacked at /; the Windows
+        # tree has no such layout, so it is rooted at the package name itself. The Windows target
+        # is cross-built on the Linux image now, so this keys on the artifact, not on the host.
+        if [ -n "${{ matrix.bin_ext }}" ]; then
         	root="${RUNNER_TEMP}/package/lbbs"
         else
         	root="${RUNNER_TEMP}/package${INSTALL_PREFIX}"
@@ -217,7 +178,11 @@ jobs:
         done
         cp conf/bbsd.conf.default conf/bbsnet.conf.default conf/badwords.conf.default conf/menu.conf "${PKG_ROOT}/conf/"
         cp data/*.txt "${PKG_ROOT}/data/"
-        "${PKG_ROOT}/bin/bbsd${exe}" -v
+        if [ -n "${exe}" ]; then
+        	"${WINEBIN}" "${PKG_ROOT}/bin/bbsd${exe}" -v
+        else
+        	"${PKG_ROOT}/bin/bbsd${exe}" -v
+        fi
 
     - name: Write BUILD-INFO.txt
       shell: bash
@@ -232,7 +197,11 @@ jobs:
         if [ "$(uname -s)" = Darwin ]; then
         	host="${host} (macOS $(sw_vers -productVersion))"
         fi
-        # on the Windows image `uname` is MSYS2's and already names the Windows version
+        if [ -n "${exe}" ]; then
+        	# the Windows artifact is cross-built on the Linux image, so `uname` above names the
+        	# build side and the package has to say which binary it holds
+        	host="${host}, cross-compiled with mingw-w64 and tested under wine"
+        fi
 
         {
         	echo "Package:  ${name}.${ext}"
@@ -245,8 +214,13 @@ jobs:
         	echo "Build:    cargo build --release --locked --target ${{ matrix.target }}"
         	echo
         	echo "Compiled in:"
-        	# bbsd reports to stderr
-        	"${PKG_ROOT}/bin/bbsd${exe}" -C 2>&1 | sed 's/^/  /'
+        	# bbsd reports to stderr, and the Windows build answers through the same wine the
+        	# tests ran under
+        	if [ -n "${exe}" ]; then
+        		"${WINEBIN}" "${PKG_ROOT}/bin/bbsd${exe}" -C 2>&1 | sed 's/^/  /'
+        	else
+        		"${PKG_ROOT}/bin/bbsd${exe}" -C 2>&1 | sed 's/^/  /'
+        	fi
         	echo
         	echo "Shared library dependencies:"
         	if [ "${exe}" = .exe ]; then
@@ -283,8 +257,9 @@ jobs:
 
         cd "${RUNNER_TEMP}/package"
         if [ "${ext}" = zip ]; then
-        	# 7z rather than Compress-Archive, which drops the empty log/ and var/ directories
-        	7z a -bso0 -bsp0 -tzip "${name}.${ext}" "${PKG_TOP}"
+        	# zip rather than Compress-Archive, which drops the empty log/ and var/ directories;
+        	# zip writes the directory entries those two need
+        	zip -rq "${name}.${ext}" "${PKG_TOP}"
         else
         	tar -czf "${name}.${ext}" "${PKG_TOP}"
         fi

@@ -41,102 +41,58 @@ jobs:
           - name: linux-x86_64
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            ext: ""
+            bin_ext: ""
           # arm64 Linux, the image the C repository's Docker job builds on
           - name: linux-aarch64
             os: ubuntu-26.04-arm
             target: aarch64-unknown-linux-gnu
-            ext: ""
-          # arm64 (Apple Silicon), so the Darwin code paths compile and test natively
-          - name: macos-arm64
-            os: macos-26
-            target: aarch64-apple-darwin
-            ext: ""
-          # the GNU target rather than MSVC: this is the Windows build that was checked by hand,
-          # and its C dependencies build with a plain gcc instead of a Visual Studio shell
+            bin_ext: ""
+          # The Windows leg is cross-compiled on a Linux image rather than run on a Windows one:
+          # mingw-w64, NASM and wine all come from apt, so the job cannot be delayed by an image
+          # that keeps its compiler off PATH. Its tests run under wine, which checks the code and not
+          # the platform, so a behaviour that belongs to a real Windows host shows up only on a
+          # machine. Darwin is absent from every push for the opposite reason: a cross-built Mach-O
+          # can be neither run nor tested here, so it keeps a macos-26 runner in the release job.
           - name: windows-x86_64
-            os: windows-latest
+            os: ubuntu-latest
             target: x86_64-pc-windows-gnu
-            ext: .exe
+            bin_ext: .exe
 
     steps:
     - uses: actions/checkout@v6
 
-    # `aws-lc-sys` (russh's default crypto backend) and `ring` (sqlx's) compile C, so the gnu target
-    # needs a mingw-w64 gcc, and the standard library for the target is not preinstalled either. The
-    # image keeps a compiler off PATH, under an MSYS2 root that moves between its images and can have
-    # no toolchain package installed at all, so this searches for the tools before buying them.
+    # `aws-lc-sys` (russh's default crypto backend) and `ring` (sqlx's) compile C, and the first
+    # assembles its Windows x86_64 crypto with NASM, so the cross target needs both in front of
+    # `cargo`. The standard library for the target is not installed either.
     - name: Set up the build tools (Windows)
-      if: runner.os == 'Windows'
-      shell: bash
+      if: matrix.target == 'x86_64-pc-windows-gnu'
       run: |
-        msys="$(cygpath -u "${MINGW_ROOT:-C:/msys64}")"
-        roots="$msys /c/tools /c/mingw64 /c/Strawberry /c/hostedtoolcache /msys64 /mingw64"
-        [ "${msys}" = /c/msys64 ] || roots="${roots} /c/msys64"
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 nasm wine64
 
-        search() {
-        	find $roots -maxdepth 8 -name "$1" -print 2>/dev/null || true
-        }
-
-        first() {
-        	local hit
-        	hit="$(search "$1" | head -n 1)"
-        	if [ -n "${hit}" ]; then
-        		echo "${hit}"
-        	fi
-        }
-
-        # The target-prefixed name marks a mingw-w64 gcc: the one in an MSYS usr/bin builds against
-        # msys-2.0.dll and cannot link this target. NASM is what `aws-lc-sys` assembles its Windows
-        # x86_64 crypto with, so the step needs it beside the compiler.
-        gcc="$(first x86_64-w64-mingw32-gcc.exe)"
-        nasm="$(command -v nasm 2>/dev/null || true)"
-        [ -n "${nasm}" ] || nasm="$(first nasm.exe)"
-
-        pkgs=""
-        [ -n "${gcc}" ] || pkgs="mingw-w64-x86_64-gcc"
-        [ -n "${nasm}" ] || pkgs="${pkgs:+${pkgs} }mingw-w64-x86_64-nasm"
-        if [ -n "${pkgs}" ]; then
-        	for pacman in $(search pacman.exe); do
-        		if "${pacman%/*}/bash.exe" -lc "pacman -Sy --noconfirm && pacman -S --noconfirm --needed ${pkgs}"; then
-        			gcc="$(first x86_64-w64-mingw32-gcc.exe)"
-        			nasm="$(first nasm.exe)"
-        		fi
-        		if [ -n "${gcc}" ] && [ -n "${nasm}" ]; then
-        			break
-        		fi
-        	done
-        fi
-        if [ -z "${gcc}" ] || [ -z "${nasm}" ]; then
-        	if command -v choco >/dev/null; then
-        		[ -n "${gcc}" ] || choco install --no-progress -y mingw || true
-        		[ -n "${nasm}" ] || choco install --no-progress -y nasm || true
-        		gcc="$(first x86_64-w64-mingw32-gcc.exe)"
-        		nasm="$(first nasm.exe)"
-        		# chocolatey hides nasm under a root with a space in it, which the search list cannot hold
-        		if [ -z "${nasm}" ] && [ -x "/c/Program Files/NASM/nasm.exe" ]; then
-        			nasm="/c/Program Files/NASM/nasm.exe"
-        		fi
-        	fi
-        fi
-        if [ -z "${gcc}" ] || [ -z "${nasm}" ]; then
-        	echo "no mingw-w64 toolchain on this runner: gcc=${gcc:-none} nasm=${nasm:-none}" >&2
-        	echo "roots searched:" >&2
-        	for root in $roots; do
-        		echo "  ${root}" >&2
-        	done
-        	ls /c || true
-        	find $roots -maxdepth 8 \( -name '*gcc*.exe' -o -name 'nasm*.exe' \) -print 2>/dev/null || true
+        # Debian splits the launcher: `wine` is a package of its own and only `wine64` is
+        # guaranteed here, so the job names whichever of the two the image actually offers.
+        wine="$(command -v wine 2>/dev/null || command -v wine64 2>/dev/null || true)"
+        if [ -z "${wine}" ]; then
+        	echo "no wine on this runner after installing it" >&2
+        	ls /usr/bin/wine* || true
         	exit 1
         fi
 
-        for bin in "${gcc%/*}" "${nasm%/*}"; do
-        	# Windows spelling, since the steps that follow run `cargo` as a native process
-        	echo "$(cygpath -w "${bin}")" >> "$GITHUB_PATH"
-        done
-        "${gcc}" --version | head -n 1
-        "${nasm}" -v
+        {
+        	echo "WINEBIN=${wine}"
+        	echo "WINEPREFIX=${RUNNER_TEMP}/wine"
+        	echo "WINEDEBUG=-all"
+        	echo "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=${wine}"
+        } >> "$GITHUB_ENV"
+
+        x86_64-w64-mingw32-gcc --version | head -n 1
+        nasm -v
         rustup target add x86_64-pc-windows-gnu
+
+        # An empty prefix makes the first run write its own, which is a minute of log output the
+        # suite does not need; wineboot builds it once here instead.
+        "${wine}" wineboot --init
 
     - name: Show the toolchain
       shell: bash
@@ -150,7 +106,9 @@ jobs:
       run: cargo build --all-targets --locked --target ${{ matrix.target }}
 
     # the article-cache fixtures hold the bytes C's `strftime("%c %Z")` wrote on a China Standard
-    # Time host, so the byte-for-byte check needs that zone; a runner defaults to UTC
+    # Time host, so the byte-for-byte check needs that zone; a runner defaults to UTC. The fixtures
+    # are read by a Unix-only test, and the Windows cargo variables above are inert on the other
+    # two legs.
     - name: Test
       env:
         TZ: Asia/Shanghai
@@ -162,4 +120,9 @@ jobs:
       shell: bash
       run: |
         # arg_version() writes to stderr, as C's did
-        "target/${{ matrix.target }}/debug/bbsd${{ matrix.ext }}" -v
+        bin="target/${{ matrix.target }}/debug/bbsd${{ matrix.bin_ext }}"
+        if [ -n "${{ matrix.bin_ext }}" ]; then
+        	"${WINEBIN}" "${bin}" -v
+        else
+        	"${bin}" -v
+        fi
