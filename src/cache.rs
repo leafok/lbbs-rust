@@ -574,6 +574,8 @@ mod tests {
     /// The fixtures are the bytes the C generator wrote, and its `strftime("%c %Z")` spells the
     /// zone `CST` where [`submission_time`] can only write a UTC offset on Windows. Everything
     /// except that token is meant to agree on both platforms, so this stays a Unix-only check.
+    /// That token is also the host's own, so the check needs the zone the fixtures were cut in:
+    /// `TZ=Asia/Shanghai`, which is what the CI and release jobs set for their test steps.
     #[cfg(unix)]
     #[test]
     fn generates_the_same_bytes_the_c_generator_does() {

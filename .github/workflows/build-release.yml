@@ -41,6 +41,9 @@ jobs:
         ls -l "${name}.tar.gz"
 
     - name: Test the tree inside the tarball
+      env:
+        # the article-cache fixtures hold C's `strftime("%c %Z")` from a China Standard Time host
+        TZ: Asia/Shanghai
       run: |
         mkdir -p "${RUNNER_TEMP}/dist"
         tar -xzf "lbbs-rust-${VERSION}.tar.gz" -C "${RUNNER_TEMP}/dist"
@@ -100,23 +103,79 @@ jobs:
     - uses: actions/checkout@v6
 
     # `aws-lc-sys` (russh's default crypto backend) and `ring` (sqlx's) compile C, so the gnu target
-    # needs a gcc for it. MSYS2 is on the Windows image but not on PATH, and its standard library is
-    # not in the toolchain the runner preinstalls.
+    # needs a mingw-w64 gcc, and the standard library for the target is not preinstalled either. The
+    # image keeps a compiler off PATH, under an MSYS2 root that moves between its images and can have
+    # no toolchain package installed at all, so this searches for the tools before buying them.
     - name: Set up the build tools (Windows)
       if: runner.os == 'Windows'
       shell: bash
       run: |
-        gcc=""
-        for dir in /msys64/mingw64/bin /c/msys64/mingw64/bin /mingw64/bin; do
-        	[ -x "${dir}/x86_64-w64-mingw32-gcc.exe" ] && { gcc="${dir}"; break; }
-        done
-        if [ -z "${gcc}" ]; then
-        	echo "no mingw-w64 gcc on this runner" >&2
-        	ls / /c 2>/dev/null >&2
+        msys="$(cygpath -u "${MINGW_ROOT:-C:/msys64}")"
+        roots="$msys /c/tools /c/mingw64 /c/Strawberry /c/hostedtoolcache /msys64 /mingw64"
+        [ "${msys}" = /c/msys64 ] || roots="${roots} /c/msys64"
+
+        search() {
+        	find $roots -maxdepth 8 -name "$1" -print 2>/dev/null || true
+        }
+
+        first() {
+        	local hit
+        	hit="$(search "$1" | head -n 1)"
+        	if [ -n "${hit}" ]; then
+        		echo "${hit}"
+        	fi
+        }
+
+        # The target-prefixed name marks a mingw-w64 gcc: the one in an MSYS usr/bin builds against
+        # msys-2.0.dll and cannot link this target. NASM is what `aws-lc-sys` assembles its Windows
+        # x86_64 crypto with, so the step needs it beside the compiler.
+        gcc="$(first x86_64-w64-mingw32-gcc.exe)"
+        nasm="$(command -v nasm 2>/dev/null || true)"
+        [ -n "${nasm}" ] || nasm="$(first nasm.exe)"
+
+        pkgs=""
+        [ -n "${gcc}" ] || pkgs="mingw-w64-x86_64-gcc"
+        [ -n "${nasm}" ] || pkgs="${pkgs:+${pkgs} }mingw-w64-x86_64-nasm"
+        if [ -n "${pkgs}" ]; then
+        	for pacman in $(search pacman.exe); do
+        		if "${pacman%/*}/bash.exe" -lc "pacman -Sy --noconfirm && pacman -S --noconfirm --needed ${pkgs}"; then
+        			gcc="$(first x86_64-w64-mingw32-gcc.exe)"
+        			nasm="$(first nasm.exe)"
+        		fi
+        		if [ -n "${gcc}" ] && [ -n "${nasm}" ]; then
+        			break
+        		fi
+        	done
+        fi
+        if [ -z "${gcc}" ] || [ -z "${nasm}" ]; then
+        	if command -v choco >/dev/null; then
+        		[ -n "${gcc}" ] || choco install --no-progress -y mingw || true
+        		[ -n "${nasm}" ] || choco install --no-progress -y nasm || true
+        		gcc="$(first x86_64-w64-mingw32-gcc.exe)"
+        		nasm="$(first nasm.exe)"
+        		# chocolatey hides nasm under a root with a space in it, which the search list cannot hold
+        		if [ -z "${nasm}" ] && [ -x "/c/Program Files/NASM/nasm.exe" ]; then
+        			nasm="/c/Program Files/NASM/nasm.exe"
+        		fi
+        	fi
+        fi
+        if [ -z "${gcc}" ] || [ -z "${nasm}" ]; then
+        	echo "no mingw-w64 toolchain on this runner: gcc=${gcc:-none} nasm=${nasm:-none}" >&2
+        	echo "roots searched:" >&2
+        	for root in $roots; do
+        		echo "  ${root}" >&2
+        	done
+        	ls /c || true
+        	find $roots -maxdepth 8 \( -name '*gcc*.exe' -o -name 'nasm*.exe' \) -print 2>/dev/null || true
         	exit 1
         fi
-        echo "${gcc}" >> "$GITHUB_PATH"
-        "${gcc}/x86_64-w64-mingw32-gcc.exe" --version | head -n 1
+
+        for bin in "${gcc%/*}" "${nasm%/*}"; do
+        	# Windows spelling, since the steps that follow run `cargo` as a native process
+        	echo "$(cygpath -w "${bin}")" >> "$GITHUB_PATH"
+        done
+        "${gcc}" --version | head -n 1
+        "${nasm}" -v
         rustup target add x86_64-pc-windows-gnu
 
     # naming the target instead of letting each job build its host keeps one artifact path,
@@ -125,7 +184,10 @@ jobs:
       shell: bash
       run: cargo build --release --locked --target ${{ matrix.target }}
 
+    # the same zone the cache fixtures were cut under, as in the CI job
     - name: Test
+      env:
+        TZ: Asia/Shanghai
       shell: bash
       run: cargo test --release --locked --target ${{ matrix.target }}
 

@@ -537,7 +537,10 @@ GitHub Actions runs the same two commands on every platform: **CI** checks the f
 tarball it unpacks and tests, stages each build as a server root — `bin/` with the four binaries, `conf/`, `data/`
 and the empty `log/` and `var/` the daemon does not make for itself — and opens a draft release holding the
 archives and their `.sha256` files. A job needs nothing but the tree: no database, since the fourteen tests that
-want one stay `#[ignore]`d (§7.2), and no generated `var/` file, since those come from §7.4.
+want one stay `#[ignore]`d (§7.2), and no generated `var/` file, since those come from §7.4. Two things an image
+does not supply are settled inside the job — the Windows one finds or installs the mingw-w64 gcc and the NASM
+`aws-lc-sys` assembles with, and the test step names the zone the cache fixtures were cut in, since their
+`strftime("%c %Z")` follows the host.
 
 ### 7.2 The tests that use the real database and real files
 
