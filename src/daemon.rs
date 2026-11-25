@@ -155,8 +155,16 @@ pub fn compile_config() -> String {
     for (key, value) in [
         // No shared objects: the crate links statically.
         ("--enable-shared", "no"),
-        // sd_notify() is not wired up; SIGTERM is the shutdown signal.
-        ("--enable-systemd", "no"),
+        // The three states of `Type=notify` are written by `systemd::notify` rather than by
+        // libsystemd, and only a Linux system answers them.
+        (
+            "--enable-systemd",
+            if cfg!(target_os = "linux") {
+                "yes"
+            } else {
+                "no"
+            },
+        ),
         (
             "--with-debug",
             if cfg!(debug_assertions) { "yes" } else { "no" },

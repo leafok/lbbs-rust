@@ -596,6 +596,10 @@ files for logrotate and `SIGTERM` drains the sessions before exiting: the exit f
 session parked at a prompt runs its own goodbye instead of waiting out its idle limit — which is what C's
 children did when the parent's `kill(0, SIGTERM)` interrupted their `select()`.
 
+Under systemd the three states a `Type=notify` unit waits for are written to `NOTIFY_SOCKET` directly, with no
+libsystemd: `READY=1` once both listeners are bound, `RELOADING=1` and `READY=1` around a reload, and
+`STOPPING=1` when the exit flag is raised. The unit the C build installs therefore starts this `bbsd` too.
+
 The development tree's `conf/bbsd.conf` listens on telnet `2323` and SSH `2322` (`bbs_port` and
 `bbs_ssh_port`) — the pair the reference C installation uses for its own, equally uncommitted file. The tracked
 template `conf/bbsd.conf.default` still has C's `23` and `22`, which need root to bind.

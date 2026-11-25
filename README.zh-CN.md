@@ -526,6 +526,10 @@ Cargo 包叫 `lbbs`，编译出来的守护进程叫 `bbsd`，和 C 服务的名
 能走完自己的告别流程，而不是干等到空闲超时——C 的子进程就是靠父进程 `kill(0, SIGTERM)` 打断
 `select()` 做到这一点的。
 
+systemd 那边不需要 libsystemd：`Type=notify` 要等的三个状态由进程直接写到 `NOTIFY_SOCKET`——两个监听套接字
+绑定完就发 `READY=1`，重载配置前后发 `RELOADING=1` 和 `READY=1`，退出标记一置位就发 `STOPPING=1`。所以 C 装
+好的那份 unit 也能用来起本程序。
+
 开发树里那份 `conf/bbsd.conf` 监听 telnet `2323`、SSH `2322`（`bbs_port` 和 `bbs_ssh_port`），参考的那份 C 安装
 用的是同一对端口——它那配置文件同样没有入库。入库的模板 `conf/bbsd.conf.default` 写的还是 C 的 `23` 和 `22`，
 而 1024 以下的端口要 root 才绑得上。

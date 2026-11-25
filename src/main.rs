@@ -53,6 +53,7 @@ use lbbs::paths::{
 };
 use lbbs::ssh;
 use lbbs::state::AppState;
+use lbbs::systemd;
 
 /// `main()`'s successful return.
 const EXIT_OK: u8 = 0;
@@ -275,18 +276,17 @@ async fn serve(startup: Startup) -> Result<(), StartupError> {
     // session loops already turn into an end of session.
     spawn_signal_handlers(std::sync::Arc::clone(&state), sink.clone());
 
-    // net_server.c:604-660: bind both sockets, or the daemon does not start.
+    // net_server.c:604-660: bind both sockets, or the daemon does not start. The two addresses
+    // are kept because the startup `READY=1` of `net_server.c:697-700` reports them.
     let ports = state.config();
-    let telnet = net::bind(&listener_addr(&ports, ports.telnet_port))
-        .await
-        .map_err(|err| StartupError {
-            message: err.to_string(),
-        })?;
-    let ssh_listener = net::bind(&listener_addr(&ports, ports.ssh_port))
-        .await
-        .map_err(|err| StartupError {
-            message: err.to_string(),
-        })?;
+    let telnet_addr = listener_addr(&ports, ports.telnet_port);
+    let ssh_addr = listener_addr(&ports, ports.ssh_port);
+    let telnet = net::bind(&telnet_addr).await.map_err(|err| StartupError {
+        message: err.to_string(),
+    })?;
+    let ssh_listener = net::bind(&ssh_addr).await.map_err(|err| StartupError {
+        message: err.to_string(),
+    })?;
     drop(ports);
 
     let gateway = Gateway::new(std::sync::Arc::clone(&state), root.clone());
@@ -308,6 +308,12 @@ async fn serve(startup: Startup) -> Result<(), StartupError> {
         Front::Ssh(ssh_config),
     ));
 
+    // net_server.c:695-701, the line `Type=notify` makes `systemctl start` wait for. Both
+    // listeners are bound and both accept loops are running, so nothing after it is startup.
+    systemd::ready(&format!(
+        "Listening at {telnet_addr} (Telnet) and {ssh_addr} (SSH2)"
+    ));
+
     // The parent loop of net_server.c:809-: every 100 ms either a reload pass or the exit flag.
     loop {
         tokio::select! {
@@ -317,6 +323,10 @@ async fn serve(startup: Startup) -> Result<(), StartupError> {
             }
         }
     }
+
+    // net_server.c:703-711: the flag alone earns the `STOPPING=1`, and it goes out before the
+    // children are told anything — here, before the sessions are drained.
+    systemd::notify("STOPPING=1");
 
     tracing::info!("Main process exiting");
     // net_server.c:771-807: notify, wait 15 s, then stop waiting 1 s later.
@@ -334,6 +344,7 @@ async fn serve(startup: Startup) -> Result<(), StartupError> {
 /// half-loaded one: the menus are swapped only once the whole file parses, because a session
 /// that reaches a menu in the meantime would otherwise see an empty tree.
 async fn reload_configuration(state: &std::sync::Arc<AppState>, root: &Path, sink: &LogSink) {
+    systemd::notify("RELOADING=1");
     tracing::info!("Reload configuration");
 
     if sink.restart() < 0 {
@@ -372,6 +383,9 @@ async fn reload_configuration(state: &std::sync::Arc<AppState>, root: &Path, sin
     if let Err(err) = loader.load_section_config().await {
         tracing::error!("load_section_config_from_db(1) error: {err}");
     }
+
+    // net_server.c:883: reloaded, however many of the loads above answered with an error line.
+    systemd::notify("READY=1");
 }
 
 /// `load_menu()`: read the file and hand the bytes to the parser, with C's error word.
