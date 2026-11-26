@@ -1,0 +1,12 @@
+@prefix@/log/*.log {
+    daily
+    missingok
+    rotate 90
+    delaycompress
+    notifempty
+    create 640 @user@ @group@
+    sharedscripts
+    postrotate
+        systemctl reload lbbs.service > /dev/null 2>/dev/null || true
+    endscript
+}

@@ -1,0 +1,20 @@
+[Unit]
+Description=LBBS Server
+Wants=network-online.target
+After=network-online.target mysql.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+User=@user@
+Group=@group@
+Restart=always
+RestartSec=2s
+
+Type=notify
+ExecStart=@prefix@/bin/bbsd -f
+KillSignal=SIGTERM
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target

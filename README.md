@@ -616,7 +616,8 @@ children did when the parent's `kill(0, SIGTERM)` interrupted their `select()`.
 
 Under systemd the three states a `Type=notify` unit waits for are written to `NOTIFY_SOCKET` directly, with no
 libsystemd: `READY=1` once both listeners are bound, `RELOADING=1` and `READY=1` around a reload, and
-`STOPPING=1` when the exit flag is raised. The unit the C build installs therefore starts this `bbsd` too.
+`STOPPING=1` when the exit flag is raised. The unit the C build installs — the same one §7.5 renders for this
+tree — therefore starts this `bbsd` unchanged.
 
 The development tree's `conf/bbsd.conf` listens on telnet `2323` and SSH `2322` (`bbs_port` and
 `bbs_ssh_port`) — the pair the reference C installation uses for its own, equally uncommitted file. The tracked
@@ -666,6 +667,41 @@ Comparing a generator with the PHP it replaced is mechanical: run a sandbox copy
 replaced by a `SELECT 1` so no flag is cleared, and the binary over the same database, then `cmp` the two files.
 The figures in §6.2 were measured that way.
 
+### 7.5 Installing
+
+`make install` stages the built server as a server root and renders the two service files, which is what the C
+tree's `make install` does — the same layout, the same file names, the same destinations:
+
+```bash
+sudo make install                                    # PREFIX=/usr/local/lbbs, unit in /etc/systemd/system
+sudo make install PREFIX=/opt/lbbs                    # any absolute directory
+make install PREFIX=$HOME/lbbs SYSTEMD_UNIT_DIR= LOGROTATE_DIR=   # a tree without the service files
+sudo make install DESTDIR=/tmp/stage                  # everything under a staging root, the unit still names PREFIX
+sudo make uninstall PREFIX=/opt/lbbs
+```
+
+The variables are [utils/install.sh](utils/install.sh)'s options, which can be run without make: `PREFIX` is the
+server root, `DESTDIR` prepends a staging directory to every path without changing what the unit points at,
+`BBS_USER`/`BBS_GROUP` (default `bbs`) fill the unit's `User=`/`Group=` and logrotate's `create`, and
+`SYSTEMD_UNIT_DIR`/`LOGROTATE_DIR` are where the two service files go. An empty value skips that file, and outside
+Linux both default to empty; the script is a bash script because the deployment is a Linux one.
+
+The install is the four binaries in `bin/`, the three `*.default` templates and `menu.conf` in `conf/`, the eleven
+`data/*.txt`, the empty `log/` and `var/{articles,chicken,gen_ex}` — the directories the daemon and `gen_ex_list`
+expect to find — and `conf/lbbs.service` and `conf/lbbs.logrotate` rendered from [conf/lbbs.service.in](conf/lbbs.service.in)
+and [conf/lbbs.logrotate.in](conf/lbbs.logrotate.in) for the chosen prefix and account. What it does not carry is
+everything `.gitignore` names — `conf/bbsd.conf` and the other live files with their credentials, `conf/ca_cert.pem`,
+the SSH host keys — because those belong to the machine; copy them yourself when moving an installation. `make
+uninstall` removes exactly the files `make install` wrote and leaves `log/`, `var/` and the live files alone.
+
+On Linux the unit lands in `/etc/systemd/system/lbbs.service` and the drop-in in `/etc/logrotate.d/lbbs`. The unit
+is the C one unchanged — `Type=notify`, `ExecStart=<prefix>/bin/bbsd -f`, `KillSignal=SIGTERM`,
+`ExecReload=/bin/kill -HUP $MAINPID` — because the port answers `READY=1`, `RELOADING=1` and `STOPPING=1` on
+`NOTIFY_SOCKET` itself (§7.3), and the drop-in's `systemctl reload` reaches the SIGHUP path that restarts both log
+files. `make install` does not create the account, chown the tree or write `conf/bbsd.conf`; the script prints
+those three steps when it finishes, as C's INSTALL.md leaves them to the reader. A release archive is already an
+installed tree of this shape, so it is unpacked at `/` instead.
+
 ---
 
 ## 8. Where the configuration and data live
@@ -674,11 +710,14 @@ The repository carries its own server root, so it runs instead of or next to `bb
 reach. What git holds is what a human wrote: `conf/menu.conf`, the three `*.default` templates, and the eleven
 `data/*.txt`. Everything else the directory has is generated or belongs to the machine, and `.gitignore` keeps
 it out — `conf/bbsd.conf` with the password, `conf/bbsnet.conf`, `conf/badwords.conf`, `conf/ca_cert.pem`, the
-host keys, the whole of `var/`, `log/`, and the symlinks in `bin/`. A fresh clone is therefore not a runnable
+host keys, the rendered `conf/lbbs.service` and `conf/lbbs.logrotate`, the whole of `var/`, `log/`, and the symlinks
+in `bin/`. A fresh clone is therefore not a runnable
 root yet: §7.4 builds the generated menus and `conf/bbsd.conf.default` copied over supplies the credentials.
 
 ```
 lbbs-rust/                      ← the server root (§7.3)
+├── Makefile                   ← `make install` / `make uninstall`, the C tree's targets (§7.5)
+├── utils/install.sh           ← what those targets run: the tree, the copies, the rendered service files
 ├── bin/                       ← symlinks to the built `bbsd` and the three generators — not in git
 ├── conf/
 │   ├── bbsd.conf.default      ← main configuration template
@@ -686,6 +725,8 @@ lbbs-rust/                      ← the server root (§7.3)
 │   ├── bbsnet.conf.default    ← the other stations this board knows (your `bbsnet.conf` is not in git)
 │   ├── badwords.conf.default  ← banned terms (your `badwords.conf` is not in git)
 │   ├── menu.conf              ← menu definitions, the source of var/menu_merged.conf
+│   ├── lbbs.service.in        ← the unit template; lbbs.service is rendered from it by the install
+│   ├── lbbs.logrotate.in      ← the logrotate template, rendered the same way
 │   ├── ca_cert.pem            ← MySQL TLS verification, used only if present — not in git
 │   └── ssh_host_*             ← SSH host keys: generated, never committed, see below
 ├── data/                      ← the eleven texts the screens show: welcome, goodbye, eula, register,

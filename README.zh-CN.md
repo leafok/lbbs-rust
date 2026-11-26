@@ -542,7 +542,7 @@ Cargo 包叫 `lbbs`，编译出来的守护进程叫 `bbsd`，和 C 服务的名
 
 systemd 那边不需要 libsystemd：`Type=notify` 要等的三个状态由进程直接写到 `NOTIFY_SOCKET`——两个监听套接字
 绑定完就发 `READY=1`，重载配置前后发 `RELOADING=1` 和 `READY=1`，退出标记一置位就发 `STOPPING=1`。所以 C 装
-好的那份 unit 也能用来起本程序。
+好的那份 unit——也就是 7.5 给这棵树渲染出来的同一份——也能用来起本程序。
 
 开发树里那份 `conf/bbsd.conf` 监听 telnet `2323`、SSH `2322`（`bbs_port` 和 `bbs_ssh_port`），参考的那份 C 安装
 用的是同一对端口——它那配置文件同样没有入库。入库的模板 `conf/bbsd.conf.default` 写的还是 C 的 `23` 和 `22`，
@@ -586,6 +586,38 @@ ln -s ../target/release/gen_ex_list bin/gen_ex_list
 把生成工具和它替代的那段 PHP 比一比是很机械的：跑一份脚本的沙盒副本——其中的 `UPDATE` 换成 `SELECT 1`，
 这样没有标记会被清掉——再对同一个数据库跑可执行文件，然后 `cmp` 两边的文件。6.2 里那些字节数就是这么量出来的。
 
+### 7.5 安装
+
+`make install` 把编译好的服务器摆成一颗服务器根目录，并渲染那两个服务配置文件——这就是 C 目录里 `make install`
+做的事，布局、文件名和目的地都一样：
+
+```bash
+sudo make install                                    # PREFIX=/usr/local/lbbs，unit 装到 /etc/systemd/system
+sudo make install PREFIX=/opt/lbbs                   # 任意绝对目录
+make install PREFIX=$HOME/lbbs SYSTEMD_UNIT_DIR= LOGROTATE_DIR=   # 不要那两个服务文件
+sudo make install DESTDIR=/tmp/stage                 # 全部落到暂存根下，unit 里仍写 PREFIX
+sudo make uninstall PREFIX=/opt/lbbs
+```
+
+这些变量就是 [utils/install.sh](utils/install.sh) 的选项，不经过 make 也能直接跑：`PREFIX` 是服务器根目录，
+`DESTDIR` 给每条路径加一个暂存前缀而 unit 里仍写真实前缀，`BBS_USER`/`BBS_GROUP`（默认 `bbs`）填 unit 的
+`User=`/`Group=` 和 logrotate 的 `create`，`SYSTEMD_UNIT_DIR`/`LOGROTATE_DIR` 是两个服务文件的去处。哪个变量置空
+就跳过哪个，Linux 以外两者默认就是空的。
+
+装进去的是 `bin/` 里四个可执行文件、`conf/` 里三个 `*.default` 模板和 `menu.conf`、十一个 `data/*.txt`，以及空的
+`log/` 和 `var/{articles,chicken,gen_ex}`——守护进程和 `gen_ex_list` 假定已经存在的目录；`conf/lbbs.service` 与
+`conf/lbbs.logrotate` 分别由 [conf/lbbs.service.in](conf/lbbs.service.in) 和
+[conf/lbbs.logrotate.in](conf/lbbs.logrotate.in) 按上面的前缀和账号渲染出来。不搬的是 `.gitignore` 点名的一切——
+含凭据的 `conf/bbsd.conf` 等现用文件、`conf/ca_cert.pem`、SSH 主机密钥——它们属于这台机器，迁移安装时自己复制。
+`make uninstall` 只删 `make install` 写下的那些文件，`log/`、`var/` 和现用配置原样留着。
+
+Linux 上 unit 落到 `/etc/systemd/system/lbbs.service`，logrotate 片段落到 `/etc/logrotate.d/lbbs`。unit 就是 C 那份
+原样——`Type=notify`、`ExecStart=<prefix>/bin/bbsd -f`、`KillSignal=SIGTERM`、`ExecReload=/bin/kill -HUP $MAINPID`
+——因为移植版自己往 `NOTIFY_SOCKET` 写 `READY=1`、`RELOADING=1`、`STOPPING=1`（见 7.3），而片段里的
+`systemctl reload` 恰好走到重启两个日志文件的 SIGHUP 路径上。`make install` 不建账号、不改属主、也不写
+`conf/bbsd.conf`：这三步和 C 的 INSTALL.md 一样留给读者，脚本跑完会把它们打出来。release 压缩包本身已经是这个
+形状的一棵安装树，解到 `/` 即可，不必再跑 install。
+
 ---
 
 ## 8. 配置文件与数据文件的位置
@@ -593,11 +625,14 @@ ln -s ../target/release/gen_ex_list bin/gen_ex_list
 本仓库自带一个服务器根目录，因此不需要手边有 C 目录，就能替代 `bbsd` 或与之并行运行。git 里装的是人写出来的
 东西：`conf/menu.conf`、三个 `*.default` 模板，以及十一个 `data/*.txt`。树里其余的一切都是生成出来的或只属于这台
 机器，`.gitignore` 把它们全挡在外面——带密码的 `conf/bbsd.conf`、`conf/bbsnet.conf`、`conf/badwords.conf`、
-`conf/ca_cert.pem`、主机密钥、整个 `var/`、`log/`，还有 `bin/` 里那几个符号链接。所以刚克隆下来的树还不足以直接
+`conf/ca_cert.pem`、主机密钥、渲染出来的 `conf/lbbs.service` 和 `conf/lbbs.logrotate`、整个 `var/`、`log/`，
+还有 `bin/` 里那几个符号链接。所以刚克隆下来的树还不足以直接
 跑：先按 §7.4 生成那些菜单，再复制 `conf/bbsd.conf.default` 补上凭据。
 
 ```
 lbbs-rust/                      ← 服务器根目录（见 7.3）
+├── Makefile                   ← `make install` / `make uninstall`，与 C 目录的同名目标（见 7.5）
+├── utils/install.sh           ← 这两个目标实际跑的东西：目录、复制、渲染两个服务文件
 ├── bin/                       ← 指向编译好的 `bbsd` 与三个生成工具的符号链接；不进 git
 ├── conf/
 │   ├── bbsd.conf.default      ← 主配置模板
@@ -605,6 +640,8 @@ lbbs-rust/                      ← 服务器根目录（见 7.3）
 │   ├── bbsnet.conf.default    ← 本站认识的其他站点（你那份 `bbsnet.conf` 不进 git）
 │   ├── badwords.conf.default  ← 违禁词（你那份 `badwords.conf` 不进 git）
 │   ├── menu.conf              ← 菜单定义，是 var/menu_merged.conf 的来源
+│   ├── lbbs.service.in        ← unit 模板；安装时由它渲染出 lbbs.service
+│   ├── lbbs.logrotate.in      ← logrotate 模板，同样方式渲染
 │   ├── ca_cert.pem            ← MySQL 的 TLS 校验，只有文件存在时才用；不进 git
 │   └── ssh_host_*             ← SSH 主机密钥：自己生成，绝不提交，见下文
 ├── data/                      ← 界面要显示的十一个文本：welcome、goodbye、eula、register、

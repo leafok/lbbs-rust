@@ -126,3 +126,24 @@ jobs:
         else
         	"${bin}" -v
         fi
+
+    # `make install` is shell, so it is exercised here against the debug build instead of a second
+    # (release) build; a staged DESTDIR keeps the check out of /usr/local and off /etc
+    - name: Check the install target
+      if: matrix.bin_ext == ''
+      shell: bash
+      run: |
+        stage="${RUNNER_TEMP}/stage"
+        utils/install.sh --bin-dir "target/${{ matrix.target }}/debug" \
+        	--prefix /usr/local/lbbs --destdir "${stage}" \
+        	--systemd-dir /etc/systemd/system --logrotate-dir /etc/logrotate.d
+        test -x "${stage}/usr/local/lbbs/bin/bbsd"
+        test -d "${stage}/usr/local/lbbs/var/gen_ex"
+        test -f "${stage}/usr/local/lbbs/conf/lbbs.service"
+        test -f "${stage}/etc/systemd/system/lbbs.service"
+        test -f "${stage}/etc/logrotate.d/lbbs"
+        grep -qx 'ExecStart=/usr/local/lbbs/bin/bbsd -f' "${stage}/etc/systemd/system/lbbs.service"
+        utils/install.sh --uninstall --prefix /usr/local/lbbs --destdir "${stage}" \
+        	--systemd-dir /etc/systemd/system --logrotate-dir /etc/logrotate.d
+        test ! -e "${stage}/usr/local/lbbs/bin/bbsd"
+        test ! -e "${stage}/etc/systemd/system/lbbs.service"
