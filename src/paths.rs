@@ -67,8 +67,8 @@ pub const SCREEN_COLS: usize = 80;
 pub const LINE_BUFFER_LEN: usize = 1024;
 pub const TAB_SIZE: usize = 4;
 
-pub const MAX_CLIENT_LIMIT: usize = 2000;
-pub const MAX_CLIENT_PER_IP_LIMIT: usize = 1000;
+pub const MAX_CLIENT_LIMIT: usize = 10000;
+pub const MAX_CLIENT_PER_IP_LIMIT: usize = 10000;
 
 /// `MAX_SPLIT_FILE_LINES` from `include/str_process.h`.
 pub const MAX_SPLIT_FILE_LINES: usize = 65536;

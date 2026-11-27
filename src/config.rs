@@ -357,6 +357,20 @@ mod tests {
     }
 
     #[test]
+    fn above_cap_client_limit_resets_to_the_cap() {
+        let (cfg, warns) = parse("bbs_max_client 20000\n");
+        assert_eq!(cfg.max_client, MAX_CLIENT_LIMIT);
+        assert_eq!(warns.0.len(), 1);
+    }
+
+    #[test]
+    fn client_limit_caps_match_the_reference() {
+        assert_eq!(MAX_CLIENT_LIMIT, 10000);
+        assert_eq!(MAX_CLIENT_PER_IP_LIMIT, 10000);
+        assert!(MAX_CLIENT_PER_IP_LIMIT <= MAX_CLIENT_LIMIT);
+    }
+
+    #[test]
     fn extra_uncommented_token_rejects_the_line() {
         let (cfg, warns) = parse("bbs_port 2323 2324\nbbs_sys_id 7\n");
         assert_eq!(
