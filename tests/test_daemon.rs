@@ -105,7 +105,8 @@ fn the_compile_config_answers_the_six_configure_keys() {
 #[test]
 fn app_info_names_the_package_and_arch() {
     let info = app_info();
-    assert!(info.starts_with("lbbs-rust 0.1.0 build ("), "{info}");
+    let expected = concat!("lbbs-rust ", env!("CARGO_PKG_VERSION"), " build (");
+    assert!(info.starts_with(expected), "{info}");
     assert!(info.ends_with(')'), "{info}");
 }
 
