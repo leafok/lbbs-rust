@@ -19,7 +19,7 @@ The sections build on each other, so reading top to bottom works.
 | Language | C (40,013 lines across `src/*.c`, `include/*.h` and `tests/*.c` — 27,622 of them the server, the rest its own test programs) |
 | License | GPL-3.0-or-later |
 | Author | Leaflet &lt;leaflet@leafok.com&gt; |
-| Reference copy, alongside this repo | `../lbbs` — read-only for us; **we never modify it** |
+| Reference copy, alongside this repo | `../lbbs` — the C checkout every `file.c:NNN` citation points into; when a round has to change it, the change is committed there |
 
 LBBS is a **bulletin board server you connect to from a text terminal**. Users connect over telnet or SSH,
 press menu keys, read boards, and write posts. There is no mouse and no images: everything is drawn with text
@@ -159,57 +159,60 @@ differently from C, read the deviations section first — the reason is written 
 
 ### 5.1 Module map
 
-| Rust file | Lines | Original C | Responsibility | Status |
+| Rust file | Source lines | Original C | Responsibility | Status |
 | --- | ---:| --- | --- | --- |
 | [src/paths.rs](src/paths.rs) | 118 | `include/bbs.h` etc. | screen size, field lengths, path names | done |
-| [src/daemon.rs](src/daemon.rs) | 488 | `src/main.c`, `src/daemon.c` | command line, `--help`/`--version`, `fork` into background | done |
-| [src/systemd.rs](src/systemd.rs) | 220 | the `HAVE_SYSTEMD_SD_DAEMON_H` blocks of `src/net_server.c` | `READY=1`, `RELOADING=1`, `STOPPING=1` written to `NOTIFY_SOCKET` without libsystemd | done |
-| [src/config.rs](src/config.rs) | 394 | `src/init.c` | reads `conf/bbsd.conf` | done |
-| [src/log.rs](src/log.rs) | 542 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
-| [src/text.rs](src/text.rs) | 635 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
-| [src/term/mod.rs](src/term/mod.rs) | 892 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
-| [src/term/key.rs](src/term/key.rs) | 524 | `src/io.c` | turns ESC sequences into key codes | done |
-| [src/screen.rs](src/screen.rs) | 1151 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
-| [src/db.rs](src/db.rs) | 1581 | `src/database.c` etc. | MySQL queries through sqlx | done |
-| [src/board.rs](src/board.rs) | 1602 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
-| [src/browse.rs](src/browse.rs) | 3371 | `src/section_list_display.c`, `src/section_list_loader.c`, `src/menu_proc.c` (the two digest items) | the article list, its keys, reading a post, the saved reading position, and a board's digest tree | done |
-| [src/editor.rs](src/editor.rs) | 3292 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
-| [src/post.rs](src/post.rs) | 1677 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, the article's web link, and the transaction each write runs in | done |
-| [src/viewlog.rs](src/viewlog.rs) | 369 | `src/article_view_log.c` | which posts this user has read | done |
-| [src/favorlog.rs](src/favorlog.rs) | 452 | `src/article_favor.c` | which posts this user starred | done |
-| [src/favorlist.rs](src/favorlist.rs) | 785 | `src/article_favor_display.c`, `src/article_favor.c` (the page query), `src/menu_proc.c` (the `FAVOR_TOPIC` item) | the 我收藏的主题 list: two name columns, the star removed in place, and the board each row opens | done |
-| [src/roster.rs](src/roster.rs) | 931 | `src/user_list_loader.c`, `src/user_stat.c` | the online-user roster and the article counters | done |
-| [src/userinfo.rs](src/userinfo.rs) | 966 | `src/user_info_display.c`, `src/user_list_display.c` (the search), `src/bbs.c` (the level and sign tables) | one user's profile page, and the name search that reaches it | done |
-| [src/user_info_update.rs](src/user_info_update.rs) | 677 | `src/user_info_update.c`, `src/menu_proc.c` (the two profile items) | the 说明档 and 签名档 editors: one `user_pubinfo` column through the editor, masked, counted and written back | done |
-| [src/userlist.rs](src/userlist.rs) | 1053 | `src/user_list_display.c`, `src/menu_proc.c` (the two roster items) | the 线上使用者 and 已注册用户 pages: titles, columns, paging, and the keys between them | done |
-| [src/loader.rs](src/loader.rs) | 1689 | `src/section_list_loader.c` | the incremental refresh task, the article cache files it writes, and each board's digest menu | done |
-| [src/state.rs](src/state.rs) | 410 | the shared-memory segments | what the loader publishes and a session reads | done |
-| [src/cache.rs](src/cache.rs) | 1849 | `src/article_cache.c` | render and load `var/articles/<CID>` with its line index | done |
-| [src/data_file_mgr.rs](src/data_file_mgr.rs) | 456 | `src/data_file_mgr.c`, `src/bbs_cmd.c` (the `DATAMGR` entry) | the `@DATAMGR` list: pick one of the eight site texts by number, edit it, preview it, and write the result to both the packaged file and its `.user` copy | done |
-| [src/menu.rs](src/menu.rs) | 2744 | `src/menu.c` | `menu.conf` parsing and navigation | parsing/navigation done, feature bodies not |
-| [src/lml.rs](src/lml.rs) | 720 | `src/lml.c` | LML markup rendering | done |
-| [src/bwf.rs](src/bwf.rs) | 242 | `src/trie_dict.c` etc. | badword matching and masking | done |
-| [src/ipmask.rs](src/ipmask.rs) | 109 | `src/ip_mask.c` | address masking (`202.38.64.x`) | done |
-| [src/privilege.rs](src/privilege.rs) | 561 | `src/user_priv.c` | privilege words and levels | done |
-| [src/session.rs](src/session.rs) | 619 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
-| [src/login.rs](src/login.rs) | 585 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
-| [src/bbsnet.rs](src/bbsnet.rs) | 1852 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
-| [src/chicken.rs](src/chicken.rs) | 2405 | `utils/game/chicken.c` | 电子小鸡: one line of fourteen numbers and a name, the naming prompt, the nine things you do with a chicken, and the death that hatches the next egg | done |
-| [src/money.rs](src/money.rs) | 243 | `utils/game/money.c` | 糖糖: the balance a session caches, the deposit that stops at the cap, and the withdrawal that is all or nothing | done |
-| [src/bbs.rs](src/bbs.rs) | 1127 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | menu loop done, and every action `conf/menu.conf` binds has a handler (the favourites filter is a menu filter, not an action) |
-| [src/net.rs](src/net.rs) | 469 | `src/net_server.c` | accept, connection limits, graceful drain | done |
+| [src/daemon.rs](src/daemon.rs) | 352 | `src/main.c`, `src/daemon.c` | command line, `--help`/`--version`, `fork` into background | done |
+| [src/systemd.rs](src/systemd.rs) | 127 | the `HAVE_SYSTEMD_SD_DAEMON_H` blocks of `src/net_server.c` | `READY=1`, `RELOADING=1`, `STOPPING=1` written to `NOTIFY_SOCKET` without libsystemd | done |
+| [src/config.rs](src/config.rs) | 321 | `src/init.c` | reads `conf/bbsd.conf` | done |
+| [src/log.rs](src/log.rs) | 404 | `src/log.c` | the two append-mode log files, `log_restart()` | done |
+| [src/text.rs](src/text.rs) | 252 | `src/str_process.c` | display width (wide chars = 2 columns) and line wrapping | done |
+| [src/term/mod.rs](src/term/mod.rs) | 642 | `src/io.c` | byte pipes, GBK transcoding, `prints`/`iflush`, `igetch` | done |
+| [src/term/key.rs](src/term/key.rs) | 388 | `src/io.c` | turns ESC sequences into key codes | done |
+| [src/screen.rs](src/screen.rs) | 799 | `src/screen.c` | clearing, the echo handoff `set_input_echo`, line input `str_input`, pager `display_data` | done |
+| [src/db.rs](src/db.rs) | 1397 | `src/database.c` etc. | MySQL queries through sqlx | done |
+| [src/board.rs](src/board.rs) | 1150 | `src/section_list_loader.c` | in-memory pools of sections, articles, users | done |
+| [src/browse.rs](src/browse.rs) | 2153 | `src/section_list_display.c`, `src/section_list_loader.c`, `src/menu_proc.c` (the two digest items) | the article list, its keys, reading a post, the saved reading position, and a board's digest tree | done |
+| [src/editor.rs](src/editor.rs) | 1485 | `src/editor.c` | the full-screen editor: rows, window, status row, key handling | done |
+| [src/post.rs](src/post.rs) | 1090 | `src/article_post.c`, `src/article_del.c`, `src/article_op.c` | post, reply, modify, delete, the 精华 toggle, the article's web link, and the transaction each write runs in | done |
+| [src/viewlog.rs](src/viewlog.rs) | 210 | `src/article_view_log.c` | which posts this user has read | done |
+| [src/favorlog.rs](src/favorlog.rs) | 266 | `src/article_favor.c` | which posts this user starred | done |
+| [src/favorlist.rs](src/favorlist.rs) | 499 | `src/article_favor_display.c`, `src/article_favor.c` (the page query), `src/menu_proc.c` (the `FAVOR_TOPIC` item) | the 我收藏的主题 list: two name columns, the star removed in place, and the board each row opens | done |
+| [src/roster.rs](src/roster.rs) | 469 | `src/user_list_loader.c`, `src/user_stat.c` | the online-user roster and the article counters | done |
+| [src/userinfo.rs](src/userinfo.rs) | 477 | `src/user_info_display.c`, `src/user_list_display.c` (the search), `src/bbs.c` (the level and sign tables) | one user's profile page, and the name search that reaches it | done |
+| [src/user_info_update.rs](src/user_info_update.rs) | 325 | `src/user_info_update.c`, `src/menu_proc.c` (the two profile items) | the 说明档 and 签名档 editors: one `user_pubinfo` column through the editor, masked, counted and written back | done |
+| [src/userlist.rs](src/userlist.rs) | 493 | `src/user_list_display.c`, `src/menu_proc.c` (the two roster items) | the 线上使用者 and 已注册用户 pages: titles, columns, paging, and the keys between them | done |
+| [src/loader.rs](src/loader.rs) | 910 | `src/section_list_loader.c` | the incremental refresh task, the article cache files it writes, and each board's digest menu | done |
+| [src/state.rs](src/state.rs) | 304 | the shared-memory segments | what the loader publishes and a session reads | done |
+| [src/cache.rs](src/cache.rs) | 407 | `src/article_cache.c` | render and load `var/articles/<CID>` with its line index | done |
+| [src/data_file_mgr.rs](src/data_file_mgr.rs) | 231 | `src/data_file_mgr.c`, `src/bbs_cmd.c` (the `DATAMGR` entry) | the `@DATAMGR` list: pick one of the eight site texts by number, edit it, preview it, and write the result to both the packaged file and its `.user` copy | done |
+| [src/menu.rs](src/menu.rs) | 1481 | `src/menu.c` | `menu.conf` parsing and navigation | parsing/navigation done, feature bodies not |
+| [src/lml.rs](src/lml.rs) | 542 | `src/lml.c` | LML markup rendering | done |
+| [src/bwf.rs](src/bwf.rs) | 160 | `src/trie_dict.c` etc. | badword matching and masking | done |
+| [src/ipmask.rs](src/ipmask.rs) | 57 | `src/ip_mask.c` | address masking (`202.38.64.x`) | done |
+| [src/privilege.rs](src/privilege.rs) | 334 | `src/user_priv.c` | privilege words and levels | done |
+| [src/session.rs](src/session.rs) | 497 | the `BBS_*` globals | one connection's state + online bookkeeping | done |
+| [src/login.rs](src/login.rs) | 475 | `src/login.c` | login, authentication, user-agreement (EULA) | done |
+| [src/bbsnet.rs](src/bbsnet.rs) | 1310 | `src/bbs_net.c`, `src/menu_proc.c` (the `@mod:` dispatcher) | the station table, the shuttle grid, the outbound connect and the two-way relay | done |
+| [src/chicken.rs](src/chicken.rs) | 1032 | `utils/game/chicken.c` | 电子小鸡: one line of fourteen numbers and a name, the naming prompt, the nine things you do with a chicken, and the death that hatches the next egg | done |
+| [src/money.rs](src/money.rs) | 188 | `utils/game/money.c` | 糖糖: the balance a session caches, the deposit that stops at the cap, and the withdrawal that is all or nothing | done |
+| [src/bbs.rs](src/bbs.rs) | 635 | `src/bbs_main.c`, `src/bbs_cmd.c` | the session's own order of events, echo handoff included, `bbs_center` | menu loop done, and every action `conf/menu.conf` binds has a handler (the favourites filter is a menu filter, not an action) |
+| [src/net.rs](src/net.rs) | 378 | `src/net_server.c` | accept, connection limits, graceful drain | done |
 | [src/ssh.rs](src/ssh.rs) | 504 | `src/net_server.c` (the libssh half) | host keys, password auth, the session channel | done |
-| [src/main.rs](src/main.rs) | 594 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
-| [src/batch.rs](src/batch.rs) | 385 | `utils/lib/db_open.inc.php` + the lines the three scripts repeat | one generator's life: arguments, server root, `conf/bbsd.conf`, database, the PHP's own stdout text and exit bytes | done |
+| [src/main.rs](src/main.rs) | 507 | `src/main.c`, `src/net_server.c` | startup order, signal handling, `SIGHUP` reload, shutdown | done |
+| [src/batch.rs](src/batch.rs) | 264 | `utils/lib/db_open.inc.php` + the lines the three scripts repeat | one generator's life: arguments, server root, `conf/bbsd.conf`, database, the PHP's own stdout text and exit bytes | done |
 | [src/section_list.rs](src/section_list.rs) | 149 | `utils/lib/section_list.inc.php` | the class/board hierarchy the generators walk, with the caller's per-board values | done |
-| [src/gen_top.rs](src/gen_top.rs) | 306 | `utils/bin/gen_top.php` | `var/bbs_top.txt` and `var/bbs_top_menu.conf`: the ten hottest posts of the week | done |
-| [src/gen_section_menu.rs](src/gen_section_menu.rs) | 691 | `utils/bin/gen_section_menu.php` | `var/menu_merged.conf`: `conf/menu.conf` plus the six generated menu blocks | done |
-| [src/gen_ex_list.rs](src/gen_ex_list.rs) | 424 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
+| [src/gen_top.rs](src/gen_top.rs) | 158 | `utils/bin/gen_top.php` | `var/bbs_top.txt` and `var/bbs_top_menu.conf`: the ten hottest posts of the week | done |
+| [src/gen_section_menu.rs](src/gen_section_menu.rs) | 480 | `utils/bin/gen_section_menu.php` | `var/menu_merged.conf`: `conf/menu.conf` plus the six generated menu blocks | done |
+| [src/gen_ex_list.rs](src/gen_ex_list.rs) | 286 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-40 960 lines in total, the tests included (they live in the modules they test). There are 611 tests: 605 in
-the library and 6 in the binary. 597 of them need nothing but the checked-out tree; the other 14 are ignored
-because they read the real database and files.
+24 784 lines of server code in `src/`, plus 16 126 lines of tests in `tests/test_<module>.rs` — one file per
+module that has tests, the way C keeps its test programs in `tests/test_<name>.c`; 40 910 in total. Each test
+file is pulled back into the module it tests by `#[cfg(test)] #[path = "../tests/test_<module>.rs"] mod tests;`,
+so it still sees that module's private items. There are 611 tests: 605 in the library and 6 in the binary. 597
+of them need nothing but the checked-out tree; the other 14 are ignored because they read the real database and
+files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
 
@@ -997,9 +1000,10 @@ next key, and page with space.
 
 ## 14. Further reading
 
-- **The original C source**: `../lbbs/src/` and `../lbbs/include/` — read-only.
+- **The original C source**: `../lbbs/src/` and `../lbbs/include/` — the reference.
 - [reference/schema.sql](reference/schema.sql) — the full database schema. **Start here when a table is confusing.**
 - [reference/sql_inventory.md](reference/sql_inventory.md) — every statement the C server issues. **Start here when hunting for a missing port.**
+- [tests/](tests) — the `#[cfg(test)]` blocks of every module, one `test_<module>.rs` per module that has tests (C keeps its tests the same way, in `tests/test_<name>.c`), plus the fixtures below.
 - [tests/fixtures/](tests/fixtures) — sample article files and golden output captured from the C build.
 - The header comment of each module — what it ports and how it deviates. **That is the detailed documentation.**
 

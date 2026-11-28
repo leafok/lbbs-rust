@@ -7,6 +7,10 @@ edition = "2024"
 autobins = false
 default-run = "bbsd"
 
+# `tests/test_*.rs` are the `#[cfg(test)]` blocks of the modules, pulled back in with `#[path]`;
+# cargo must not treat them as integration-test crates.
+autotests = false
+
 [[bin]]
 name = "bbsd"
 path = "src/main.rs"
