@@ -15,8 +15,8 @@
 | 项目 | 内容 |
 | --- | --- |
 | 名称 | LBBS (Leaflet BBS Daemon) |
-| 版本 | 1.8.0 |
-| 语言 | C（`src/*.c` 加 `include/*.h` 共 37,364 行：服务器 27,427 行，其余是它自己的测试程序） |
+| 版本 | 1.8.1 |
+| 语言 | C（`src/*.c`、`include/*.h` 与 `tests/*.c` 共 40,013 行：服务器 27,622 行，其余是它自己的测试程序） |
 | 许可证 | GPL-3.0-or-later |
 | 原作者 | Leaflet &lt;leaflet@leafok.com&gt; |
 | 与本项目同级的参考副本 | `../lbbs` —— 只读；**我们不会修改它** |
@@ -195,7 +195,7 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
 
 另有 [src/daemon.rs](src/daemon.rs)（488 行，命令行与后台化）、[src/systemd.rs](src/systemd.rs)（220 行，不依赖 libsystemd 的 `sd_notify`）、[src/log.rs](src/log.rs)（542 行，两个日志文件）、[src/state.rs](src/state.rs)（410 行，加载器发布、会话读取的共享状态）。
 
-合计 40,931 行（含测试，测试就写在被测模块里）。共 609 个测试：库 603 个、可执行文件 6 个。其中 589 个只读代码
+合计 40,960 行（含测试，测试就写在被测模块里）。共 611 个测试：库 605 个、可执行文件 6 个。其中 597 个只读代码
 仓库里的东西，另外 14 个默认跳过，因为它们要连真实数据库、读真实生成的文件。
 
 > 数字会随开发变化。以 `cargo test --lib` 的输出为准。
@@ -343,7 +343,7 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
     所以过得了十行检查的最长存档是九行。写回时 C 转义拼接的地方这里用绑定参数，说明档末尾那行引用的是花名册自己的
     60 秒刷新间隔，装不进 4 KB 缓冲的文字就是 C 的 `-3`：记一条日志，然后丢掉。曾和这两个名字并列的第三个
     `M_FAVOR_SECTION` 其实从来不是一个动作：C 是在问它的处理函数收藏夹子菜单的每一行可不可见
-    （`menu.c:1148-1150`、`menu_proc.c:196-201`），这件事 [`Session::filter_allows`](src/session.rs) 已经做了。
+    （`menu.c:1152-1154`、`menu_proc.c:196-201`），这件事 [`Session::filter_allows`](src/session.rs) 已经做了。
 29. **电子小鸡**——`chicken_main`（[`chicken::chicken_main`](src/chicken.rs)），入口是上位菜单的
     `【 电子小鸡 】`（`conf/menu.conf:238`），进入的方式与 C 完全相同：`@RunMBEM` 配
     `C@mod:game/so/libgame.so#chicken_main`，`#` 后面就是入口名；它花的糖糖走同一个 `libgame.so` 的另一半
@@ -362,19 +362,19 @@ C 原程序还在继续开发，所以一处代码引用只有说清修订才有
     （`bbs_main.c:169-206`、`menu_proc.c:295-330`）。面板还多一个条件：它只属于顶级菜单，而且距上一次按键十秒之后
     才挪（`bbs_main.c:179`），所以子菜单打开时它是停下来，而不是在子菜单自己的画面底下重画一遍。
 31. **累计访问人次**——欢迎页引用的那个访问总数，C 是在取在线列表的那一趟里读的，并没有自己的日程
-    （[`user_list.c:370`](../lbbs/src/user_list.c)，从 `:620-661` 走过去）。重载先查在线列表，再
+    （[`user_list.c:372`](../lbbs/src/user_list.c)，从 `:619-660` 走过去）。重载先查在线列表，再
     `SELECT ID FROM user_login_log ORDER BY ID DESC LIMIT 1`，两个数一起发布出去
-    （[`loader::Loader::reload_online`](src/loader.rs)）；`:394-401` 两个分支都会赋值，所以日志表是空的就把
+    （[`loader::Loader::reload_online`](src/loader.rs)）；`:396-403` 两个分支都会赋值，所以日志表是空的就把
     访问总数发布成 `0`，而不是留着上一趟量到的数。
 32. **命令行那几样各打印什么**——`bbsd -h` 报的是 `arg_usage()` 报的字面 `bbsd`
     （[`daemon::PROG_NAME`](src/daemon.rs)），不是 shell 敲进来那条路径；`bbsd -C` 每个方括号里的答案都落在第 24 列，
     与 C 的制表位一致（[`daemon::flag_line`](src/daemon.rs)）；`@RELOADCONF` 在屏幕上回一句 `已发送指令` 再回菜单
     （[`bbs::Action::ReloadConf`](src/bbs.rs)、`menu_proc.c:150-180`），而不是向没人按的按键发问。
 33. **加载路径写下的那几行**——池子装载完，报出来的就是 C 报的样子：花名册的
-    `Rebuild index of %d users, last_uid=%d` 和 `Loaded %d users`（`user_list.c:243`/`:248`）、置顶链表和标记不一致时
-    那两句 `Inconsistent state found: article %d …`（`section_list.c:1104`/`:1147`），以及一趟配置重载成功时写在
+    `Rebuild index of %d users, last_uid=%d` 和 `Loaded %d users`（`user_list.c:245`/`:250`）、置顶链表和标记不一致时
+    那两句 `Inconsistent state found: article %d …`（`section_list.c:1101`/`:1144`），以及一趟配置重载成功时写在
     common 流上的 `Reload section config successfully`（`section_list_loader.c:761`）——这几句都有测试把两条流抓下来
-    逐字节比对。`Count of page exceed limit in section %d`（`section_list.c:1384`）是例外：它只在越过
+    逐字节比对。`Count of page exceed limit in section %d`（`section_list.c:1381`）是例外：它只在越过
     `PAGE_INDEX_CAPACITY`（[`paths.rs`](src/paths.rs)，按 `section_list.h:26-27` 每版 50 000 帖、每页 20 帖算出来是
     2 500 页）时才打印，所以这一句移植了却没被演练过。加载器自己的计数是格式化进消息本身的，
     没有当作 tracing 字段传，因为 C 的一行日志就是一个字符串——见

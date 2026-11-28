@@ -15,8 +15,8 @@ The sections build on each other, so reading top to bottom works.
 | Item | Value |
 | --- | --- |
 | Name | LBBS (Leaflet BBS Daemon) |
-| Version | 1.8.0 |
-| Language | C (37,364 lines across `src/*.c` and `include/*.h` — 27,427 of them the server, the rest its own test programs) |
+| Version | 1.8.1 |
+| Language | C (40,013 lines across `src/*.c`, `include/*.h` and `tests/*.c` — 27,622 of them the server, the rest its own test programs) |
 | License | GPL-3.0-or-later |
 | Author | Leaflet &lt;leaflet@leafok.com&gt; |
 | Reference copy, alongside this repo | `../lbbs` — read-only for us; **we never modify it** |
@@ -207,8 +207,8 @@ differently from C, read the deviations section first — the reason is written 
 | [src/gen_ex_list.rs](src/gen_ex_list.rs) | 424 | `utils/bin/gen_ex_list.php` | one `var/gen_ex/<SID>` digest tree per board the daemon flagged | done |
 | [src/bin/gen_top.rs](src/bin/gen_top.rs), [gen_section_menu.rs](src/bin/gen_section_menu.rs), [gen_ex_list.rs](src/bin/gen_ex_list.rs) | 30 | the `php utils/bin/*.php` cron lines | three binaries that call the three generators and return the script's exit byte | done |
 
-40 931 lines in total, the tests included (they live in the modules they test). There are 609 tests: 603 in
-the library and 6 in the binary. 589 of them need nothing but the checked-out tree; the other 14 are ignored
+40 960 lines in total, the tests included (they live in the modules they test). There are 611 tests: 605 in
+the library and 6 in the binary. 597 of them need nothing but the checked-out tree; the other 14 are ignored
 because they read the real database and files.
 
 > Counts drift as work continues. Trust `cargo test --lib` output over this table.
@@ -390,7 +390,7 @@ that does not run is described as if it did.
    the roster's own 60-second interval, and a text that does not fit the 4 KB buffer is C's `-3`, logged and
    dropped. `M_FAVOR_SECTION`, the third name that used to be listed beside these two, turns out never to have
    been an action: C asks its handler whether each row of the favourites submenu is visible
-   (`menu.c:1148-1150`, `menu_proc.c:196-201`), which is what
+   (`menu.c:1152-1154`, `menu_proc.c:196-201`), which is what
    [`Session::filter_allows`](src/session.rs) already does.
 29. **电子小鸡** — `chicken_main` ([`chicken::chicken_main`](src/chicken.rs)) behind the top menu's
    `【 电子小鸡 】` item (`conf/menu.conf:238`), reached the same way C reaches it — `@RunMBEM` with
@@ -415,9 +415,9 @@ that does not run is described as if it did.
     alone, and only moves ten seconds after the last key (`bbs_main.c:179`), so an open submenu stops the rotation
     instead of repainting it under the submenu's own screen.
 31. **累计访问人次** — the visit total the welcome page quotes, which C loads in the same pass as the online list
-    and not on its own schedule ([`user_list.c:370`](../lbbs/src/user_list.c), reached from `:620-661`). The
+    and not on its own schedule ([`user_list.c:372`](../lbbs/src/user_list.c), reached from `:619-660`). The
     reload queries the list, then `SELECT ID FROM user_login_log ORDER BY ID DESC LIMIT 1`, and publishes the two
-    together ([`loader::Loader::reload_online`](src/loader.rs)); `:394-401` assigns in both branches, so an empty
+    together ([`loader::Loader::reload_online`](src/loader.rs)); `:396-403` assigns in both branches, so an empty
     log is published as `0` rather than left at whatever the previous pass measured.
 32. **What the command surface prints** — `bbsd -h` quotes the literal `bbsd` the way `arg_usage()` does
     ([`daemon::PROG_NAME`](src/daemon.rs)), not the path the shell started it from; `bbsd -C` lands every bracketed
@@ -425,11 +425,11 @@ that does not run is described as if it did.
     on the screen with `已发送指令` before it returns to the menu
     ([`bbs::Action::ReloadConf`](src/bbs.rs), `menu_proc.c:150-180`), instead of asking a key press of nobody.
 33. **The lines the load paths write** — the pool loads report themselves as C reported them: the roster's
-    `Rebuild index of %d users, last_uid=%d` and `Loaded %d users` (`user_list.c:243`/`:248`), the two
+    `Rebuild index of %d users, last_uid=%d` and `Loaded %d users` (`user_list.c:245`/`:250`), the two
     `Inconsistent state found: article %d …` answers a sticky list gives when the flags and the index disagree
-    (`section_list.c:1104`/`:1147`), and `Reload section config successfully` on the common stream when a config
+    (`section_list.c:1101`/`:1144`), and `Reload section config successfully` on the common stream when a config
     pass comes back (`section_list_loader.c:761`) — each pinned by a test that captures both streams and compares
-    them byte for byte. `Count of page exceed limit in section %d` (`section_list.c:1384`) is the exception: it
+    them byte for byte. `Count of page exceed limit in section %d` (`section_list.c:1381`) is the exception: it
     fires only past `PAGE_INDEX_CAPACITY` ([`paths.rs`](src/paths.rs), 2 500 pages because
     `section_list.h:26-27` says 50 000 articles per board and 20 per page), so the line is ported and
     unrehearsed. The loader's own counts are formatted into the message rather than passed as tracing fields,

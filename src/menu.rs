@@ -51,7 +51,7 @@ pub const MAX_MENU_DEPTH: usize = 50;
 /// may run past `MAX_MENU_SCR_BUF_LENGTH` as long as the total holds.
 const SCREEN_BUF_CAPACITY: usize = MAX_MENU_SCR_BUF_LENGTH * MAX_MENUS;
 
-/// `MENU_CONF_DELIM_WITH_SPACE` and `MENU_CONF_DELIM_WITHOUT_SPACE` (`menu.c:39`). The second
+/// `MENU_CONF_DELIM_WITH_SPACE` and `MENU_CONF_DELIM_WITHOUT_SPACE` (`menu.c:50`). The second
 /// set is what lets a quoted text field keep spaces and commas.
 const DELIM_WITH_SPACE: [u8; 5] = [b' ', b',', b'\t', b'\r', b'\n'];
 const DELIM_WITHOUT_SPACE: [u8; 2] = [b'\r', b'\n'];
@@ -326,7 +326,7 @@ impl MenuSet {
         self.screens.get(menu.screen_id?)
     }
 
-    /// The pool `bbs_net.c:94-116` builds with `calloc` instead of reading a config file: one
+    /// The pool `bbs_net.c:95-117` builds with `calloc` instead of reading a config file: one
     /// menu with no title and no `%SCREEN` body, and every item at its own row and column.
     /// C sizes the item pool to the maximum the screen can hold and counts up what it reads;
     /// here the items are exactly the ones the reader kept, which is the same list.
@@ -482,7 +482,7 @@ impl<'a> MenuNav<'a> {
 
         // The saved position keeps its place when the layout can still show it, which is what
         // lets a parent menu hold the item you entered a submenu from after you back out of it
-        // (`menu.c:1124-1130`). Only a position that has since been hidden moves, and the loop
+        // (`menu.c:1128-1134`). Only a position that has since been hidden moves, and the loop
         // below gives it the first visible item.
         let cursor = self.cursor();
         if cursor > 0 && cursor < count {
@@ -666,7 +666,7 @@ impl<'a> MenuNav<'a> {
                     return MenuFlow::NoRedraw;
                 };
                 if !self.push(dest) {
-                    // `menu.c:1264-1269` (`99c5e32`): the path arrays keep one entry per level, so
+                    // `menu.c:1268-1273` (`99c5e32`): the path arrays keep one entry per level, so
                     // C refuses the level, names it in the error log, and leaves the screen as it
                     // was. Before that commit it wrote past the end of `menu_id_path`.
                     let name = self.current_menu().map_or("", |menu| menu.name.as_str());
@@ -685,7 +685,7 @@ impl<'a> MenuNav<'a> {
             KEY_HOME => self.jump(term, view, true),
             KEY_END => self.jump(term, view, false),
             _ => {
-                // `menu.c:1462-1464` (`99c5e32`) now tests `key >= 32 && key <= 126` before
+                // `menu.c:1466-1468` (`99c5e32`) now tests `key >= 32 && key <= 126` before
                 // `isalnum`, because the extended key codes are past the range the ctype tables
                 // cover. A Rust `u8` ASCII check is the same gate, and the arrow and function
                 // codes were already handled above.
@@ -753,7 +753,7 @@ impl<'a> MenuNav<'a> {
             }
             pos -= 1;
         }
-        // `menu.c:1320-1325` (`99c5e32`): with nothing both public and displayed the stored
+        // `menu.c:1324-1329` (`99c5e32`): with nothing both public and displayed the stored
         // position falls back to item 0, which keeps it a valid index into this menu's items.
         self.set_cursor(found.unwrap_or(0));
         self.draw_cursor(term, true);
@@ -776,7 +776,7 @@ impl<'a> MenuNav<'a> {
         }
         let page_id = self.page_at(self.cursor());
         let mut pos = self.cursor() as i32;
-        // `menu.c:1335-1337` and `:1373-1375` (`99c5e32`) count the steps off `item_count`: one
+        // `menu.c:1339-1341` and `:1377-1379` (`99c5e32`) count the steps off `item_count`: one
         // full turn of the items is enough, because a menu with nothing displayed would otherwise
         // wrap around for ever. The cursor lands on the last position scanned.
         for _ in 0..count {
@@ -2528,7 +2528,7 @@ mod tests {
 
     #[test]
     fn a_deeper_nest_than_the_path_holds_refuses_the_jump() {
-        // C counts the level off `MAX_MENU_DEPTH` too (`menu.c:1264-1269`); the port refuses the
+        // C counts the level off `MAX_MENU_DEPTH` too (`menu.c:1268-1273`); the port refuses the
         // depth it cannot record the same way.
         let mut data = String::from("%S_ONE\n%\n");
         for depth in 0..=MAX_MENU_DEPTH {

@@ -409,7 +409,7 @@ pub fn file_key_handler(ch: u32, ctx: &mut DisplayCtx) {
 /// hard-codes is the same output. `eof_exit` keeps its meaning: `1` ends with a
 /// press-any-key, `2` only flushes.
 ///
-/// The two wrap arguments are the loader's (`file_loader.c:88`): `skip_ctrl_seq` keeps the
+/// The two wrap arguments are the loader's (`file_loader.c:87`): `skip_ctrl_seq` keeps the
 /// colour sequences of an ANSI logo out of the width budget — without it every decorated
 /// row of `data/welcome.txt` is measured by its bytes and breaks in the middle — and the
 /// count is one short of `MAX_SPLIT_FILE_LINES` because C bounds the offsets *array* and so
@@ -962,7 +962,7 @@ mod tests {
     }
 
     /// The file pager measures a row by its cells and not its bytes. The C loader wraps the
-    /// file with `skip_ctrl_seq` (`file_loader.c:88`), which is what keeps a row of
+    /// file with `skip_ctrl_seq` (`file_loader.c:87`), which is what keeps a row of
     /// `data/welcome.txt` that spends 15 of its 79 bytes on colour sequences on one screen
     /// row; counted as bytes it breaks in the middle and the logo arrives in fragments.
     #[tokio::test]

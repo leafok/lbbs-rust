@@ -6,7 +6,7 @@
 use crate::paths::{MAX_CLIENT_LIMIT, MAX_CLIENT_PER_IP_LIMIT};
 use std::fmt;
 
-/// Delimiters used by `strtok_r` in `init.c:27` and `bbs_net.c:73`.
+/// Delimiters used by `strtok_r` in `init.c:27` and `bbs_net.c:74`.
 const DELIM: [u8; 4] = [b' ', b'\t', b'\r', b'\n'];
 
 /// `sizeof(char DB_*[max_len + 1]) - 1`: the buffers of `database.c:25-29`, filled by the

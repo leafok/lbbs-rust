@@ -15,7 +15,7 @@
 //! # Deviations from C
 //!
 //! * The `-2` `user_list_display` returns when a page query fails is `user_list.c`'s
-//!   `user_list_rd_lock()` (`query_user_list` `:1035`, `query_user_online_list` `:1091`), and
+//!   `user_list_rd_lock()` (`query_user_list` `:1034`, `query_user_online_list` `:1090`), and
 //!   its `-3` is a row drawer failing, which neither is: both `return 0` unconditionally.
 //!   [`crate::state::AppState::roster`] and [`crate::state::AppState::online`] are `Arc`s a
 //!   reader cannot fail to take and their rows come back owned, so the port has no failure of

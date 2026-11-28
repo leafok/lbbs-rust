@@ -24,7 +24,7 @@ use crate::paths::{
     SESSION_ID_LEN, USER_LIMIT_PER_PAGE, USERNAME_MAX_LEN,
 };
 
-/// `USER_ACTION_MAP` (`user_list.c:84`): the code a session writes into
+/// `USER_ACTION_MAP` (`user_list.c:86`): the code a session writes into
 /// `user_online.current_action` and the label the roster screens show for it.
 pub const USER_ACTIONS: [(&str, &str); 14] = [
     ("ARTICLE_FAVOR", "浏览收藏"),
@@ -77,7 +77,7 @@ pub struct UserInfo {
 
 impl UserInfo {
     /// One row of the roster query. `id` is assigned by [`Roster::load`], which knows the
-    /// order; the buffers are the `strncpy` bounds of `user_list.c:191-207`.
+    /// order; the buffers are the `strncpy` bounds of `user_list.c:193-209`.
     fn from_row(id: i32, row: &UserRow) -> Self {
         Self {
             id,
@@ -114,13 +114,13 @@ pub struct Roster {
 }
 
 impl Roster {
-    /// `user_list_load` (`:141`) over the rows its query returned.
+    /// `user_list_load` (`:143`) over the rows its query returned.
     ///
     /// The C code only rebuilds `index_uid` when the user count or the last `uid` moved,
     /// because a sort of 100000 entries is not free in a 200-process server; rebuilding it
     /// every load costs microseconds here and cannot go stale, so the port always does.
     pub fn load(rows: &[UserRow]) -> Self {
-        // `:225`: the query answered with more accounts than the pool holds, and the tail is
+        // `:227`: the query answered with more accounts than the pool holds, and the tail is
         // dropped on the floor.
         if rows.len() > MAX_USER_COUNT {
             tracing::error!("Too many users, exceed limit {MAX_USER_COUNT}");
@@ -139,7 +139,7 @@ impl Roster {
             })
             .collect();
         index_uid.sort_by(|a, b| a.uid.cmp(&b.uid).then(a.id.cmp(&b.id)));
-        // `:243` and `:248`: the two lines that say what the sort covered.
+        // `:245` and `:250`: the two lines that say what the sort covered.
         let last_uid = users.last().map(|u| u.uid).unwrap_or_default();
         tracing::debug!(
             "Rebuild index of {} users, last_uid={last_uid}",
@@ -158,13 +158,13 @@ impl Roster {
         usize::try_from(id).ok().and_then(|i| self.users.get(i))
     }
 
-    /// `query_user_info_by_uid` (`:1247`).
+    /// `query_user_info_by_uid` (`:1246`).
     pub fn by_uid(&self, uid: i32) -> Option<&UserInfo> {
         let pos = self.index_uid.binary_search_by_key(&uid, |e| e.uid).ok()?;
         self.by_id(self.index_uid[pos].id)
     }
 
-    /// `query_user_info_by_username` (`:1313`): every user whose name starts with `prefix`,
+    /// `query_user_info_by_username` (`:1312`): every user whose name starts with `prefix`,
     /// compared case-insensitively over the first `prefix.len()` bytes, because the pool is
     /// ordered by a case-insensitive MySQL collation.
     pub fn by_username_prefix(&self, prefix: &str, max: usize) -> Vec<&UserInfo> {
@@ -182,7 +182,7 @@ impl Roster {
         self.users[first..first + len].iter().take(max).collect()
     }
 
-    /// `get_user_id_list` (`:1565`): up to `max` uids from `start_uid` upwards, in index
+    /// `get_user_id_list` (`:1564`): up to `max` uids from `start_uid` upwards, in index
     /// order, which is how the statistics pass walks the roster.
     pub fn uid_list_from(&self, start_uid: i32, max: usize) -> Vec<i32> {
         let first = self.index_uid.partition_point(|e| e.uid < start_uid);
@@ -199,7 +199,7 @@ impl Roster {
         page_window(&self.users, page_id)
     }
 
-    /// `*p_page_count` of `query_user_list` (`:1062`).
+    /// `*p_page_count` of `query_user_list` (`:1061`).
     pub fn page_count(&self) -> i32 {
         (self.users.len() as i32 + USER_LIMIT_PER_PAGE - 1) / USER_LIMIT_PER_PAGE
     }
@@ -261,7 +261,7 @@ pub struct OnlineList {
 }
 
 impl OnlineList {
-    /// `user_online_list_load` (`:256`). A row is skipped when its user is no longer in the
+    /// `user_online_list_load` (`:258`). A row is skipped when its user is no longer in the
     /// roster or its action is not one the daemon knows, which is what the C `continue`s do.
     ///
     /// One deliberate difference: the C code raises `user_count` before it resolves the row,
@@ -300,7 +300,7 @@ impl OnlineList {
                 last_tm: row.last_tm.unwrap_or(0),
             });
             if users.len() >= MAX_USER_ONLINE_COUNT {
-                // `:342`: the list stops at the pool's limit and says so.
+                // `:344`: the list stops at the pool's limit and says so.
                 tracing::error!("Too many online users, exceed limit {MAX_USER_ONLINE_COUNT}");
                 break;
             }
@@ -329,7 +329,7 @@ impl OnlineList {
         usize::try_from(id).ok().and_then(|i| self.users.get(i))
     }
 
-    /// `query_user_online_info_by_uid` (`:1474`): the sessions of one user, starting at index
+    /// `query_user_online_info_by_uid` (`:1473`): the sessions of one user, starting at index
     /// `start_id` so a screen can page through them.
     pub fn sessions_of(&self, uid: i32, start_id: i32, max: usize) -> Vec<&OnlineUser> {
         let Ok(start) = usize::try_from(start_id) else {
@@ -353,7 +353,7 @@ impl OnlineList {
         page_window(&self.users, page_id)
     }
 
-    /// `*p_page_count` of `query_user_online_list` (`:1118`).
+    /// `*p_page_count` of `query_user_online_list` (`:1117`).
     pub fn page_count(&self) -> i32 {
         (self.users.len() as i32 + USER_LIMIT_PER_PAGE - 1) / USER_LIMIT_PER_PAGE
     }
@@ -509,7 +509,7 @@ mod tests {
         ])
     }
 
-    /// `user_list.c:243` and `:248`: the load reports what it sorted and how many it kept. Both
+    /// `user_list.c:245` and `:250`: the load reports what it sorted and how many it kept. Both
     /// are `log_debug()`, which is the error stream here.
     #[test]
     fn the_load_reports_the_user_count_and_the_last_uid() {

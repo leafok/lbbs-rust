@@ -203,7 +203,7 @@ pub async fn user_info_display(term: &mut Terminal, session: &mut Session, user:
 
 /// The buffer C formats into `user_info_f` (`:170-181`), assembled in the same order.
 fn profile_screen(term: &Terminal, session: &Session, user: &UserInfo) -> Vec<u8> {
-    // `get_user_article_cnt` (`user_list.c:1633`), whose `-1` for a uid the stat table does
+    // `get_user_article_cnt` (`user_list.c:1632`), whose `-1` for a uid the stat table does
     // not have is `unwrap_or(-1)` here.
     let article_cnt = session
         .state

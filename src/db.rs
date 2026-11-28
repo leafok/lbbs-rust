@@ -339,7 +339,7 @@ impl Db {
 // Users and presence: `user_list.c`, `login.c`
 // ---------------------------------------------------------------------------
 
-/// The enabled roster (`:168`). The username ordering is load-bearing: it fixes both the
+/// The enabled roster (`:170`). The username ordering is load-bearing: it fixes both the
 /// display order and the index the binary search runs over.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct UserRow {
@@ -372,7 +372,7 @@ pub struct UserRow {
     pub introduction: Option<String>,
 }
 
-/// A row of `user_online` (`:273`).
+/// A row of `user_online` (`:275`).
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct OnlineRow {
     #[sqlx(rename = "SID")]
@@ -434,7 +434,7 @@ impl Db {
     }
 
     /// The "login count" shown on the top page is the highest log id, not a row count
-    /// (`user_list.c:382`).
+    /// (`user_list.c:384`).
     pub async fn login_count(&self) -> Result<Option<i32>, sqlx::Error> {
         sqlx::query("SELECT ID FROM user_login_log ORDER BY ID DESC LIMIT 1")
             .fetch_optional(&self.pool)

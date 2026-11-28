@@ -2,11 +2,11 @@
 //! The site shuttle: the station list behind `@RunMBEM` and the relay that carries a session
 //! through to the station picked from it.
 //!
-//! Ported from `src/bbs_net.c` — the constants at `:48-61`, the station table and its reader at
-//! `:63-233`, `progress_bar` at `:253-294`, `connect_timeout` at `:296-329`, `bbsnet_connect` at
-//! `:331-1426`, `bbsnet_refresh` at `:1428-1449`, `bbsnet_selchange` at `:1453-1474`, and the
-//! key loop of `bbs_net` at `:1476-1573` — together with `exec_mbem`, the `@mod:` dispatcher
-//! `menu.c:1281` reaches with the item's name (`src/menu_proc.c:53-121`, item
+//! Ported from `src/bbs_net.c` — the constants at `:49-62`, the station table and its reader at
+//! `:64-234`, `progress_bar` at `:254-295`, `connect_timeout` at `:297-330`, `bbsnet_connect` at
+//! `:332-1427`, `bbsnet_refresh` at `:1429-1450`, `bbsnet_selchange` at `:1454-1475`, and the
+//! key loop of `bbs_net` at `:1477-1574` — together with `exec_mbem`, the `@mod:` dispatcher
+//! `menu.c:1285` reaches with the item's name (`src/menu_proc.c:53-121`, item
 //! `conf/menu.conf:129`).
 //!
 //! The screen comes out of [`MenuSet::hand_built`] and [`MenuNav`], because C builds its
@@ -25,7 +25,7 @@
 //!   never found to `strcasecmp`; the port reports the empty entry name instead of crashing.
 //! * The relay is one `tokio::select!` over the two reads instead of an `epoll`/`poll` round over
 //!   three descriptors, so `stdout_write_wait` and the `O_NONBLOCK` toggling of `STDIN`/`STDOUT`
-//!   (`:505-524`) have no counterpart: output goes through [`Terminal`], which owns the buffer
+//!   (`:506-525`) have no counterpart: output goes through [`Terminal`], which owns the buffer
 //!   and the socket. A key typed during the connect wait is also looked at once per 100 ms round
 //!   rather than the instant `poll` reports it.
 //! * `igetch(0)` answering `0` is C's "nothing to decode", which the port reports as
@@ -89,44 +89,44 @@ use crate::term::key::{
 };
 use crate::term::{Charset, RawRead, Terminal};
 
-/// `MAXSTATION` (`:49`): the number of stations the table, and so the menu, can hold.
+/// `MAXSTATION` (`:51`): the number of stations the table, and so the menu, can hold.
 pub const MAX_STATION: usize = 26 * 2;
-/// `STATION_PER_LINE` (`:50`): the columns of the grid, and how far the arrow keys step.
+/// `STATION_PER_LINE` (`:52`): the columns of the grid, and how far the arrow keys step.
 pub const STATION_PER_LINE: usize = 4;
-/// `ORG_NAME_MAX_LEN` … `PORT_STR_MAX_LEN` (`:51-54`), the field widths of the config file.
+/// `ORG_NAME_MAX_LEN` … `PORT_STR_MAX_LEN` (`:52-55`), the field widths of the config file.
 pub const ORG_NAME_MAX_LEN: usize = 40;
 pub const SITE_NAME_MAX_LEN: usize = 40;
 pub const HOSTNAME_MAX_LEN: usize = 253;
 pub const PORT_STR_MAX_LEN: usize = 5;
-/// `USERNAME_MAX_LEN` and `PASSWORD_MAX_LEN` (`:55-56`): the remote login prompt's buffers.
+/// `USERNAME_MAX_LEN` and `PASSWORD_MAX_LEN` (`:56-57`): the remote login prompt's buffers.
 /// They are `bbs_net`'s own constants, narrower in one case and wider in the other than the
 /// site's [`crate::paths::USERNAME_MAX_LEN`].
 pub const REMOTE_USERNAME_MAX_LEN: usize = 20;
 pub const REMOTE_PASSWORD_MAX_LEN: usize = 20;
-/// `REMOTE_CONNECT_TIMEOUT` (`:57`): the budget every connect stage shares. The
+/// `REMOTE_CONNECT_TIMEOUT` (`:59`): the budget every connect stage shares. The
 /// `SSH_CONNECT_TIMEOUT` beside it is never read.
 pub const REMOTE_CONNECT_TIMEOUT: u64 = 10;
-/// `PROGRESS_BAR_LEN` (`:59`): the width of the bar between the rules.
+/// `PROGRESS_BAR_LEN` (`:61`): the width of the bar between the rules.
 pub const PROGRESS_BAR_LEN: usize = 30;
 
-/// The name `load_bbsnet_conf` gives its one menu (`:110`), and the only way back out of it is
+/// The name `load_bbsnet_conf` gives its one menu (`:114`), and the only way back out of it is
 /// the `Ctrl+C` the frame advertises.
 pub const MENU_NAME: &str = "BBSNET";
-/// What `user_online_update` is told while the shuttle is on screen (`:1479` and `:341`).
+/// What `user_online_update` is told while the shuttle is on screen (`:390` and `:1140`).
 pub const ACTION: &str = "BBS_NET";
 
-/// `MENU_CONF_DELIM` (`:75`): the delimiters `strtok_r` splits a station line on.
+/// `MENU_CONF_DELIM` (`:74`): the delimiters `strtok_r` splits a station line on.
 const CONFIG_DELIM: [u8; 4] = [b' ', b'\t', b'\r', b'\n'];
 /// `igetch(100)` in the key loop, and the `poll` timeout in the relay.
 const POLL: Duration = Duration::from_millis(100);
 /// `REMOTE_CONNECT_TIMEOUT * 1000`, the unit `connect_timeout` works in.
 const CONNECT_BUDGET_MS: i64 = REMOTE_CONNECT_TIMEOUT as i64 * 1000;
-/// What libssh's `ssh_channel_request_pty` (`:862`) really asks for: it is a wrapper for
+/// What libssh's `ssh_channel_request_pty` (`:863`) really asks for: it is a wrapper for
 /// `ssh_channel_request_pty_size(channel, "xterm", 80, 24)`, so the station gets the site's own
 /// screen size rather than the one the visitor is using.
 const PTY_TERM: &str = "xterm";
 
-/// `struct _bbsnet_conf` (`:63-72`), one line of `conf/bbsnet.conf`. The port keeps the port
+/// `struct _bbsnet_conf` (`:64-73`), one line of `conf/bbsnet.conf`. The port keeps the port
 /// number as the token C stored in it, because both the display and the lookup print or resolve
 /// that string.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -139,7 +139,7 @@ pub struct Station {
     pub charset: String,
 }
 
-/// `MENU_ITEM *p_menu_item` as `load_bbsnet_conf` fills it (`:199-217`): the grid position, the
+/// `MENU_ITEM *p_menu_item` as `load_bbsnet_conf` fills it (`:200-218`): the grid position, the
 /// one- or two-letter hot key, and the cyan initial in front of the station name.
 fn station_item(id: usize, station: &Station) -> MenuItem {
     let hotkey = hotkey_name(id);
@@ -157,7 +157,7 @@ fn station_item(id: usize, station: &Station) -> MenuItem {
     }
 }
 
-/// `p_menu_item->name[0] = menu_item_id < MAXSTATION / 2 ? 'A' + … : 'a' + …` (`:207-208`).
+/// `p_menu_item->name[0] = menu_item_id < MAXSTATION / 2 ? 'A' + … : 'a' + …` (`:215-216`).
 fn hotkey_name(id: usize) -> char {
     if id < MAX_STATION / 2 {
         (b'A' + id as u8) as char
@@ -166,7 +166,7 @@ fn hotkey_name(id: usize) -> char {
     }
 }
 
-/// `load_bbsnet_conf` (`:79-233`): the stations to show, in file order. The `Err` is C's `-2`;
+/// `load_bbsnet_conf` (`:80-234`): the stations to show, in file order. The `Err` is C's `-2`;
 /// a line with anything wrong in it is skipped after its own message, exactly as C `continue`s
 /// past it without spending a `menu_item_id`.
 pub fn load_conf(root: &Path) -> io::Result<Vec<Station>> {
@@ -217,7 +217,7 @@ pub fn load_conf(root: &Path) -> io::Result<Vec<Station>> {
         let Some(port) = text(fields[3], PORT_STR_MAX_LEN, "port") else {
             continue;
         };
-        // `strtol` with the whole token consumed, then the range check (`:157-162`): the message
+        // `strtol` with the whole token consumed, then the range check (`:174-179`): the message
         // quotes the number either way, so `22x` is reported as `22` and `007` is kept as written
         // while resolving as seven.
         let (parsed, complete) = strtol_decimal(port.as_bytes());
@@ -256,7 +256,7 @@ pub fn load_conf(root: &Path) -> io::Result<Vec<Station>> {
     Ok(stations)
 }
 
-/// `bbsnet_refresh` (`:1428-1449`): the frame the stations are drawn inside. Column 80 is where
+/// `bbsnet_refresh` (`:1429-1450`): the frame the stations are drawn inside. Column 80 is where
 /// C puts the right-hand border, one cell past the last column of the screen.
 async fn refresh(term: &mut Terminal) {
     screen::clearscr(term);
@@ -279,7 +279,7 @@ async fn refresh(term: &mut Terminal) {
     let _ = term.flush().await;
 }
 
-/// `bbsnet_selchange` (`:1453-1474`): the two detail rows under the frame, which follow the
+/// `bbsnet_selchange` (`:1454-1475`): the two detail rows under the frame, which follow the
 /// cursor rather than the key that was pressed.
 async fn selchange(term: &mut Terminal, station: &Station) {
     // The two rows are laid out before anything is written: the padding needs the display
@@ -322,7 +322,7 @@ async fn selchange(term: &mut Terminal, station: &Station) {
     let _ = term.flush().await;
 }
 
-/// `progress_bar` (`:253-294`): the percentage of the connect budget that has gone, between two
+/// `progress_bar` (`:254-295`): the percentage of the connect budget that has gone, between two
 /// rules and centred inside them.
 async fn progress_bar(term: &mut Terminal, percent: i64, len: usize) {
     let len = len.clamp(4, LINE_BUFFER_LEN - 3);
@@ -348,7 +348,7 @@ async fn progress_bar(term: &mut Terminal, percent: i64, len: usize) {
     let _ = term.flush().await;
 }
 
-/// The clock `connect_timeout` (`:296-329`) reads, with the percentage it last painted.
+/// The clock `connect_timeout` (`:297-330`) reads, with the percentage it last painted.
 struct Clock {
     begin: Instant,
     progress_last: i64,
@@ -391,7 +391,7 @@ enum Stage<T> {
 }
 
 /// C retries a non-blocking libssh call until it stops answering `SSH_AGAIN`, checking the bar
-/// between tries (`:736-917`); the port awaits the stage once and keeps the bar moving beside it.
+/// between tries (`:737-918`); the port awaits the stage once and keeps the bar moving beside it.
 async fn stage<F: Future>(term: &mut Terminal, clock: &mut Clock, fut: F) -> Stage<F::Output> {
     tokio::pin!(fut);
     loop {
@@ -406,7 +406,7 @@ async fn stage<F: Future>(term: &mut Terminal, clock: &mut Clock, fut: F) -> Sta
     }
 }
 
-/// `getaddrinfo(host, service, AF_INET)` (`:462-467`, `:489-500`): C's hints ask for IPv4 only,
+/// `getaddrinfo(host, service, AF_INET)` (`:452-457`, `:490-501`): C's hints ask for IPv4 only,
 /// so the first v4 answer is the address used.
 async fn resolve_v4(host: &str, port: u16) -> io::Result<SocketAddr> {
     let mut addrs = tokio::net::lookup_host((host, port)).await?;
@@ -425,7 +425,7 @@ fn v4_only(addr: SocketAddr) -> io::Result<SockAddr> {
     }
 }
 
-/// Why the socket could not be prepared (`:471-505`): the two `log_error` calls C makes for them
+/// Why the socket could not be prepared (`:472-506`): the two `log_error` calls C makes for them
 /// name the stage, so the port keeps them apart.
 enum SocketError {
     Socket(io::Error),
@@ -433,7 +433,7 @@ enum SocketError {
     NonBlocking(io::Error),
 }
 
-/// `socket`/`bind`/`fcntl(O_NONBLOCK)` (`:471-505`), the socket left bound to the site's own
+/// `socket`/`bind`/`fcntl(O_NONBLOCK)` (`:472-506`), the socket left bound to the site's own
 /// address so that the station sees the connection coming from where the session came in.
 ///
 /// The handle is still unregistered when this returns: C's first loop retries `connect()` on it
@@ -454,13 +454,13 @@ fn bound_socket(local: SocketAddr) -> Result<Socket, SocketError> {
     Ok(sock)
 }
 
-/// The `poll(POLLOUT)` of C's second loop (`:600-677`) waits through the runtime, which needs to
+/// The `poll(POLLOUT)` of C's second loop (`:601-678`) waits through the runtime, which needs to
 /// own the registration; `set_nonblocking` above is what lets it take the socket.
 fn registered(sock: Socket) -> io::Result<TcpStream> {
     TcpStream::from_std(std::net::TcpStream::from(sock))
 }
 
-/// `connect()` in C's first loop (`:579-597`): `Ok` is the connection completing at once, and
+/// `connect()` in C's first loop (`:581-598`): `Ok` is the connection completing at once, and
 /// [`connect_pending`] decides whether a failure still means the loop should watch the socket.
 fn connect_now(sock: &Socket, remote: SocketAddr) -> io::Result<()> {
     sock.connect(&v4_only(remote)?)
@@ -495,7 +495,7 @@ fn connect_pending(err: &io::Error) -> bool {
 /// as the `IPPROTO_IP`/`IP_TOS` pair C uses.
 const IPTOS_LOWDELAY: u32 = 0x10;
 
-/// `setsockopt(IP_TOS, IPTOS_LOWDELAY)` (`:683-688`): a failure is only worth the log line C
+/// `setsockopt(IP_TOS, IPTOS_LOWDELAY)` (`:690-694`): a failure is only worth the log line C
 /// writes for it.
 ///
 /// C sets it after the connect is confirmed. The option is per-socket and no traffic has been
@@ -506,7 +506,7 @@ fn set_lowdelay(sock: &Socket) {
     }
 }
 
-/// C's `do { ch = igetch(0); } while (ch == 0)` (`:663-666`): look at the terminal without
+/// C's `do { ch = igetch(0); } while (ch == 0)` (`:671-674`): look at the terminal without
 /// waiting, and take again when the bytes read did not make a key.
 async fn peek_key(term: &mut Terminal) -> u32 {
     loop {
@@ -517,7 +517,7 @@ async fn peek_key(term: &mut Terminal) -> u32 {
     }
 }
 
-/// `ssh_session_is_known_server`'s four answers (`:762-786`), of which two refuse the station.
+/// `ssh_session_is_known_server`'s four answers (`:764-787`), of which two refuse the station.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum KeyVerdict {
     Accepted,
@@ -545,7 +545,7 @@ fn decide_key(path: &Path, host: &str, port: u16, key: &PublicKey) -> KeyVerdict
     KeyVerdict::Changed
 }
 
-/// `ssh_options_set` plus the one question libssh is asked during the handshake (`:721-731`):
+/// `ssh_options_set` plus the one question libssh is asked during the handshake (`:722-732`):
 /// the verdict travels out through the handler, because the key arrives mid-handshake and a
 /// refusal ends it.
 #[derive(Clone)]
@@ -613,7 +613,7 @@ impl Outbound {
         }
     }
 
-    /// `write(sock, …)` or `ssh_channel_write(outbound_channel, …)` (`:1175-1225`).
+    /// `write(sock, …)` or `ssh_channel_write(outbound_channel, …)` (`:1176-1226`).
     async fn write(&mut self, data: &[u8]) -> io::Result<()> {
         match self {
             Outbound::Tcp(stream) => stream.write_all(data).await,
@@ -624,7 +624,7 @@ impl Outbound {
         }
     }
 
-    /// C's cleanup (`:1388-1402`): `ssh_channel_send_eof`, `ssh_channel_close` and then
+    /// C's cleanup (`:1389-1403`): `ssh_channel_send_eof`, `ssh_channel_close` and then
     /// `ssh_disconnect` on the session the channel belonged to.
     async fn shutdown(&mut self) {
         match self {
@@ -634,7 +634,7 @@ impl Outbound {
             Outbound::Ssh { handle, write, .. } => {
                 let _ = write.eof().await;
                 let _ = write.close().await;
-                // `ssh_disconnect(session)` (`:1400`) is libssh's own disconnect, whose reason
+                // `ssh_disconnect(session)` (`:1401`) is libssh's own disconnect, whose reason
                 // text this port does not reproduce: only the code is matched.
                 let _ = handle
                     .disconnect(russh::Disconnect::ByApplication, "", "")
@@ -644,7 +644,7 @@ impl Outbound {
     }
 }
 
-/// The station half of the two `iconv_open` calls (`:918-937`). C names the descriptor by the
+/// The station half of the two `iconv_open` calls (`:919-937`). C names the descriptor by the
 /// session charset and the station's own spelling, with `//IGNORE` on the way out and
 /// `//TRANSLIT` on the way in unless the two names match; the port has one implementation of each
 /// direction, so only the two charsets it can actually convert are accepted.
@@ -691,14 +691,14 @@ impl Codec {
     }
 }
 
-/// `bbsnet_connect` (`:331-1426`). `1` is a relay that ended, `0` a connect the user cancelled or
+/// `bbsnet_connect` (`:332-1427`). `1` is a relay that ended, `0` a connect the user cancelled or
 /// the station refused, and `-1` an error: the three answers C leaves in `ret`.
 async fn connect(term: &mut Terminal, session: &mut Session, station: &Station) -> i32 {
     if let Err(e) = session.online_update(Some(ACTION)).await {
         tracing::error!("user_online_update({ACTION}) error: {e}");
     }
 
-    // `remote_user`/`remote_pass` (`:391-392`): only an SSH station asks for them, and only while
+    // `remote_user`/`remote_pass` (`:383-384`): only an SSH station asks for them, and only while
     // this scope lives.
     let mut remote_user = String::new();
     let mut remote_pass = String::new();
@@ -843,13 +843,13 @@ async fn connect(term: &mut Terminal, session: &mut Session, station: &Station) 
         }
     };
 
-    // C's second loop (`:600-677`): the socket becomes writable when the answer arrives, and a
+    // C's second loop (`:601-678`): the socket becomes writable when the answer arrives, and a
     // bad answer leaves it writable but unconnected, which is why a refused station is only
     // reported when the budget runs out.
     while !connected && !session.state.is_exiting() && !clock.tick(term).await {
         let ready = tokio::time::timeout(POLL, stream.writable()).await;
         match ready {
-            // `getsockopt(SO_ERROR)` (`:646-653`): what a non-blocking connect answered.
+            // `getsockopt(SO_ERROR)` (`:647-654`): what a non-blocking connect answered.
             Ok(Ok(())) => match stream.take_error() {
                 Ok(None) => connected = true,
                 Ok(Some(_)) => {}
@@ -877,7 +877,7 @@ async fn connect(term: &mut Terminal, session: &mut Session, station: &Station) 
         return -1;
     }
 
-    // `getsockname` (`:690-703`): the port the kernel chose for the bound socket.
+    // `getsockname` (`:696-704`): the port the kernel chose for the bound socket.
     let bound = match stream.local_addr() {
         Ok(addr) => addr,
         Err(e) => {
@@ -906,7 +906,7 @@ async fn connect(term: &mut Terminal, session: &mut Session, station: &Station) 
         Outbound::Tcp(stream)
     };
 
-    // C wipes the credential buffers at `cleanup` (`:1371-1372`); russh has its own copy of the
+    // C wipes the credential buffers at `cleanup` (`:1372-1373`); russh has its own copy of the
     // password by now, so nothing below reads these again.
     remote_user.clear();
     remote_pass.clear();
@@ -964,7 +964,7 @@ async fn connect(term: &mut Terminal, session: &mut Session, station: &Station) 
     1
 }
 
-/// `ssh_connect` through `ssh_channel_request_shell` (`:712-917`), each stage inside the same
+/// `ssh_connect` through `ssh_channel_request_shell` (`:713-918`), each stage inside the same
 /// budget as the TCP connect. The `Err` is the code `bbsnet_connect` answers with.
 async fn ssh_setup(
     term: &mut Terminal,
@@ -1091,7 +1091,7 @@ async fn ssh_setup(
     })
 }
 
-/// The `epoll`/`poll` round of `:959-1359`, reduced to the two reads it waits on. Everything
+/// The `epoll`/`poll` round of `:960-1360`, reduced to the two reads it waits on. Everything
 /// that ends the round early ends it the way C's `break` does: as a normal disconnect.
 async fn relay(
     term: &mut Terminal,
@@ -1149,7 +1149,7 @@ async fn relay(
 /// `Ctrl('C')`, the other key C cancels the menu with.
 const CTRL_C: u32 = key::ctrl(b'C');
 
-/// `strtol(p, &endptr, 10)` (`:157`): the sign and the run of digits are the value, and the
+/// `strtol(p, &endptr, 10)` (`:174`): the sign and the run of digits are the value, and the
 /// answer says whether anything else was left behind. glibc saturates a token too big for a
 /// `long`, which the range check then rejects.
 fn strtol_decimal(token: &[u8]) -> (i64, bool) {
@@ -1175,7 +1175,7 @@ fn strtol_decimal(token: &[u8]) -> (i64, bool) {
     (value, used == digits.len())
 }
 
-/// `bbs_net` (`:1476-1573`): the station grid, and the keys that move through it.
+/// `bbs_net` (`:1477-1574`): the station grid, and the keys that move through it.
 pub async fn bbs_net(term: &mut Terminal, session: &mut Session) -> i32 {
     let stations = match load_conf(&session.root) {
         Ok(stations) => stations,

@@ -172,7 +172,7 @@ pub struct Section {
 }
 
 impl Section {
-    /// `section_list_create` (`:560`). `class_id`, `enable` and the two levels are not
+    /// `section_list_create` (`:657`). `class_id`, `enable` and the two levels are not
     /// arguments there — the loader assigns them from its own queries afterwards.
     pub fn new(sid: i16, sname: &str, stitle: &str, master_list: &str) -> Self {
         Self {
@@ -208,7 +208,7 @@ impl Section {
         self.ontop.len() as i32
     }
 
-    /// `section_list_update` (`:620`): the config fields may change under a loaded board,
+    /// `section_list_update` (`:709`): the config fields may change under a loaded board,
     /// and only `sname` feeds a lookup index (the `by_sid` dictionary is not re-set).
     pub fn update(&mut self, sname: &str, stitle: &str, master_list: &str) {
         self.sname = trunc_bytes(sname, SECTION_NAME_MAX_LEN);
@@ -216,7 +216,7 @@ impl Section {
         self.master_list = trunc_bytes(master_list, MASTER_LIST_BYTES);
     }
 
-    /// `section_list_reset_articles` (`:653`).
+    /// `section_list_reset_articles` (`:739`).
     pub fn reset_articles(&mut self) {
         self.article_count = 0;
         self.topic_count = 0;
@@ -229,7 +229,7 @@ impl Section {
         self.ontop.clear();
     }
 
-    /// `section_list_append_article` (`:810`). `articles` is the arena the new article is
+    /// `section_list_append_article` (`:807`). `articles` is the arena the new article is
     /// copied to the end of.
     pub fn append_article(
         &mut self,
@@ -326,7 +326,7 @@ impl Section {
         Ok(idx)
     }
 
-    /// `section_list_set_article_visible` (`:964`), returning the C `affected_count`.
+    /// `section_list_set_article_visible` (`:961`), returning the C `affected_count`.
     ///
     /// Hiding a topic head cascades to its visible replies; showing one does not bring them
     /// back, and neither direction re-indexes the pages — the caller decides whether to run
@@ -386,7 +386,7 @@ impl Section {
         Ok(affected)
     }
 
-    /// `section_list_set_article_excerption` (`:1050`): 1 if the flag changed, 0 if it was
+    /// `section_list_set_article_excerption` (`:1047`): 1 if the flag changed, 0 if it was
     /// already set.
     pub fn set_article_excerption(
         &mut self,
@@ -405,7 +405,7 @@ impl Section {
         Ok(1)
     }
 
-    /// `section_list_update_article_ontop` (`:1100`): keeps [`Section::ontop`] ascending by
+    /// `section_list_update_article_ontop` (`:1097`): keeps [`Section::ontop`] ascending by
     /// `aid` and at [`ONTOP_ARTICLE_LIMIT`] entries long, evicting the oldest aid when it is
     /// full. Called for the flag the article already carries, which the C op handler assigns
     /// to the arena first.
@@ -424,7 +424,7 @@ impl Section {
             while i < self.ontop.len() {
                 let other = articles[self.ontop[i]].aid;
                 if other == aid {
-                    // `:1104`: the pool says the article is stuck and the list already holds it.
+                    // `:1101`: the pool says the article is stuck and the list already holds it.
                     tracing::error!(
                         "Inconsistent state found: article {aid} already ontop in section {}",
                         self.sid
@@ -451,7 +451,7 @@ impl Section {
             if let Some(i) = stuck {
                 self.ontop.remove(i);
             } else {
-                // `:1147`: the flag is off but the list still holds the aid.
+                // `:1144`: the flag is off but the list still holds the aid.
                 tracing::error!(
                     "Inconsistent state found: article {aid} not ontop in section {}",
                     self.sid
@@ -472,7 +472,7 @@ impl Section {
         self.page_first.iter().map(|&a| articles[a].aid).collect()
     }
 
-    /// `section_list_page_count_with_ontop` (`:1178`): the page count the browse screens
+    /// `section_list_page_count_with_ontop` (`:1157`): the page count the browse screens
     /// show, which folds the sticky articles into the last page.
     pub fn page_count_with_ontop(&self) -> i32 {
         let count = self.page_count() - 1
@@ -484,7 +484,7 @@ impl Section {
         count.max(0)
     }
 
-    /// `section_list_page_article_count_with_ontop` (`:1202`).
+    /// `section_list_page_article_count_with_ontop` (`:1179`).
     pub fn page_article_count_with_ontop(&self, page_id: i32) -> i32 {
         if page_id < self.page_count() - 1 {
             ARTICLE_LIMIT_PER_PAGE
@@ -495,7 +495,7 @@ impl Section {
         }
     }
 
-    /// `section_list_find_article_with_offset` (`:1231`).
+    /// `section_list_find_article_with_offset` (`:1200`).
     ///
     /// [`ArticleAt::article`] is `None` when the board does not hold `aid`, in which case
     /// [`ArticleAt::next`] is where it belongs — the property `move_topic` inserts by.
@@ -580,7 +580,7 @@ impl Section {
         Some(left)
     }
 
-    /// `section_list_calculate_page` (`:1310`): rebuild the page index from `start_aid`
+    /// `section_list_calculate_page` (`:1288`): rebuild the page index from `start_aid`
     /// (or from the head of the section when it is not positive).
     pub fn calculate_page(
         &mut self,
@@ -672,7 +672,7 @@ impl Section {
     }
 
     /// The number of articles [`Board::move_topic`] would relocate: the head plus its
-    /// replies (`article_count_of_topic`, `:1160`). 0 when the `aid` is unknown.
+    /// replies (`article_count_of_topic`, `:1418`). 0 when the `aid` is unknown.
     pub fn topic_len(articles: &[Article], aid: i32) -> i32 {
         let Some(mut art) = arena_index(articles, aid) else {
             return 0;
@@ -898,7 +898,7 @@ impl Board {
         self.sections[index].set_article_visible(&mut self.articles, aid, visible, &mut self.stats)
     }
 
-    /// `user_stat_update` (`user_list.c:1623`) and the map update it drives: widen the
+    /// `user_stat_update` (`user_list.c:1622`) and the map update it drives: widen the
     /// counters with the users the roster gained and fold in the articles the previous pass
     /// did not see.
     ///
@@ -1273,7 +1273,7 @@ mod tests {
         );
     }
 
-    /// `section_list.c:1104` and `:1147`: a sticky list that has lost step with the article
+    /// `section_list.c:1101` and `:1144`: a sticky list that has lost step with the article
     /// flags is reported rather than quietly corrected.
     #[test]
     fn a_sticky_list_out_of_step_with_the_flags_is_logged() {

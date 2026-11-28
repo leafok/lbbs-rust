@@ -198,7 +198,7 @@ pub fn article_from_row(row: &ArticleRow, board: &Board) -> Article {
 /// per-board query (`:88`) produced for each of them.
 ///
 /// A board missing from the pool is created with its counters at zero; a board that is
-/// already there keeps its articles, because `section_list_update` (`section_list.c:712`)
+/// already there keeps its articles, because `section_list_update` (`section_list.c:709`)
 /// rewrites only `sname`, `stitle` and `master_list`. Renaming a board therefore leaves the
 /// arena links alone, and the articles loaded under the old name stay where they are.
 pub fn load_section_config_into(
@@ -706,16 +706,16 @@ impl Loader {
     }
 
     /// `user_list_pool_reload(0)`: rebuild the roster and publish it, which is the buffer
-    /// index swap of `:662-668` expressed as an [`std::sync::Arc`].
+    /// index swap of `:661-667` expressed as an [`std::sync::Arc`].
     pub async fn reload_roster(&self) -> Result<(), LoaderError> {
         let rows = self.state.db.roster().await?;
         self.state.publish_roster(Roster::load(&rows));
         Ok(())
     }
 
-    /// `user_list_pool_reload(1)`, whose query filters on `BBS_user_off_line` (`:331`). The pass
-    /// is both queries and one publish: C loads the list, then `user_login_count_load` (`:370`),
-    /// and reaches its index swap (`:655-661`) only if neither failed — so the online roster a
+    /// `user_list_pool_reload(1)`, whose query filters on `BBS_user_off_line` (`:280`). The pass
+    /// is both queries and one publish: C loads the list, then `user_login_count_load` (`:372`),
+    /// and reaches its index swap (`:654-660`) only if neither failed — so the online roster a
     /// user sees and the 累计访问人次 beside it always come from the same pass.
     pub async fn reload_online(&self) -> Result<(), LoaderError> {
         let rows = self.state.db.online(USER_OFF_LINE_SECS).await?;
@@ -733,7 +733,7 @@ impl Loader {
     /// cannot run without the board's database.
     fn publish_online_pass(&self, online: OnlineList, count: Option<i32>) {
         self.state.publish_online(online);
-        // `:394-401` assigns in both branches, so a `user_login_log` with no rows resets the
+        // `:396-403` assigns in both branches, so a `user_login_log` with no rows resets the
         // total to 0 instead of leaving the previous pass standing.
         self.state.set_login_count(count.unwrap_or(0));
     }
@@ -1120,8 +1120,8 @@ mod tests {
     }
 
     /// `user_list_pool_reload(1)` publishes the list and the visit total from one swap
-    /// (`user_list.c:624-632` then `:655-661`), and the total always comes from that same pass:
-    /// `:394-401` writes `atoi(row[0])` when a row came back and `0` when none did, so an empty
+    /// (`user_list.c:623-631` then `:654-660`), and the total always comes from that same pass:
+    /// `:396-403` writes `atoi(row[0])` when a row came back and `0` when none did, so an empty
     /// `user_login_log` is published as an empty total rather than left at the previous value.
     #[tokio::test]
     async fn the_online_pass_publishes_the_visit_total_with_the_list() {
@@ -1654,7 +1654,7 @@ mod tests {
             posted += i32::from(board.user_article_count(user.uid).unwrap_or_default() > 0);
         }
         assert!(posted > 0);
-        // The visit total the top page prints, from `user_login_count_load` (`:370`) — a board
+        // The visit total the top page prints, from `user_login_count_load` (`:372`) — a board
         // that has logins recorded has a highest `ID`, and `initial_load` runs the online pass.
         assert!(
             state.login_count() > 0,
